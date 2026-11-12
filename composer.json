@@ -1,0 +1,36 @@
+{
+    "name": "timohubois/floating-live-preview",
+    "description": "A floating live frontend preview while editing WordPress posts and pages.",
+    "type": "wordpress-plugin",
+    "license": "GPL-3.0-or-later",
+    "authors": [
+        {
+            "name": "Timo Hubois",
+            "homepage": "https://pixelsaft.wtf"
+        }
+    ],
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": true,
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    },
+    "require": {
+        "php": "^8.3"
+    },
+    "require-dev": {
+        "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+        "phpcompatibility/phpcompatibility-wp": "^2.1",
+        "wp-coding-standards/wpcs": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "FloatingLivePreview\\": "classes/"
+        }
+    },
+    "scripts": {
+        "php:lint": "vendor/bin/phpcs --standard=phpcs.xml .",
+        "php:lint:fix": "vendor/bin/phpcbf --standard=phpcs.xml ."
+    }
+}

@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<ruleset name="floating-live-preview">
+    <description>PSR-12, PHP compatibility and WordPress correctness checks.</description>
+    <file>./</file>
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+    <exclude-pattern>*/node_modules/*</exclude-pattern>
+    <arg name="basepath" value="./"/>
+    <arg value="ps"/>
+    <arg name="extensions" value="php"/>
+    <config name="testVersion" value="8.3-"/>
+    <rule ref="PHPCompatibilityWP"/>
+    <rule ref="PSR12">
+        <!-- Allow WordPress guards and bootstrap code alongside declarations. -->
+        <exclude name="PSR1.Files.SideEffects"/>
+    </rule>
+    <rule ref="Generic.Arrays.DisallowLongArraySyntax"/>
+    <rule ref="Squiz.Commenting.DocCommentAlignment"/>
+    <rule ref="WordPress.CodeAnalysis"/>
+    <rule ref="WordPress.DateTime"/>
+    <rule ref="WordPress.DB"/>
+    <rule ref="WordPress.Security"/>
+    <rule ref="WordPress.WP.AlternativeFunctions"/>
+    <rule ref="WordPress.PHP.DevelopmentFunctions"/>
+    <rule ref="WordPress.WP.I18n">
+        <properties>
+            <property name="text_domain" type="array">
+                <element value="floating-live-preview"/>
+                <element value="default"/>
+            </property>
+        </properties>
+    </rule>
+</ruleset>
