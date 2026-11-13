@@ -34,7 +34,7 @@ Closing the window stops live updates without discarding editor fields.
 
 - **Preview actions** offers docking, reset size and position, and **Open preview in new tab**. Fullscreen and pop-out Picture-in-Picture appear where supported.
 - **Desktop**, **Tablet** and **Mobile** change the preview's viewport width, not its device or user agent.
-- **Remember preview visibility** is on by default. Visibility, viewport and **Scroll to changes** preferences are per user across posts; window size and position reset on a new editor load. Stored preferences remain after deactivation or deletion.
+- **Remember preview visibility** is on by default. Visibility, viewport and **Scroll to changes** preferences are per user across posts; window size and position reset on a new editor load. Preferences remain after deactivation; uninstalling through WordPress removes the plugin's server-stored preferences.
 - **Scroll to changes** is on by default. It normally centers shorter changed content and shows taller content from its beginning. Detection and header handling are best-effort; disable it to retain manual positioning.
 
 ## Data and limitations
@@ -55,6 +55,15 @@ your own drafts.
 - **Trusted code only:** the preview is not sandboxed. Same-origin frontend scripts can access the editor. Use trusted theme and plugin code.
 - **Embedding:** site and browser restrictions still apply. Do not weaken them to force embedding; use **Open preview in new tab** when needed. **Preview refreshed** reports a document load, not verified content or publication.
 - **Multiple tabs:** **Preview here** switches preview ownership between editor tabs after pending writes finish. Fields are not copied or merged. Coordination is limited to the same browser, not other browsers or devices; this is not a collaborative editing tool.
+
+## Uninstall
+
+Deactivation keeps preview data and preferences. Uninstalling through WordPress
+removes the plugin's internal preview revisions and their metadata, plus only its
+namespace in persisted user preferences. On multisite, cleanup covers all sites.
+Saved posts, normal revisions, recovery autosaves and unrelated preferences are
+preserved. WordPress's browser-local preference backups cannot be directly erased
+by the PHP uninstaller; cleaned server preferences receive a fresh timestamp.
 
 ## Development
 

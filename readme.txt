@@ -59,7 +59,11 @@ It follows the first detected text or media change in recognized HTML previews. 
 
 = What preferences are remembered? =
 
-Preview visibility, the last device viewport and Scroll to changes are stored per WordPress user across posts. Remember preview visibility and Scroll to changes are on by default; the initial viewport is Desktop. Disable remembering to start compact and open on each editor load. Window size and position reset on a new editor load. Deactivation and deletion do not remove stored preferences.
+Preview visibility, the last device viewport and Scroll to changes are stored per WordPress user across posts. Remember preview visibility and Scroll to changes are on by default; the initial viewport is Desktop. Disable remembering to start compact and open on each editor load. Window size and position reset on a new editor load. Deactivation keeps preferences; uninstalling through WordPress removes the plugin's server-stored preferences.
+
+= What happens when I uninstall the plugin? =
+
+Uninstalling through WordPress removes internal preview revisions and their metadata, and only this plugin's namespace in persisted user preferences. On multisite, cleanup covers all sites. Saved posts, normal revisions, recovery autosaves and unrelated preferences are preserved. Deactivation alone does not remove data. Browser-local WordPress preference backups cannot be directly erased by PHP; cleaned server preferences receive a fresh timestamp.
 
 = What happens with multiple editor tabs? =
 
