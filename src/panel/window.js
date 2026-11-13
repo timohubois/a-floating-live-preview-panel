@@ -438,14 +438,20 @@ export function createPreviewPanel(strings, {
                 if (value) detached.document.documentElement.style.setProperty(name, value);
             }
             // Core concatenation removes the individual wp-components stylesheet ID.
-            // Keep the actual admin bundles and relevant standalone/inline styles in source order.
+            // Native controls also inject runtime styles (including the spinner's strokes and animation).
+            // Keep the admin bundles, component runtime styles and panel CSS in source order.
             const stylesheets = mainDocument.querySelectorAll([
                 'link[rel="stylesheet"][href*="/load-styles.php"]',
                 '#wp-components-css', '#wp-components-inline-css',
+                'style[data-emotion]', 'style[data-wp-hash]',
                 '#a-floating-live-preview-panel-css', '#a-floating-live-preview-panel-inline-css',
             ].join(', '));
             for (const stylesheet of stylesheets) {
                 const copy = stylesheet.cloneNode(true);
+                // Runtime insertRule() styles can have empty textContent; cloning alone loses their CSS.
+                if (stylesheet.tagName === 'STYLE' && stylesheet.sheet) {
+                    copy.textContent = Array.from(stylesheet.sheet.cssRules, (rule) => rule.cssText).join('\n');
+                }
                 copy.addEventListener('load', responsiveViewport.layout, { once: true });
                 detached.document.head.append(copy);
             }

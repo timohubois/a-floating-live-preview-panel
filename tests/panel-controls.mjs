@@ -119,20 +119,30 @@ test('viewport choices use native Toolbar buttons and pressed-state behavior', (
     assert.deepEqual(h.calls.at(-1), { name: 'device', args: ['mobile'] });
 });
 
-test('refresh stays focusable while disabled so loading does not redirect focus to Preview actions', () => {
-    const h = fixture();
-    const refresh = () => h.nodes('Button').find(({ props }) => props['data-action'] === 'refresh');
-    assert.equal(refresh().props.accessibleWhenDisabled, true);
-    h.controls.update({ ...h.state, busy: true, canRefresh: false });
-    assert.equal(refresh().props.icon.type, 'Spinner');
-    assert.equal(refresh().props.label, 'refresh');
-    assert.equal(refresh().props.disabled, true);
-    assert.equal(refresh().props.accessibleWhenDisabled, true, 'Use native aria-disabled behavior without disabling DOM focus.');
-    h.controls.update({ ...h.state, busy: false });
-    assert.equal(refresh().props.icon, h.icons.refresh);
-    assert.equal(refresh().props.disabled, false);
-    assert.equal(refresh().props.accessibleWhenDisabled, true);
-});
+for (const mode of ['in-page', 'fullscreen', 'PiP']) {
+    test(`${mode} refresh stays visible and focusable while disabled during loading`, () => {
+        const h = fixture();
+        const state = { ...h.state, inPage: mode === 'in-page', inPip: mode === 'PiP' };
+        h.controls.update(state);
+        const refresh = () => h.nodes('Button').find(({ props }) => props['data-action'] === 'refresh');
+        const portal = h.nodes('Portal').find(({ props }) => props.target.selector === '.aflpp-refresh-control');
+        assert.equal(portal.children[0], refresh(), 'Keep refresh in the header in every window mode.');
+        assert.equal(refresh().props.accessibleWhenDisabled, true);
+        refresh().props.onClick();
+        assert.equal(h.calls.at(-1).name, 'refresh');
+        h.controls.update({ ...state, busy: true, canRefresh: false });
+        assert.equal(refresh().props.icon.type, 'Spinner');
+        assert.equal(refresh().props.label, 'refresh');
+        assert.equal(refresh().props.disabled, true);
+        assert.equal(refresh().props.accessibleWhenDisabled, true, 'Use native aria-disabled behavior without disabling DOM focus.');
+        h.controls.focus('refresh');
+        assert.deepEqual(h.calls.at(-1), { name: 'focus', args: ['[data-action="refresh"]'] });
+        h.controls.update({ ...state, busy: false });
+        assert.equal(refresh().props.icon, h.icons.refresh);
+        assert.equal(refresh().props.disabled, false);
+        assert.equal(refresh().props.accessibleWhenDisabled, true);
+    });
+}
 
 test('placeholder actions and loading use public components with no custom spinner or fake title button', () => {
     const h = fixture();
@@ -174,6 +184,7 @@ test('document moves unmount old native hooks before creating the next root', ()
     assert.equal(original.renders, 1, 'state updates while detached must not render into the old root');
     h.controls.remount();
     assert.equal(h.mounts.length, 2);
+    assert.equal(h.nodes('Button').some(({ props }) => props['data-action'] === 'refresh'), true);
     assert.equal(h.nodes('Button').some(({ props }) => props['data-action'] === 'mode'), false);
     assert.equal(h.nodes('DropdownMenu').length, 1);
 });
@@ -233,20 +244,15 @@ test('unsupported PiP hides both the shortcut and its menu action', () => {
     assert.equal(h.nodes('MenuItem').some(({ props }) => props['data-action'] === 'open-preview'), true);
 });
 
-test('PiP relies on browser window controls and keeps Refresh and Close live preview in its menu', () => {
+test('PiP keeps header refresh without duplicating browser window controls or the menu action', () => {
     const h = fixture();
     h.controls.update({ ...h.state, inPage: false, inPip: true, canPip: false, canFullscreen: false });
-    assert.equal(h.nodes('Button').filter(({ props }) => props['data-action']).length, 0, 'no duplicate window or refresh buttons');
-    const refresh = h.nodes('MenuItem').find(({ props }) => props['data-action'] === 'refresh');
-    assert.equal(refresh.props.disabled, false);
-    refresh.props.onClick();
-    assert.equal(h.calls.at(-1).name, 'refresh');
+    assert.deepEqual(h.nodes('Button').map(({ props }) => props['data-action']).filter(Boolean), ['refresh']);
+    assert.equal(h.nodes('MenuItem').some(({ props }) => props['data-action'] === 'refresh'), false);
     const close = h.nodes('MenuItem').find(({ props }) => props['data-action'] === 'close');
     assert.equal(close.children[0], 'closeLivePreview');
     close.props.onClick();
     assert.equal(h.calls.at(-1).name, 'close');
-    h.controls.update({ ...h.state, inPage: false, inPip: true, canPip: false, canRefresh: false });
-    assert.equal(h.nodes('MenuItem').find(({ props }) => props['data-action'] === 'refresh').props.disabled, true);
     h.controls.focus('mode');
     assert.deepEqual(h.calls.at(-1), { name: 'focus', args: ['[data-action="actions"]'] });
 });

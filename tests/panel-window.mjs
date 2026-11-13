@@ -67,8 +67,10 @@ function fixture(open = false, {
     });
     node('wpadminbar').getBoundingClientRect = () => ({ bottom: toolbarHeight });
     const styleNodes = stylesheets.map((style) => target({ ...style, cloneNode: () => target({ ...style }) }));
-    document.querySelectorAll = (selector) => styleNodes.filter(({ id, href = '', rel }) => selector.split(', ').some((part) =>
-        part.startsWith('#') ? id === part.slice(1) : rel === 'stylesheet' && href.includes('/load-styles.php')
+    document.querySelectorAll = (selector) => styleNodes.filter(({ id, href = '', rel, dataEmotion, dataWpHash }) => selector.split(', ').some((part) =>
+        part === 'style[data-emotion]' ? dataEmotion !== undefined
+            : part === 'style[data-wp-hash]' ? dataWpHash !== undefined
+                : part.startsWith('#') ? id === part.slice(1) : rel === 'stylesheet' && href.includes('/load-styles.php')
     ));
     const copiedStyles = [];
     const detachedDocument = { documentElement: node('pip-html'), head: { append: (style) => copiedStyles.push(style) } };
@@ -149,6 +151,31 @@ for (const combined of [false, true]) {
         assert.equal(h.panel.ownerDocument, h.document);
         assert.equal(h.state.mode, 'expand');
         assert.equal(h.writes.length, 0, 'PiP styling and document moves must not change layout preferences');
+    });
+}
+
+for (const cssom of [false, true]) {
+    test(`PiP copies runtime spinner styles and keyframes from ${cssom ? 'CSSOM-only' : 'text-backed'} stylesheets`, async () => {
+        const rules = [
+            '.native-spinner { color: #2271b1; overflow: visible; }',
+            '.native-spinner path { fill: transparent; stroke: currentColor; animation: native-spin 1.4s linear infinite; }',
+            '@keyframes native-spin { to { transform: rotate(360deg); } }',
+        ];
+        const runtime = {
+            tagName: 'STYLE', dataEmotion: 'css', textContent: cssom ? '' : rules.join('\n'),
+            sheet: { cssRules: rules.map((cssText) => ({ cssText })) },
+        };
+        const module = { tagName: 'STYLE', dataWpHash: 'native-module', textContent: '.native-module { margin: 0; }' };
+        const h = fixture(true, { pip: true, stylesheets: [runtime, module, { tagName: 'STYLE', textContent: '.unrelated {}' }] });
+        await h.actions.popOut();
+        assert.equal(h.state.inPip, true);
+        assert.deepEqual(h.copiedStyles.map(({ textContent }) => textContent), [rules.join('\n'), module.textContent]);
+        assert.equal(runtime.textContent, cssom ? '' : rules.join('\n'), 'Never modify the editor stylesheet.');
+        h.view.report('updating', 'loading', { hasPreview: true });
+        assert.equal(h.state.busy, true, 'The copied spinner styles remain available for later refreshes.');
+        h.detached.close();
+        await h.actions.popOut();
+        assert.deepEqual(h.copiedStyles.slice(2).map(({ textContent }) => textContent), [rules.join('\n'), module.textContent]);
     });
 }
 

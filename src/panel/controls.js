@@ -31,7 +31,7 @@ export function createPreviewControls(panel, strings, callbacks) {
                 className: 'aflpp-icon aflpp-move', icon: icons.move, label: strings.move, showTooltip: true, tooltipPosition: 'bottom',
                 'data-action': 'move',
             }), moveContainer),
-            createPortal(!inPip && h(Button, {
+            createPortal(h(Button, {
                 className: 'aflpp-icon', icon: busy ? h(Spinner) : icons.refresh,
                 label: strings.refresh, showTooltip: true,
                 // Loading must not move focus from Refresh to the panel's fallback action.
@@ -47,9 +47,6 @@ export function createPreviewControls(panel, strings, callbacks) {
                 toggleProps: { className: 'aflpp-icon', 'data-action': 'actions' },
                 popoverProps: { placement: 'bottom-end', offset: 6, shift: true, className: 'aflpp-menu-popover' },
             }, () => h(Fragment, null,
-                inPip && h(MenuGroup, null, h(MenuItem, {
-                    disabled: !canRefresh, onClick: command(callbacks.refresh), 'data-action': 'refresh',
-                }, strings.refresh)),
                 (previewUrl || canPip || canFullscreen) && h(MenuGroup, { label: strings.display },
                     previewUrl && h(MenuItem, {
                         href: previewUrl, target: '_blank', rel: 'noopener noreferrer', referrerPolicy: 'no-referrer',
@@ -150,7 +147,7 @@ export function createPreviewControls(panel, strings, callbacks) {
     }
 
     function focus(action) {
-        if (state?.inPip && ['mode', 'refresh'].includes(action)) action = 'actions';
+        if (state?.inPip && action === 'mode') action = 'actions';
         panel.querySelector(`[data-action="${action}"]`)?.focus({ preventScroll: true });
     }
 
