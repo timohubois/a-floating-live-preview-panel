@@ -24,7 +24,6 @@ export function createPreviewPanel(strings, {
     const resize = panel.querySelector('.aflpp-resize');
     const resizeEdges = panel.querySelectorAll('[data-resize-edge]');
     const header = panel.querySelector('.aflpp-header');
-    const dot = panel.querySelector('.aflpp-dot');
     const caption = panel.querySelector('.aflpp-caption');
     const viewport = panel.querySelector('.aflpp-viewport');
     const stage = panel.querySelector('.aflpp-stage');
@@ -152,8 +151,6 @@ export function createPreviewPanel(strings, {
         if (['error', 'conflict', 'handover'].includes(state)) windowNotice = '';
         panel.dataset.state = state;
         panel.dataset.hasPreview = String(hasPreview);
-        panel.dataset.retryable = String(canRetry);
-        dot.title = text;
         takeOverAction = canTakeOver && ['conflict', 'handover'].includes(state);
         empty.hidden = hasPreview;
         devicebar.hidden = !hasPreview;

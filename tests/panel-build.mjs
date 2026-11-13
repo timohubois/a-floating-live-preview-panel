@@ -30,6 +30,14 @@ test('panel markup separates plain title, pointer-only edges and one accessible 
     assert.doesNotMatch(markup, /aflpp-status-tooltip|aflpp-resize-icon|aflpp-feedback-action/);
 });
 
+test('the panel keeps an accessible status region without a redundant visual status dot', async () => {
+    const [markup, css, source] = await Promise.all(['markup.php', 'style.css', 'index.js'].map((file) =>
+        readFile(new URL(`../assets/preview-panel/${file}`, import.meta.url), 'utf8')
+    ));
+    for (const content of [markup, css, source]) assert.doesNotMatch(content, /aflpp-dot|aflpp-pulse|dataset\.retryable/);
+    assert.match(markup, /class="aflpp-sr-only" role="status"/);
+});
+
 test('the editor build declares its public WordPress runtime dependencies', () => {
     const dependencies = [...asset.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1].matchAll(/'([^']+)'/g)]
         .map((match) => match[1]);

@@ -22,7 +22,6 @@ defined('ABSPATH') || exit;
         <div class="aflpp-move-control"></div>
         <div class="aflpp-refresh-control"></div>
         <div class="aflpp-titlebar">
-            <span class="aflpp-dot" aria-hidden="true"></span>
             <span class="aflpp-caption"></span>
         </div>
         <div class="aflpp-controls"></div>

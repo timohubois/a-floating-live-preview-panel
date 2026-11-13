@@ -105,6 +105,18 @@ test('viewport choices use native Toolbar buttons and pressed-state behavior', (
     assert.deepEqual(h.calls.at(-1), { name: 'device', args: ['mobile'] });
 });
 
+test('the refresh button communicates background activity and restores its icon when ready', () => {
+    const h = fixture();
+    const refresh = () => h.nodes('Button').find(({ props }) => props['data-action'] === 'refresh');
+    h.controls.update({ ...h.state, busy: true, canRefresh: false });
+    assert.equal(refresh().props.icon.type, 'Spinner');
+    assert.equal(refresh().props.label, 'refresh');
+    assert.equal(refresh().props.disabled, true);
+    h.controls.update({ ...h.state, busy: false });
+    assert.equal(refresh().props.icon, h.icons.refresh);
+    assert.equal(refresh().props.disabled, false);
+});
+
 test('placeholder actions and loading use public components with no custom spinner or fake title button', () => {
     const h = fixture();
     h.controls.update({ ...h.state, hasPreview: false, empty: {

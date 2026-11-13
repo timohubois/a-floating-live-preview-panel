@@ -203,6 +203,22 @@ test('closing a ready panel clears its frame without changing the launcher into 
     assert.equal(launcher.title, 'Live preview');
 });
 
+test('loading, ready and problem states retain screen-reader announcements without a status dot', () => {
+    const h = fixture(true);
+    const status = h.node('aflpp-panel [role="status"]');
+    h.view.report('Loading preview…', 'loading', { hasPreview: false });
+    assert.equal(status.textContent, 'Loading preview…');
+    h.view.report('Updating preview…', 'loading', { hasPreview: true });
+    assert.equal(status.textContent, 'Updating preview…');
+    assert.equal(h.state.busy, true);
+    h.view.report('Preview refreshed', 'ready', { hasPreview: true, canRefresh: true });
+    assert.equal(status.textContent, 'Preview refreshed');
+    assert.equal(h.state.busy, false);
+    h.view.report('Could not refresh', 'error', { hasPreview: true, canRetry: true });
+    assert.match(status.textContent, /Could not refresh/);
+    assert.equal(h.state.notice.heading, 'Could not refresh');
+});
+
 test('hidden-panel drain and error messages do not replace the launcher action label', () => {
     const { view, launcher } = fixture();
     view.report('Finishing preview before continuing…');
