@@ -73,6 +73,7 @@
 .aflpp-panel .aflpp-mode { margin-left: 6px; }
 
 .aflpp-dot {
+    position: relative;
     flex-shrink: 0;
     width: 6px;
     height: 6px;
@@ -81,6 +82,20 @@
 }
 .aflpp-panel[data-state="ready"] .aflpp-dot { background: #008a20; }
 .aflpp-panel[data-state="loading"] .aflpp-dot { background: var(--aflpp-accent); }
+.aflpp-panel[data-state="loading"] .aflpp-dot::before {
+    content: "";
+    position: absolute;
+    box-sizing: border-box;
+    left: 50%;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid var(--aflpp-accent);
+    border-right-color: transparent;
+    border-radius: 50%;
+    transform: translate(-50%, -50%) rotate(-35deg);
+    pointer-events: none;
+}
 .aflpp-panel[data-state="stale"] .aflpp-dot,
 .aflpp-panel[data-state="conflict"] .aflpp-dot { background: #996800; }
 .aflpp-panel[data-state="handover"] .aflpp-dot { background: var(--aflpp-accent); }
@@ -229,9 +244,13 @@
 
 @media (prefers-reduced-motion: no-preference) {
     .aflpp-icon { transition: background-color 100ms, color 100ms; }
-    .aflpp-panel[data-state="loading"] .aflpp-dot,
     .aflpp-panel[data-state="handover"] .aflpp-dot { animation: aflpp-pulse 1s ease-in-out infinite alternate; }
+    .aflpp-panel[data-state="loading"] .aflpp-dot::before { animation: aflpp-status-spin .85s linear infinite; }
     .aflpp-spinner { animation: aflpp-spin 1s linear infinite; }
     @keyframes aflpp-pulse { to { opacity: .35; } }
     @keyframes aflpp-spin { to { transform: rotate(360deg); } }
+    @keyframes aflpp-status-spin {
+        from { transform: translate(-50%, -50%) rotate(-35deg); }
+        to { transform: translate(-50%, -50%) rotate(325deg); }
+    }
 }
