@@ -78,6 +78,8 @@ final class Editor
                 'title' => __('Live preview', 'a-floating-live-preview-panel'),
                 'preview' => __('Preview', 'a-floating-live-preview-panel'),
                 'move' => __('Move preview: drag or use arrow keys', 'a-floating-live-preview-panel'),
+                'moved' => __('Preview moved', 'a-floating-live-preview-panel'),
+                'resize' => __('Resize preview', 'a-floating-live-preview-panel'),
                 'retry' => __('Try again', 'a-floating-live-preview-panel'),
                 'takeOver' => __('Preview here', 'a-floating-live-preview-panel'),
                 'takingOver' => __('Switching…', 'a-floating-live-preview-panel'),

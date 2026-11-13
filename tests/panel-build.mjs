@@ -15,6 +15,15 @@ function shape({ props }) {
     });
 }
 
+test('panel markup has one visible resize control with an accessible name and keyboard description', async () => {
+    const markup = await readFile(new URL('../assets/preview-panel/markup.php', import.meta.url), 'utf8');
+    assert.equal([...markup.matchAll(/<button[^>]*class="aflpp-resize"/g)].length, 1);
+    assert.doesNotMatch(markup, /data-edge=|resizeLabels/);
+    assert.match(markup, /aria-describedby="aflpp-resize-help"/);
+    assert.match(markup, /Resize preview/);
+    assert.match(markup, /Drag or use arrow keys to resize; Shift for larger steps\./);
+});
+
 test('the editor build declares its public WordPress runtime dependencies', () => {
     const dependencies = [...asset.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1].matchAll(/'([^']+)'/g)]
         .map((match) => match[1]);

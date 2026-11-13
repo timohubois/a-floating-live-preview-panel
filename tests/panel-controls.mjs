@@ -103,8 +103,9 @@ test('controls pass the official bundled icon elements directly to native compon
     assert.equal(refresh.props.icon, h.icons.refresh);
     assert.equal(h.nodes('DropdownMenu')[0].props.icon, h.icons.more);
     const portalIcon = (selector) => h.nodes('Portal').find(({ props }) => props.target.selector === selector).children[0];
-    assert.equal(portalIcon('#aflpp-toggle .aflpp-launcher-icon'), h.icons.desktop);
+    assert.equal(portalIcon('#aflpp-toggle .aflpp-launcher-icon'), h.icons.pip);
     assert.equal(portalIcon('.aflpp-dismiss-icon'), h.icons.close);
+    assert.equal(portalIcon('.aflpp-resize-icon'), h.icons.resize);
     const icons = [...h.nodes('Button'), ...h.nodes('MenuItem')].map(({ props }) => props.icon).filter(Boolean);
     assert.ok(icons.length >= 7, 'cover header, viewport and preference icons');
     for (const icon of icons) {

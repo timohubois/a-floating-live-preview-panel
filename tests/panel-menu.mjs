@@ -67,11 +67,32 @@ function browserTests(css) {
         if (getComputedStyle(button).pointerEvents !== 'auto') throw new Error('The revealed shortcut must accept clicks.');
         results.push({ name });
     } catch (error) { results.push({ name, error: error.message }); }
-    finally { panel.remove(); style.remove(); }
+    finally { panel.remove(); }
+    for (const anchor of ['left', 'center', 'right']) {
+        const name = `${anchor} resize grip is visible, keyboard-focusable and retains its resize cursor`;
+        panel.dataset.anchor = anchor;
+        panel.innerHTML = '<div class="aflpp-header"><button class="aflpp-move">Move preview</button></div><button class="aflpp-resize" aria-label="Resize preview"></button>';
+        document.body.append(panel);
+        try {
+            const grip = panel.querySelector('.aflpp-resize');
+            const rect = grip.getBoundingClientRect();
+            if (rect.width < 24 || rect.height < 24) throw new Error('The single grip needs a usable target.');
+            if (getComputedStyle(grip).cursor !== (anchor === 'left' ? 'nesw-resize' : 'nwse-resize')) throw new Error('Button resets must not override the resize cursor.');
+            if (getComputedStyle(panel.querySelector('.aflpp-move')).cursor !== 'grab') throw new Error('Button resets must not override the move cursor.');
+            grip.focus();
+            if (document.activeElement !== grip) throw new Error('The visible resize grip must remain focusable.');
+            panel.classList.add('aflpp-expanded');
+            if (getComputedStyle(grip).display !== 'none') throw new Error('Expanded mode must not expose an unusable resize grip.');
+            panel.classList.remove('aflpp-expanded');
+            results.push({ name });
+        } catch (error) { results.push({ name, error: error.message }); }
+        finally { panel.remove(); }
+    }
+    style.remove();
     return results;
 }
 
-test('PiP menu bounds, scrolling and preview shortcut in Chromium', async (t) => {
+test('PiP menu bounds, preview shortcut and geometry controls in Chromium', async (t) => {
     const directory = await mkdtemp(join(tmpdir(), 'aflpp-menu-'));
     try {
         const css = await readFile(new URL('../assets/preview-panel/style.css', import.meta.url), 'utf8');
@@ -89,7 +110,7 @@ test('PiP menu bounds, scrolling and preview shortcut in Chromium', async (t) =>
         const output = result.stdout.match(/<script id="results" type="application\/json">([\s\S]*?)<\/script>/)?.[1];
         assert.ok(output && output !== 'null', `Browser tests did not finish.\n${result.stderr}\n${result.stdout}`);
         const results = JSON.parse(output);
-        assert.equal(results.length, 7);
+        assert.equal(results.length, 10);
         for (const result of results) await t.test(result.name, () => assert.equal(result.error, undefined, result.error));
     } finally { await rm(directory, { recursive: true, force: true }); }
 });

@@ -7,7 +7,7 @@ const source = await sourceForVm(new URL('../assets/preview-panel/index.js', imp
 
 // Exercise the view's lifecycle and launcher label without starting requests or changing native controls.
 function fixture(open = false, {
-    layout, width = 1440, height = 1000, nativeSaving = false, pip = false, pipApi, videoPip = false, stylesheets = [],
+    layout, width = 1440, height = 1000, direction = 'ltr', nativeSaving = false, pip = false, pipApi, videoPip = false, stylesheets = [],
 } = {}) {
     const nodes = new Map();
     const preferences = new Map([['panelOpen', open], ['layout', layout]]);
@@ -20,8 +20,12 @@ function fixture(open = false, {
             this.listeners.set(type, listeners);
         },
         fire(type, properties = {}) {
-            const event = { button: 0, pointerId: 1, clientX: 100, clientY: 100, preventDefault() {}, ...properties };
+            const event = {
+                button: 0, pointerId: 1, clientX: 100, clientY: 100,
+                preventDefault() { this.defaultPrevented = true; }, ...properties,
+            };
             for (const callback of this.listeners.get(type) || []) callback(event);
+            return event;
         },
     });
     const document = target({ pictureInPictureEnabled: videoPip, getElementById: (id) => node(id) });
@@ -30,22 +34,22 @@ function fixture(open = false, {
         const captured = new Set();
         const classes = new Set();
         const element = target({
-            ownerDocument: document, style: { setProperty() {}, removeProperty() {} }, dataset: {}, textContent: '',
+            key, ownerDocument: document, style: { setProperty() {}, removeProperty() {} }, dataset: {}, textContent: '',
             classList: {
                 add: (name) => classes.add(name), remove: (name) => classes.delete(name),
                 toggle(name, value) { if (value) classes.add(name); else classes.delete(name); },
                 contains: (name) => classes.has(name),
             },
-            setAttribute() {}, removeAttribute() {}, replaceChildren() {}, focus() {},
+            setAttribute() {}, removeAttribute() {}, replaceChildren() {},
+            append(child) { this.lastElementChild = child; },
+            prepend(child) { this.firstElementChild = child; },
+            focus() { document.activeElement = this; },
+            contains: (other) => other === element || other?.key?.startsWith(`${key} `),
             setPointerCapture: (pointer) => captured.add(pointer),
             hasPointerCapture: (pointer) => captured.has(pointer),
             releasePointerCapture: (pointer) => captured.delete(pointer),
             querySelector: (selector) => node(`${key} ${selector}`),
-            querySelectorAll: (selector) => selector === '[data-edge]' ? ['n', 'e', 's', 'w', 'ne', 'se', 'sw', 'nw'].map((edge) => {
-                const handle = node(`${key} ${edge}`);
-                handle.dataset.edge = edge;
-                return handle;
-            }) : [],
+            querySelectorAll: () => [],
         });
         nodes.set(key, element);
         return element;
@@ -65,7 +69,7 @@ function fixture(open = false, {
     launcher.title = 'Live preview'; // Server-rendered action label.
     const window = target({
         innerWidth: width, innerHeight: height, requestAnimationFrame: () => 1, cancelAnimationFrame() {},
-        getComputedStyle: () => ({ cursor: 'ew-resize', getPropertyValue: () => '' }),
+        getComputedStyle: () => ({ direction, cursor: 'ew-resize', getPropertyValue: () => '' }),
         wp: { data: {
             select: () => ({ get: (scope, key) => preferences.get(key) }),
             dispatch: () => ({ setDefaults() {}, set: (scope, key, value) => {
@@ -81,7 +85,8 @@ function fixture(open = false, {
     });
     let actions;
     let state;
-    const controls = { closeMenu() {}, focus() {}, beforeMove() {}, remount() {}, update(next) { state = next; } };
+    const focusCalls = [];
+    const controls = { closeMenu() {}, focus(action) { focusCalls.push(action); }, beforeMove() {}, remount() {}, update(next) { state = next; } };
     const createControls = (panel, labels, callbacks) => { actions = callbacks; return controls; };
     const imports = {
         '@wordpress/data': window.wp.data,
@@ -89,13 +94,16 @@ function fixture(open = false, {
     };
     delete window.wp;
     const createPreviewPanel = vm.runInNewContext(`${source}\ncreatePreviewPanel`, { window, document, imports });
-    const view = createPreviewPanel(strings, { nativeSaving, beforeMove() {}, afterMove() {} }, () => ({
+    const view = createPreviewPanel(strings, {
+        nativeSaving, beforeMove() {}, afterMove() {},
+        onOpen() { view.setVisible(true); }, onClose() { view.setVisible(false); },
+    }, () => ({
         device: 'desktop', layout() {}, beforeMove() {}, afterMove() {},
     }), createControls);
     const panel = node('aflpp-panel');
     return {
         view, launcher, panel, node, actions, window, document, preferences, writes, detached, copiedStyles,
-        requests,
+        requests, focusCalls,
         get state() { return state; },
         rect: () => Object.fromEntries(['left', 'top', 'width', 'height'].map((key) => [key, parseFloat(panel.style[key])])),
     };
@@ -249,7 +257,7 @@ for (const dock of ['left', 'center', 'right']) {
 
 test('keyboard moving becomes a remembered custom position, while resizing preserves docking', () => {
     const h = fixture(true);
-    h.node('aflpp-panel w').fire('keydown', { key: 'ArrowRight' });
+    h.node('aflpp-panel .aflpp-resize').fire('keydown', { key: 'ArrowRight' });
     assert.equal(h.state.dock, 'right');
     assert.equal(h.rect().width, 470);
     assert.equal(h.rect().left + h.rect().width, 1424);
@@ -294,7 +302,7 @@ for (const invalid of [
     { ...layout(), bounds: { x: '100', y: 100, width: 500, height: 300 } },
     { ...layout(), bounds: { x: NaN, y: 100, width: 500, height: 300 } },
     { ...layout(), bounds: { x: 100, y: 100, width: -5, height: 300 } },
-    layout({ dock: 'invalid' }), layout({ expanded: 'yes' }), [], 'invalid',
+    layout({ dock: 'invalid' }), layout({ expanded: 'yes' }), layout({ anchor: 'invalid' }), [], 'invalid',
 ]) {
     test(`invalid saved layout falls back safely: ${JSON.stringify(invalid)}`, () => {
         const h = fixture(true, { layout: invalid });
@@ -323,6 +331,204 @@ test('reset restores compact default size and bottom-right position', () => {
     assert.deepEqual(h.rect(), { left: 944, top: 644, width: 480, height: 340 });
     assert.equal(h.state.mode, 'expand');
     assert.equal(h.preferences.get('layout').dock, 'right');
+});
+
+for (const dock of ['left', 'center', 'right']) {
+    test(`${dock} launcher shares the compact panel anchor after closing and moving away from its dock`, () => {
+        const h = fixture(true);
+        h.actions.dock(dock);
+        h.actions.close();
+        const factor = dock === 'left' ? 0 : dock === 'center' ? 0.5 : 1;
+        const before = h.rect();
+        assert.equal(parseFloat(h.launcher.style.left), before.left + before.width * factor);
+        assert.equal(parseFloat(h.launcher.style.top), before.top + before.height);
+        assert.equal(h.launcher.style.transform, `translate(${-100 * factor}%, -100%)`);
+        const dx = dock === 'left' ? 60 : -60;
+        h.launcher.fire('pointerdown');
+        h.launcher.fire('pointermove', { clientX: 100 + dx, clientY: 60 });
+        h.launcher.fire('pointerup');
+        const moved = h.rect();
+        assert.equal(moved.left, before.left + dx);
+        assert.equal(moved.top, before.top - 40);
+        assert.equal(h.state.dock, null);
+        assert.equal(h.preferences.get('layout').anchor, dock);
+        assert.deepEqual([moved.width, moved.height], [before.width, before.height]);
+        const reopened = fixture(false, { layout: h.preferences.get('layout') });
+        assert.equal(reopened.launcher.style.left, h.launcher.style.left);
+        assert.equal(reopened.launcher.style.transform, h.launcher.style.transform);
+    });
+
+    test(`${dock} resize grip follows the pointer while preserving the bottom anchor and docking`, () => {
+        const h = fixture(true);
+        h.actions.dock(dock);
+        const before = h.rect();
+        const grip = h.node('aflpp-panel .aflpp-resize');
+        const dx = dock === 'left' ? 50 : -50;
+        grip.fire('pointerdown');
+        grip.fire('pointermove', { clientX: 100 + dx, clientY: 40 });
+        grip.fire('pointerup');
+        const after = h.rect();
+        assert.equal(after.width, before.width + (dock === 'center' ? 100 : 50));
+        assert.equal(after.height, before.height + 60);
+        assert.equal(after.top, before.top - 60);
+        assert.equal(after.top + after.height, before.top + before.height);
+        assert.equal(dock === 'left' ? after.left + after.width : after.left,
+            (dock === 'left' ? before.left + before.width : before.left) + dx);
+        assert.equal(h.state.dock, dock);
+    });
+}
+
+test('launcher dragging suppresses only its generated pointer click, not later keyboard activation', () => {
+    const h = fixture(false);
+    h.launcher.fire('pointerdown');
+    h.launcher.fire('pointermove', { clientX: 50, clientY: 70 });
+    h.launcher.fire('pointerup');
+    assert.equal(h.launcher.fire('click', { detail: 1 }).defaultPrevented, true);
+    assert.equal(h.view.visible, false);
+    h.launcher.fire('click', { detail: 0 });
+    assert.equal(h.view.visible, true);
+    assert.equal(h.focusCalls.at(-1), 'actions');
+});
+
+test('a launcher click or sub-threshold movement opens normally without changing the layout', () => {
+    const h = fixture(false);
+    h.launcher.fire('pointerdown');
+    h.launcher.fire('pointermove', { clientX: 101, clientY: 101 });
+    h.launcher.fire('pointerup');
+    h.launcher.fire('click', { detail: 1 });
+    assert.equal(h.view.visible, true);
+    assert.equal(h.preferences.get('layout'), undefined);
+    assert.equal(h.state.dock, 'right');
+});
+
+test('the closed launcher can move an expanded panel without overwriting compact size or expanded mode', () => {
+    const h = fixture(false, { layout: layout({ expanded: true }) });
+    h.launcher.fire('keydown', { key: 'ArrowLeft', shiftKey: true });
+    const saved = h.preferences.get('layout');
+    assert.equal(saved.bounds.x, 110);
+    assert.equal(saved.bounds.width, 560);
+    assert.equal(saved.bounds.height, 420);
+    assert.equal(saved.expanded, true);
+});
+
+test('moving in a small viewport never replaces the preferred size with the temporary fitted size', () => {
+    const h = fixture(false, { layout: layout(), width: 390, height: 400 });
+    h.launcher.fire('keydown', { key: 'ArrowLeft' });
+    assert.equal(h.preferences.get('layout').bounds.width, 560);
+    assert.equal(h.preferences.get('layout').bounds.height, 420);
+    h.view.setVisible(true);
+    h.node('aflpp-panel .aflpp-move').fire('keydown', { key: 'ArrowUp' });
+    assert.equal(h.preferences.get('layout').bounds.width, 560);
+    assert.equal(h.preferences.get('layout').bounds.height, 420);
+});
+
+for (const anchor of ['left', 'center', 'right']) {
+    test(`${anchor} vertical resizing preserves the preferred horizontal geometry in a narrow viewport`, () => {
+        const saved = layout({ anchor });
+        const h = fixture(true, { layout: saved, width: 390, height: 800 });
+        h.node('aflpp-panel .aflpp-resize').fire('keydown', { key: 'ArrowUp' });
+        const { bounds } = h.preferences.get('layout');
+        assert.equal(bounds.x, saved.bounds.x);
+        assert.equal(bounds.width, saved.bounds.width);
+        assert.equal(bounds.height, saved.bounds.height + 10);
+        h.window.innerWidth = 1440;
+        h.window.fire('resize');
+        assert.equal(h.rect().left, saved.bounds.x);
+    });
+
+    test(`${anchor} horizontal resizing preserves the preferred vertical geometry in a short viewport`, () => {
+        const saved = layout({ anchor });
+        const h = fixture(true, { layout: saved, height: 400 });
+        h.node('aflpp-panel .aflpp-resize').fire('keydown', { key: anchor === 'left' ? 'ArrowRight' : 'ArrowLeft' });
+        const { bounds } = h.preferences.get('layout');
+        assert.equal(bounds.y, saved.bounds.y);
+        assert.equal(bounds.height, saved.bounds.height);
+        assert.equal(bounds.width, saved.bounds.width + (anchor === 'center' ? 20 : 10));
+        h.window.innerHeight = 1000;
+        h.window.fire('resize');
+        assert.equal(h.rect().top, saved.bounds.y);
+    });
+
+    test(`${anchor} returning a fitted resize to its origin restores all preferred bounds`, () => {
+        const saved = layout({ anchor });
+        const h = fixture(true, { layout: saved, width: 390, height: 400 });
+        const before = h.rect();
+        const grip = h.node('aflpp-panel .aflpp-resize');
+        grip.fire('pointerdown');
+        grip.fire('pointermove', { clientX: 120, clientY: 120 });
+        grip.fire('pointermove', { clientX: 100, clientY: 100 });
+        grip.fire('pointerup');
+        assert.deepEqual(h.rect(), before);
+        assert.deepEqual(plain(h.preferences.get('layout').bounds), saved.bounds);
+        const reopened = fixture(true, { layout: h.preferences.get('layout') });
+        assert.deepEqual(reopened.rect(), { left: 150, top: 180, width: 560, height: 420 });
+    });
+}
+
+for (const [direction, ends] of Object.entries({
+    ltr: { left: 'lastElementChild', center: 'firstElementChild', right: 'firstElementChild' },
+    rtl: { left: 'firstElementChild', center: 'lastElementChild', right: 'lastElementChild' },
+})) for (const [anchor, end] of Object.entries(ends)) {
+    test(`${direction} ${anchor} anchor places the resize control at the physical free corner in DOM order`, () => {
+        const h = fixture(true, { layout: layout({ dock: anchor, anchor }), direction });
+        assert.equal(h.node('aflpp-panel .aflpp-header')[end], h.node('aflpp-panel .aflpp-resize-control'));
+    });
+}
+
+for (const event of ['pointercancel', 'lostpointercapture', 'blur']) {
+    test(`${event} ends launcher dragging and saves its completed movement only once`, () => {
+        const h = fixture(false);
+        h.launcher.fire('pointerdown');
+        h.launcher.fire('pointermove', { clientX: 60, clientY: 70 });
+        (event === 'blur' ? h.window : h.launcher).fire(event);
+        h.launcher.fire('pointerup');
+        assert.equal(h.writes.length, 1);
+        assert.equal(h.launcher.hasPointerCapture(1), false);
+        assert.equal(h.document.documentElement.classList.contains('aflpp-window-dragging'), false);
+        assert.equal(h.panel.classList.contains('aflpp-dragging'), false);
+    });
+}
+
+test('returning a resize drag to its origin restores both original preferred dimensions', () => {
+    const h = fixture(true);
+    const before = h.rect();
+    const grip = h.node('aflpp-panel .aflpp-resize');
+    grip.fire('pointerdown');
+    grip.fire('pointermove', { clientX: 30, clientY: 20 });
+    grip.fire('pointermove', { clientX: 100, clientY: 100 });
+    grip.fire('pointerup');
+    assert.deepEqual(h.rect(), before);
+});
+
+test('explicit opening focuses actions and closing focuses the launcher, without automatic focus on load or visibility changes', () => {
+    const h = fixture(false);
+    assert.deepEqual(h.focusCalls, []);
+    h.view.setVisible(true);
+    h.view.setVisible(false);
+    assert.deepEqual(h.focusCalls, []);
+    h.launcher.fire('click', { detail: 0 });
+    assert.deepEqual(h.focusCalls, ['actions']);
+    h.actions.close();
+    assert.equal(h.document.activeElement, h.launcher);
+    assert.equal(h.view.visible, false);
+});
+
+test('the single resize grip hides in expanded, fullscreen and PiP modes', async () => {
+    const h = fixture(true, { pip: true });
+    const grip = h.node('aflpp-panel .aflpp-resize');
+    assert.equal(grip.hidden, false);
+    h.actions.mode();
+    assert.equal(grip.hidden, true);
+    h.actions.mode();
+    h.document.fullscreenElement = h.panel;
+    h.document.fire('fullscreenchange');
+    assert.equal(grip.hidden, true);
+    h.document.fullscreenElement = null;
+    h.document.fire('fullscreenchange');
+    await h.actions.popOut();
+    assert.equal(grip.hidden, true);
+    h.detached.close();
+    assert.equal(grip.hidden, false);
 });
 
 test('fullscreen state is not stored or restored as expanded mode', () => {

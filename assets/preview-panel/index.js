@@ -21,6 +21,9 @@ export function createPreviewPanel(strings, {
     if (!launcher || !panel) throw new Error('Preview panel markup is missing.');
 
     const move = panel.querySelector('.aflpp-move');
+    const resize = panel.querySelector('.aflpp-resize');
+    const resizeControl = panel.querySelector('.aflpp-resize-control');
+    const header = panel.querySelector('.aflpp-header');
     const dot = panel.querySelector('.aflpp-dot');
     const statusTooltip = panel.querySelector('.aflpp-status-tooltip');
     const caption = panel.querySelector('.aflpp-caption');
@@ -64,7 +67,8 @@ export function createPreviewPanel(strings, {
     const validLayout = saved && !Array.isArray(saved) && saved.bounds
         && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(saved.bounds[key]))
         && saved.bounds.width > 0 && saved.bounds.height > 0
-        && [null, 'left', 'center', 'right'].includes(saved.dock) && typeof saved.expanded === 'boolean';
+        && [null, 'left', 'center', 'right'].includes(saved.dock) && typeof saved.expanded === 'boolean'
+        && (saved.anchor === undefined || ['left', 'center', 'right'].includes(saved.anchor));
     let expanded = validLayout ? saved.expanded : false;
     let controls;
     let takeOverAction = false;
@@ -74,6 +78,10 @@ export function createPreviewPanel(strings, {
     };
     const bounds = validLayout ? { ...saved.bounds } : { x: 0, y: 0, width: 480, height: 340 };
     let dock = validLayout ? saved.dock : 'right';
+    // Keep the same collapse/resize corner when dragging away from a dock. Older layouts default to the right.
+    let anchor = dock || (validLayout && saved.anchor) || 'right';
+    let launcherDragClick = false;
+    const anchorFactor = () => anchor === 'left' ? 0 : anchor === 'center' ? 0.5 : 1;
 
     function labelMove() {
         const fixed = pipWindow || expanded || panel.ownerDocument.fullscreenElement === panel;
@@ -230,7 +238,7 @@ export function createPreviewPanel(strings, {
     }
 
     function rememberLayout() {
-        preferenceActions.set(scope, 'layout', { bounds: { ...bounds }, dock, expanded });
+        preferenceActions.set(scope, 'layout', { bounds: { ...bounds }, dock, anchor, expanded });
     }
 
     // Collapse the margins too on very small windows; never use an off-screen minimum.
@@ -267,6 +275,17 @@ export function createPreviewPanel(strings, {
     function draw() {
         if (pipWindow) return;
         let rect = compactRect();
+        const factor = anchorFactor();
+        const resizeAtEnd = (anchor === 'left') !== (mainWindow.getComputedStyle(header).direction === 'rtl');
+        Object.assign(launcher.style, {
+            left: `${rect.x + rect.width * factor}px`, top: `${rect.y + rect.height}px`,
+            transform: `translate(${-100 * factor}%, -100%)`,
+        });
+        panel.dataset.anchor = anchor;
+        // Keep the physical free corner and keyboard order correct in either text direction.
+        if (resizeAtEnd) {
+            if (header.lastElementChild !== resizeControl) header.append(resizeControl);
+        } else if (header.firstElementChild !== resizeControl) header.prepend(resizeControl);
         if (expanded) {
             const available = area(12, 44);
             rect = { x: available.left, y: available.top, width: available.width, height: available.height };
@@ -279,7 +298,7 @@ export function createPreviewPanel(strings, {
     function dockWindow(side = 'right', resetSize = false) {
         if (resetSize) Object.assign(bounds, { width: 480, height: 340 });
         expanded = false;
-        dock = side;
+        anchor = dock = side;
         draw();
         rememberLayout();
         syncControls();
@@ -294,6 +313,7 @@ export function createPreviewPanel(strings, {
         const inPage = !pipWindow && !full;
         labelMove();
         panel.classList.toggle('aflpp-expanded', expanded);
+        resize.hidden = !inPage || expanded;
         controls.update({
             inPage, inPip: !!pipWindow, dock, rememberVisibility, followChanges, device: responsiveViewport.device,
             canRefresh: current.canRefresh, hasPreview: current.hasPreview, previewUrl: current.previewUrl,
@@ -333,27 +353,51 @@ export function createPreviewPanel(strings, {
     }
     mainDocument.addEventListener('fullscreenchange', syncControls);
 
-    // Free resizing keeps the opposite edge fixed; docked resizing retains the chosen anchor.
-    function resizeBounds(start, edge, dx, dy) {
+    // Resize from the free top corner, keeping the shared bottom anchor fixed.
+    // A centered panel grows symmetrically, so its corner still follows the pointer.
+    function resizeBounds(start, dx, dy) {
         const available = area();
-        const minWidth = Math.min(320, available.width);
-        const minHeight = Math.min(220, available.height);
-        const left = edge.includes('w') ? Math.max(available.left, Math.min(start.x + dx, start.x + start.width - minWidth)) : start.x;
-        const top = edge.includes('n') ? Math.max(available.top, Math.min(start.y + dy, start.y + start.height - minHeight)) : start.y;
-        const right = edge.includes('e') ? Math.min(available.right, Math.max(start.x + start.width + dx, left + minWidth)) : start.x + start.width;
-        const bottom = edge.includes('s') ? Math.min(available.bottom, Math.max(start.y + start.height + dy, top + minHeight)) : start.y + start.height;
-        return { x: left, y: top, width: right - left, height: bottom - top };
+        const factor = anchorFactor();
+        const pinX = start.x + start.width * factor;
+        const pinY = start.y + start.height;
+        const maxWidth = anchor === 'left' ? available.right - pinX : anchor === 'right'
+            ? pinX - available.left : 2 * Math.min(pinX - available.left, available.right - pinX);
+        const maxHeight = pinY - available.top;
+        const widthDelta = anchor === 'left' ? dx : anchor === 'center' ? -2 * dx : -dx;
+        const width = Math.max(Math.min(320, maxWidth), Math.min(maxWidth, start.width + widthDelta));
+        const height = Math.max(Math.min(220, maxHeight), Math.min(maxHeight, start.height - dy));
+        const widthChanged = dx !== 0 && width !== start.width;
+        const heightChanged = dy !== 0 && height !== start.height;
+        // Untouched axes retain preferred coordinates too, not their temporary viewport fit.
+        return {
+            x: widthChanged ? pinX - width * factor : start.preferredBounds.x,
+            y: heightChanged ? pinY - height : start.preferredBounds.y,
+            width: widthChanged ? width : start.preferredBounds.width,
+            height: heightChanged ? height : start.preferredBounds.height,
+        };
     }
 
-    // Move with a compositor transform; commit bounds on release. Resize is batched once per frame.
-    function geometryControl(control, edge) {
+    function moveBounds(start, dx, dy) {
+        const rect = fit({ ...start, x: start.x + dx, y: start.y + dy });
+        // Moving never turns temporary viewport fitting into a new preferred size.
+        bounds.x = rect.x;
+        bounds.y = rect.y;
+        dock = null;
+    }
+
+    // Move the visible panel with a compositor transform. Hidden-panel/launcher layout and resizing are batched.
+    function geometryControl(control, resizing = false) {
+        const isLauncher = control === launcher;
+        const fixed = () => pipWindow || (!isLauncher && expanded) || mainDocument.fullscreenElement === panel;
         let drag;
         let animation;
+        const startRect = () => ({ ...compactRect(), preferredBounds: { ...bounds } });
         function paint() {
             animation = null;
             if (!drag) return;
-            if (edge === 'move') {
-                panel.style.transform = `translate3d(${bounds.x - drag.x}px, ${bounds.y - drag.y}px, 0)`;
+            if (!resizing && !isLauncher) {
+                const rect = compactRect();
+                panel.style.transform = `translate3d(${rect.x - drag.x}px, ${rect.y - drag.y}px, 0)`;
             } else draw();
         }
         function finish() {
@@ -367,64 +411,61 @@ export function createPreviewPanel(strings, {
             mainDocument.documentElement.style.removeProperty('--aflpp-drag-cursor');
             draw();
             if (moved) {
-                Object.assign(bounds, compactRect());
+                if (isLauncher) launcherDragClick = true;
                 rememberLayout();
                 syncControls();
             }
         }
         control.addEventListener('pointerdown', (event) => {
-            if (event.button !== 0 || pipWindow || expanded || mainDocument.fullscreenElement === panel) return;
+            if (event.button !== 0 || fixed()) return;
+            if (isLauncher) launcherDragClick = false;
             event.preventDefault();
             control.focus({ preventScroll: true });
             controls.closeMenu();
-            drag = { ...compactRect(), pointer: event.pointerId, pointerX: event.clientX, pointerY: event.clientY };
+            drag = { ...startRect(), pointer: event.pointerId, pointerX: event.clientX, pointerY: event.clientY };
             control.setPointerCapture(event.pointerId);
         });
         control.addEventListener('pointermove', (event) => {
             if (!drag || drag.pointer !== event.pointerId) return;
             const dx = event.clientX - drag.pointerX;
             const dy = event.clientY - drag.pointerY;
-            if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+            if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
             drag.moved = true;
-            if (edge === 'move') dock = null;
             panel.classList.add('aflpp-dragging');
             mainDocument.documentElement.style.setProperty(
-                '--aflpp-drag-cursor', edge === 'move' ? 'grabbing' : mainWindow.getComputedStyle(control).cursor
+                '--aflpp-drag-cursor', resizing ? mainWindow.getComputedStyle(control).cursor : 'grabbing'
             );
             mainDocument.documentElement.classList.add('aflpp-window-dragging');
-            if (edge === 'move') {
-                Object.assign(bounds, fit({ x: drag.x + dx, y: drag.y + dy, width: drag.width, height: drag.height }));
-            } else Object.assign(bounds, resizeBounds(drag, edge, dx, dy));
+            if (resizing) Object.assign(bounds, resizeBounds(drag, dx, dy));
+            else moveBounds(drag, dx, dy);
             if (!animation) animation = mainWindow.requestAnimationFrame(paint);
         });
         for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) control.addEventListener(event, finish);
         mainWindow.addEventListener('blur', finish);
         control.addEventListener('keydown', (event) => {
             const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
-            if (
-                !delta || event.altKey || event.ctrlKey || event.metaKey
-                || pipWindow || expanded || mainDocument.fullscreenElement === panel
-            ) return;
-            if (edge !== 'move' && !(delta[0] ? /[ew]/.test(edge) : /[ns]/.test(edge))) return;
+            if (!delta || event.altKey || event.ctrlKey || event.metaKey || fixed()) return;
             event.preventDefault();
             controls.closeMenu();
-            Object.assign(bounds, compactRect());
-            if (edge === 'move') dock = null;
+            const start = startRect();
             const step = event.shiftKey ? 40 : 10;
-            if (edge === 'move') {
-                bounds.x += delta[0] * step;
-                bounds.y += delta[1] * step;
-            } else Object.assign(bounds, resizeBounds(bounds, edge, delta[0] * step, delta[1] * step));
-            Object.assign(bounds, compactRect());
+            if (resizing) Object.assign(bounds, resizeBounds(start, delta[0] * step, delta[1] * step));
+            else moveBounds(start, delta[0] * step, delta[1] * step);
             draw();
             rememberLayout();
             syncControls();
+            const rect = compactRect();
+            status.textContent = resizing
+                ? `${strings.resize}: ${Math.round(rect.width)} × ${Math.round(rect.height)}` : strings.moved;
         });
     }
-    geometryControl(move, 'move');
-    for (const handle of panel.querySelectorAll('[data-edge]')) {
-        geometryControl(handle, handle.dataset.edge);
-    }
+    resize.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') resize.classList.add('aflpp-help-dismissed');
+    });
+    resize.addEventListener('blur', () => resize.classList.remove('aflpp-help-dismissed'));
+    geometryControl(move);
+    geometryControl(launcher);
+    geometryControl(resize, true);
     // Viewport corrections are temporary, not new saved layout preferences.
     mainWindow.addEventListener('resize', draw);
 
@@ -510,9 +551,16 @@ export function createPreviewPanel(strings, {
         status.textContent = current.text;
         controls.focus('actions');
     });
-    launcher.addEventListener('click', () => {
+    launcher.addEventListener('click', (event) => {
+        if (launcherDragClick && event.detail !== 0) {
+            launcherDragClick = false;
+            event.preventDefault();
+            return;
+        }
+        launcherDragClick = false;
         rememberPanelVisibility(true);
         onOpen();
+        if (visible) controls.focus('actions');
     });
     for (const button of [emptyRetry, feedbackRetry]) {
         button.addEventListener('click', () => {

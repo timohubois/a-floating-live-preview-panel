@@ -27,9 +27,11 @@ Use a disposable local or staging WordPress installation while this is in develo
 
 ## Usage
 
-Move the window by its title and resize from its edges or corners. The title and
-resize handles also support keyboard focus and arrow keys, with Shift for larger steps.
-Closing the window stops live updates without discarding editor fields.
+Move the window by its title or drag the closed **Live preview** launcher; they share
+one position. Resize using the visible grip at the free top corner. The title,
+launcher and resize grip support arrow keys, with Shift for larger steps.
+Closing the window stops live updates without discarding editor fields and focuses
+the launcher; opening it moves focus to **Preview actions**, without trapping focus.
 WordPress's native **Preview** button keeps the panel and its last frame visible,
 waits for outstanding live writes, and normally resumes live updates afterward.
 It retains WordPress's normal behavior, including saving changes to your own drafts.

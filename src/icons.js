@@ -7,6 +7,7 @@ import {
     mobile,
     moreVertical,
     navigationOverlay,
+    resizeCornerNE,
     tablet,
     update,
 } from '@wordpress/icons';
@@ -18,6 +19,7 @@ export const icons = {
     expand: fullscreen,
     compact: fullscreenExit,
     pip: navigationOverlay,
+    resize: resizeCornerNE,
     close,
     check,
     desktop,

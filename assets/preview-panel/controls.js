@@ -10,6 +10,7 @@ export function createPreviewControls(panel, strings, callbacks) {
     const pipContainer = panel.querySelector('.aflpp-pip-control');
     const launcherContainer = panel.ownerDocument.querySelector('#aflpp-toggle .aflpp-launcher-icon');
     const dismissContainer = panel.querySelector('.aflpp-dismiss-icon');
+    const resizeContainer = panel.querySelector('.aflpp-resize-icon');
     let root = createRoot(container);
     let state;
     let open = false;
@@ -18,8 +19,9 @@ export function createPreviewControls(panel, strings, callbacks) {
         const { inPage, inPip, mode, modeLabel, canRefresh, hasPreview, previewUrl, canPip, canFullscreen, dock, rememberVisibility, followChanges, device } = state;
         const command = (action) => () => { closeMenu(); action(); };
         return h(SlotFillProvider, null,
-            createPortal(icons.desktop, launcherContainer),
+            createPortal(icons.pip, launcherContainer),
             createPortal(icons.close, dismissContainer),
+            createPortal(icons.resize, resizeContainer),
             createPortal(!inPip && h(Button, {
                 className: 'aflpp-icon', icon: icons.refresh, label: strings.refresh, showTooltip: true,
                 disabled: !canRefresh, onClick: callbacks.refresh, 'data-action': 'refresh',
