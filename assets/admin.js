@@ -2,16 +2,16 @@
     'use strict';
 
     // Keep classic WordPress dependencies ordered; load application code as native modules.
-    const config = window.floatingLivePreview;
+    const config = window.aFloatingLivePreviewPanel;
     const form = document.getElementById('post');
     if (!config || !form) return;
 
     // Observe native saves before asynchronous module loading can yield to heartbeat or form events.
     const nativeEditor = { idle: Promise.resolve(), saving: false };
     let finishNative;
-    window.jQuery(document).on('heartbeat-send.flp', (event, data) => {
+    window.jQuery(document).on('heartbeat-send.aflpp', (event, data) => {
         if (data.wp_autosave) nativeEditor.idle = new Promise((resolve) => { finishNative = resolve; });
-    }).on('heartbeat-tick.flp heartbeat-error.flp', () => {
+    }).on('heartbeat-tick.aflpp heartbeat-error.aflpp', () => {
         finishNative?.();
         finishNative = null;
     });
@@ -41,9 +41,9 @@
         editor.initPreview(config, acf?.initAcf, nativeEditor, createPreviewPanel, scroll.createPreviewScroll);
     }).catch((error) => {
         stopWatchingStartupSave();
-        window.jQuery(document).off('.flp');
-        document.getElementById('flp-panel')?.remove();
-        document.getElementById('flp-toggle')?.remove();
+        window.jQuery(document).off('.aflpp');
+        document.getElementById('aflpp-panel')?.remove();
+        document.getElementById('aflpp-toggle')?.remove();
         const notice = document.createElement('div');
         notice.className = 'notice notice-error';
         notice.setAttribute('role', 'alert');
@@ -51,6 +51,6 @@
         message.textContent = config.strings.bootFailed;
         notice.append(message);
         (document.getElementById('wpbody-content') || document.body).prepend(notice);
-        console.error('Floating Live Preview could not start.', error);
+        console.error('A Floating Live Preview Panel could not start.', error);
     });
 })();

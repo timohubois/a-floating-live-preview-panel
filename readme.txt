@@ -1,4 +1,4 @@
-=== Floating Live Preview ===
+=== A Floating Live Preview Panel ===
 Contributors: timohubois
 Tags: preview, editor
 Requires PHP: 8.3
@@ -10,7 +10,7 @@ A floating live frontend preview while editing posts, pages and eligible custom 
 
 == Description ==
 
-Floating Live Preview adds a movable, resizable frontend preview to classic WordPress editing screens. Your theme and plugins render the output through WordPress's native preview routing, including redirects and browser-native output such as PDFs.
+A Floating Live Preview Panel adds a movable, resizable frontend preview to classic WordPress editing screens. Your theme and plugins render the output through WordPress's native preview routing, including redirects and browser-native output such as PDFs.
 
 Live updates write the current user's autosave revision, not the saved parent post, and do not publish changes. Use the normal WordPress save, update or publish controls to save your changes to the post.
 
@@ -33,7 +33,7 @@ The admin and frontend must share an origin, authenticated WordPress REST reques
 
 Use a disposable local or staging WordPress installation while this is in development.
 
-1. Place the plugin in /wp-content/plugins/floating-live-preview/ and activate **Floating Live Preview**.
+1. Place the plugin in /wp-content/plugins/a-floating-live-preview-panel/ and activate **A Floating Live Preview Panel**.
 2. Open a saved post, page or frontend-viewable custom post type in its classic editing screen. Save a new post as a draft first; the plugin does not enable revisions for you.
 3. Use the compact preview window or **Live preview** launcher. Edit supported fields and the preview refreshes after a short pause.
 4. Move the window by its title or resize from an edge or corner. Use **Preview actions** for docking, other display modes or **Open preview in new tab**.

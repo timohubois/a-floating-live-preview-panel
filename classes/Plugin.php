@@ -1,10 +1,10 @@
 <?php
 
-namespace FloatingLivePreview;
+namespace AFloatingLivePreviewPanel;
 
-use FloatingLivePreview\Compatibility\Acf;
-use FloatingLivePreview\Features\Editor;
-use FloatingLivePreview\Features\Preview;
+use AFloatingLivePreviewPanel\Compatibility\Acf;
+use AFloatingLivePreviewPanel\Features\Editor;
+use AFloatingLivePreviewPanel\Features\Preview;
 
 /** Connect the feature owners without registering their hooks or implementing their behavior. */
 final class Plugin

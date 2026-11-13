@@ -1,6 +1,6 @@
 <?php
 
-namespace FloatingLivePreview\Compatibility;
+namespace AFloatingLivePreviewPanel\Compatibility;
 
 use WP_Error;
 
@@ -46,18 +46,18 @@ final class Acf
             || (isset($input['_acf_fields']) && !is_array($input['_acf_fields']))
         ) {
             return new WP_Error(
-                'flp_acf_unavailable',
-                __('ACF preview support is unavailable or expired.', 'floating-live-preview'),
+                'aflpp_acf_unavailable',
+                __('ACF preview support is unavailable or expired.', 'a-floating-live-preview-panel'),
                 ['status' => 400]
             );
         }
         foreach (acf_get_field_groups(['post_id' => $payload['post_ID']]) as $group) {
             if ($this->hasPaginatedRepeater(acf_get_fields($group))) {
                 return new WP_Error(
-                    'flp_acf_pagination_unsupported',
+                    'aflpp_acf_pagination_unsupported',
                     __(
                         'Live preview does not support paginated ACF repeaters yet. Use WordPress Preview.',
-                        'floating-live-preview'
+                        'a-floating-live-preview-panel'
                     ),
                     ['status' => 422]
                 );
@@ -120,8 +120,8 @@ final class Acf
         $this->saving = false;
         if (!$revisionId || $this->savedId !== $revisionId) {
             return new WP_Error(
-                'flp_acf_not_saved',
-                __('ACF values were not saved to the preview revision.', 'floating-live-preview'),
+                'aflpp_acf_not_saved',
+                __('ACF values were not saved to the preview revision.', 'a-floating-live-preview-panel'),
                 ['status' => 409]
             );
         }

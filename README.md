@@ -1,4 +1,4 @@
-# Floating Live Preview
+# A Floating Live Preview Panel
 
 A floating live frontend preview while editing WordPress posts, pages and eligible
 custom post types in the classic editor.
@@ -21,7 +21,7 @@ to run the plugin.
 
 Use a disposable local or staging WordPress installation while this is in development.
 
-1. Place the plugin in `wp-content/plugins/floating-live-preview/` and activate **Floating Live Preview**.
+1. Place the plugin in `wp-content/plugins/a-floating-live-preview-panel/` and activate **A Floating Live Preview Panel**.
 2. Open a saved post, page or frontend-viewable custom post type in its classic editing screen. Save a new post as a draft first; the plugin does not enable revisions for you.
 3. Use the compact preview window or **Live preview** launcher. Edit supported fields and the preview refreshes after a short pause.
 4. Use WordPress's normal save, update or publish controls to save your changes to the post.

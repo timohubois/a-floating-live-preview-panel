@@ -1,8 +1,8 @@
 <?php
 
-namespace FloatingLivePreview\Features;
+namespace AFloatingLivePreviewPanel\Features;
 
-use FloatingLivePreview\Compatibility\Acf;
+use AFloatingLivePreviewPanel\Compatibility\Acf;
 use WP_Post;
 
 /** Own classic-editor eligibility, assets, module configuration and UI strings. */
@@ -40,19 +40,19 @@ final class Editor
         }
 
         wp_enqueue_style(
-            'floating-live-preview',
+            'a-floating-live-preview-panel',
             plugins_url('assets/editor.css', $this->file),
             [],
             $this->assetVersion('editor.css')
         );
         wp_enqueue_script(
-            'floating-live-preview',
+            'a-floating-live-preview-panel',
             plugins_url('assets/admin.js', $this->file),
             array_merge(['jquery', 'autosave', 'wp-preferences'], $this->acf->editorDependencies()),
             $this->assetVersion('admin.js'),
             true
         );
-        wp_add_inline_script('floating-live-preview', 'window.floatingLivePreview = ' . wp_json_encode([
+        wp_add_inline_script('a-floating-live-preview-panel', 'window.aFloatingLivePreviewPanel = ' . wp_json_encode([
             'editorModule' => add_query_arg(
                 'ver',
                 $this->assetVersion('editor.js'),
@@ -74,7 +74,7 @@ final class Editor
                 plugins_url('assets/preview-scroll.js', $this->file)
             ),
             'acfModule' => $this->acf->editorModule($this->file),
-            'endpoint' => rest_url('floating-live-preview/v1/posts/' . $post->ID . '/preview'),
+            'endpoint' => rest_url('a-floating-live-preview-panel/v1/posts/' . $post->ID . '/preview'),
             'postId' => $post->ID,
             'postTitle' => $post->post_title,
             'userId' => get_current_user_id(),
@@ -82,104 +82,113 @@ final class Editor
             'base' => $this->preview->fingerprint($post->ID),
             'available' => $post->post_status !== 'auto-draft' && wp_revisions_enabled($post),
             'strings' => [
-                'title' => __('Live preview', 'floating-live-preview'),
-                'preview' => __('Preview', 'floating-live-preview'),
-                'move' => __('Move preview: drag or use arrow keys', 'floating-live-preview'),
+                'title' => __('Live preview', 'a-floating-live-preview-panel'),
+                'preview' => __('Preview', 'a-floating-live-preview-panel'),
+                'move' => __('Move preview: drag or use arrow keys', 'a-floating-live-preview-panel'),
                 'resizeTop' => __(
                     'Resize top edge: drag or use Up/Down arrows; Shift for larger steps.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
                 'resizeTopRight' => __(
                     'Resize top-right corner: drag or use arrow keys; Shift for larger steps.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
                 'resizeRight' => __(
                     'Resize right edge: drag or use Left/Right arrows; Shift for larger steps.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
                 'resizeBottomRight' => __(
                     'Resize bottom-right corner: drag or use arrow keys; Shift for larger steps.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
                 'resizeBottom' => __(
                     'Resize bottom edge: drag or use Up/Down arrows; Shift for larger steps.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
                 'resizeBottomLeft' => __(
                     'Resize bottom-left corner: drag or use arrow keys; Shift for larger steps.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
                 'resizeLeft' => __(
                     'Resize left edge: drag or use Left/Right arrows; Shift for larger steps.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
                 'resizeTopLeft' => __(
                     'Resize top-left corner: drag or use arrow keys; Shift for larger steps.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
-                'reset' => __('Reset size and position', 'floating-live-preview'),
-                'close' => __('Close preview', 'floating-live-preview'),
-                'retry' => __('Retry', 'floating-live-preview'),
-                'takeOver' => __('Take over', 'floating-live-preview'),
-                'takingOver' => __('Taking over…', 'floating-live-preview'),
-                'waiting' => __('Waiting for the other preview to finish…', 'floating-live-preview'),
+                'reset' => __('Reset size and position', 'a-floating-live-preview-panel'),
+                'close' => __('Close preview', 'a-floating-live-preview-panel'),
+                'retry' => __('Retry', 'a-floating-live-preview-panel'),
+                'takeOver' => __('Take over', 'a-floating-live-preview-panel'),
+                'takingOver' => __('Taking over…', 'a-floating-live-preview-panel'),
+                'waiting' => __('Waiting for the other preview to finish…', 'a-floating-live-preview-panel'),
                 'handedOff' => __(
                     'Live preview is paused in this tab. Take over to continue here.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
                 'takeoverTimeout' => __(
                     'The other preview is still busy. Try again, or close it in the other tab.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
-                'refresh' => __('Refresh preview', 'floating-live-preview'),
-                'expand' => __('Expand preview', 'floating-live-preview'),
-                'compact' => __('Make preview compact', 'floating-live-preview'),
-                'fullscreen' => __('Enter fullscreen', 'floating-live-preview'),
-                'exitFullscreen' => __('Exit fullscreen', 'floating-live-preview'),
-                'pip' => __('Pop out preview', 'floating-live-preview'),
-                'pipHint' => __('PiP', 'floating-live-preview'),
-                'return' => __('Return to editor', 'floating-live-preview'),
-                'pipUnavailable' => __('Picture-in-Picture is not available in this browser.', 'floating-live-preview'),
-                'actions' => __('Preview actions', 'floating-live-preview'),
-                'display' => __('Display', 'floating-live-preview'),
-                'layout' => __('Layout', 'floating-live-preview'),
-                'preferences' => __('Preferences', 'floating-live-preview'),
-                'dockLeft' => __('Dock bottom left', 'floating-live-preview'),
-                'dockRight' => __('Dock bottom right', 'floating-live-preview'),
-                'loading' => __('Loading preview…', 'floating-live-preview'),
+                'refresh' => __('Refresh preview', 'a-floating-live-preview-panel'),
+                'expand' => __('Expand preview', 'a-floating-live-preview-panel'),
+                'compact' => __('Make preview compact', 'a-floating-live-preview-panel'),
+                'fullscreen' => __('Enter fullscreen', 'a-floating-live-preview-panel'),
+                'exitFullscreen' => __('Exit fullscreen', 'a-floating-live-preview-panel'),
+                'pip' => __('Pop out preview', 'a-floating-live-preview-panel'),
+                'pipHint' => __('PiP', 'a-floating-live-preview-panel'),
+                'return' => __('Return to editor', 'a-floating-live-preview-panel'),
+                'pipUnavailable' => __(
+                    'Picture-in-Picture is not available in this browser.',
+                    'a-floating-live-preview-panel'
+                ),
+                'actions' => __('Preview actions', 'a-floating-live-preview-panel'),
+                'display' => __('Display', 'a-floating-live-preview-panel'),
+                'layout' => __('Layout', 'a-floating-live-preview-panel'),
+                'preferences' => __('Preferences', 'a-floating-live-preview-panel'),
+                'dockLeft' => __('Dock bottom left', 'a-floating-live-preview-panel'),
+                'dockRight' => __('Dock bottom right', 'a-floating-live-preview-panel'),
+                'loading' => __('Loading preview…', 'a-floating-live-preview-panel'),
                 'bootFailed' => __(
                     'Live preview could not start. Reload the editor or use WordPress Preview.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
-                'viewport' => __('Preview viewport', 'floating-live-preview'),
-                'desktop' => __('Desktop', 'floating-live-preview'),
-                'tablet' => __('Tablet', 'floating-live-preview'),
-                'mobile' => __('Mobile', 'floating-live-preview'),
-                'viewportNotice' => __('Viewport width and scale; not device emulation.', 'floating-live-preview'),
-                'follow' => __('Scroll to changes', 'floating-live-preview'),
-                'rememberVisibility' => __('Remember preview visibility', 'floating-live-preview'),
-                'openPreview' => __('Open preview in new tab', 'floating-live-preview'),
-                'updating' => __('Refreshing preview…', 'floating-live-preview'),
-                'current' => __('Preview refreshed', 'floating-live-preview'),
-                'stale' => __('Changes pending…', 'floating-live-preview'),
+                'viewport' => __('Preview viewport', 'a-floating-live-preview-panel'),
+                'desktop' => __('Desktop', 'a-floating-live-preview-panel'),
+                'tablet' => __('Tablet', 'a-floating-live-preview-panel'),
+                'mobile' => __('Mobile', 'a-floating-live-preview-panel'),
+                'viewportNotice' => __(
+                    'Viewport width and scale; not device emulation.',
+                    'a-floating-live-preview-panel'
+                ),
+                'follow' => __('Scroll to changes', 'a-floating-live-preview-panel'),
+                'rememberVisibility' => __('Remember preview visibility', 'a-floating-live-preview-panel'),
+                'openPreview' => __('Open preview in new tab', 'a-floating-live-preview-panel'),
+                'updating' => __('Refreshing preview…', 'a-floating-live-preview-panel'),
+                'current' => __('Preview refreshed', 'a-floating-live-preview-panel'),
+                'stale' => __('Changes pending…', 'a-floating-live-preview-panel'),
                 'failed' => __(
                     'Preview could not be loaded. Retry or open preview in a new tab.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
                 'conflict' => __(
                     'Live preview is active in another tab. Take over to use this tab.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
-                'closeOther' => __('Close live preview in the other editor tab first.', 'floating-live-preview'),
+                'closeOther' => __(
+                    'Close live preview in the other editor tab first.',
+                    'a-floating-live-preview-panel'
+                ),
                 'unavailable' => __(
                     'Save a draft first and enable post revisions to use live preview.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
                 'browser' => __(
                     'Live preview needs a secure, same-origin site and a browser with Web Locks support.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
-                'saving' => __('Finishing preview before continuing…', 'floating-live-preview'),
+                'saving' => __('Finishing preview before continuing…', 'a-floating-live-preview-panel'),
             ],
         ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';', 'before');
     }

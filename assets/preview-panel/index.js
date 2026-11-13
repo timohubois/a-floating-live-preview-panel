@@ -4,7 +4,7 @@ export function createPreviewPanel(strings, {
 }, createPreviewViewport) {
     const mainWindow = window;
     const mainDocument = document;
-    const scope = 'floating-live-preview';
+    const scope = 'a-floating-live-preview-panel';
     const preferences = mainWindow.wp.data.select('core/preferences');
     const preferenceActions = mainWindow.wp.data.dispatch('core/preferences');
     preferenceActions.setDefaults(scope, {
@@ -47,7 +47,7 @@ export function createPreviewPanel(strings, {
     }
 
     function button(text, icon) {
-        const node = element('button', icon ? 'flp-icon' : 'flp-command', icon ? '' : text);
+        const node = element('button', icon ? 'aflpp-icon' : 'aflpp-command', icon ? '' : text);
         node.type = 'button';
         label(node, text);
         if (icon) setIcon(node, icon);
@@ -55,42 +55,42 @@ export function createPreviewPanel(strings, {
     }
 
     const launcher = button(strings.title, 'desktop');
-    launcher.id = 'flp-toggle';
-    launcher.className = 'flp-launcher';
+    launcher.id = 'aflpp-toggle';
+    launcher.className = 'aflpp-launcher';
     launcher.append(element('span', '', strings.title));
-    launcher.setAttribute('aria-controls', 'flp-panel');
+    launcher.setAttribute('aria-controls', 'aflpp-panel');
     launcher.setAttribute('aria-expanded', String(showOnLoad));
     launcher.hidden = showOnLoad;
-    const panel = element('section', 'flp-panel');
+    const panel = element('section', 'aflpp-panel');
     panel.hidden = !showOnLoad;
-    panel.id = 'flp-panel';
+    panel.id = 'aflpp-panel';
     panel.setAttribute('aria-label', strings.title);
     panel.dataset.state = 'loading';
-    const header = element('div', 'flp-header');
+    const header = element('div', 'aflpp-header');
     const move = button(strings.move);
-    move.className = 'flp-move';
-    const dot = element('span', 'flp-dot');
+    move.className = 'aflpp-move';
+    const dot = element('span', 'aflpp-dot');
     dot.setAttribute('aria-hidden', 'true');
-    const caption = element('span', 'flp-caption');
+    const caption = element('span', 'aflpp-caption');
     move.replaceChildren(dot, caption);
     const refresh = button(strings.refresh, 'update');
     refresh.disabled = true;
     const modeButton = button(strings.expand, 'fullscreen');
-    modeButton.classList.add('flp-mode');
-    const actions = element('details', 'flp-actions');
-    const actionsToggle = element('summary', 'flp-icon');
+    modeButton.classList.add('aflpp-mode');
+    const actions = element('details', 'aflpp-actions');
+    const actionsToggle = element('summary', 'aflpp-icon');
     label(actionsToggle, strings.actions);
     setIcon(actionsToggle, 'moreHorizontal');
-    const commands = element('div', 'flp-commands');
+    const commands = element('div', 'aflpp-commands');
     function commandGroup(text, ...controls) {
-        const group = element('div', 'flp-command-group');
+        const group = element('div', 'aflpp-command-group');
         group.setAttribute('role', 'group');
         group.setAttribute('aria-label', text);
-        group.append(element('p', 'flp-command-heading', text), ...controls);
+        group.append(element('p', 'aflpp-command-heading', text), ...controls);
         return group;
     }
     const pip = button(strings.pip);
-    const pipHint = element('span', 'flp-command-hint', strings.pipHint);
+    const pipHint = element('span', 'aflpp-command-hint', strings.pipHint);
     pipHint.setAttribute('aria-hidden', 'true');
     pip.append(pipHint);
     const fullscreen = button(strings.fullscreen);
@@ -102,12 +102,12 @@ export function createPreviewPanel(strings, {
     const follow = button(strings.follow);
     follow.setAttribute('aria-pressed', String(followChanges));
     for (const option of [rememberVisibilityOption, follow]) {
-        const check = element('span', 'flp-command-check');
+        const check = element('span', 'aflpp-command-check');
         check.setAttribute('aria-hidden', 'true');
         setIcon(check, 'check');
         option.append(check);
     }
-    const openPreview = element('a', 'flp-command flp-open-preview', strings.openPreview);
+    const openPreview = element('a', 'aflpp-command aflpp-open-preview', strings.openPreview);
     openPreview.target = '_blank';
     openPreview.rel = 'noopener noreferrer';
     openPreview.referrerPolicy = 'no-referrer';
@@ -122,15 +122,15 @@ export function createPreviewPanel(strings, {
     actions.append(actionsToggle, commands);
     const close = button(strings.close, 'closeSmall');
     header.append(refresh, move, actions, modeButton, close);
-    const viewport = element('div', 'flp-viewport');
-    const stage = element('div', 'flp-stage');
-    const empty = element('div', 'flp-empty', strings.loading);
+    const viewport = element('div', 'aflpp-viewport');
+    const stage = element('div', 'aflpp-stage');
+    const empty = element('div', 'aflpp-empty', strings.loading);
     viewport.append(stage, empty);
-    const devicebar = element('div', 'flp-devicebar');
-    const devices = element('div', 'flp-devices');
+    const devicebar = element('div', 'aflpp-devicebar');
+    const devices = element('div', 'aflpp-devices');
     devices.setAttribute('role', 'group');
     devices.setAttribute('aria-label', strings.viewport);
-    const dimensions = element('span', 'flp-dimensions');
+    const dimensions = element('span', 'aflpp-dimensions');
     dimensions.title = strings.viewportNotice;
     const responsiveViewport = createPreviewViewport(viewport, stage, dimensions, preferences.get(scope, 'viewport'));
     const deviceButtons = Object.fromEntries(responsiveViewport.presets.map((name) => {
@@ -145,12 +145,12 @@ export function createPreviewPanel(strings, {
         return [name, control];
     }));
     devicebar.append(devices, dimensions);
-    const feedback = element('div', 'flp-feedback');
+    const feedback = element('div', 'aflpp-feedback');
     feedback.hidden = true;
-    const errorText = element('span', 'flp-error');
+    const errorText = element('span', 'aflpp-error');
     const retry = button(strings.retry, 'update');
     feedback.append(errorText, retry);
-    const status = element('span', 'flp-sr-only');
+    const status = element('span', 'aflpp-sr-only');
     status.setAttribute('role', 'status');
     panel.append(header, viewport, devicebar, feedback, status);
     mainDocument.body.append(launcher, panel);
@@ -195,7 +195,7 @@ export function createPreviewPanel(strings, {
         const action = takeOverAction ? (takingOver ? strings.takingOver : strings.takeOver) : strings.retry;
         if (retry.title !== action) {
             label(retry, action);
-            retry.classList.toggle('flp-takeover', takeOverAction);
+            retry.classList.toggle('aflpp-takeover', takeOverAction);
             setIcon(retry, takeOverAction ? 'replace' : 'update');
             if (takeOverAction) retry.append(element('span', '', action));
         }
@@ -245,7 +245,7 @@ export function createPreviewPanel(strings, {
         Object.assign(panel.style, {
             left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px`, transform: '',
         });
-        panel.style.setProperty('--flp-menu-height', `${Math.max(1, rect.height - 48)}px`);
+        panel.style.setProperty('--aflpp-menu-height', `${Math.max(1, rect.height - 48)}px`);
     }
 
     function dockWindow(side = 'right', resetSize = false) {
@@ -269,7 +269,7 @@ export function createPreviewPanel(strings, {
         displayGroup.hidden = openPreview.hidden && pip.hidden && fullscreen.hidden;
         layoutGroup.hidden = !inPage;
         labelMove();
-        panel.classList.toggle('flp-expanded', expanded);
+        panel.classList.toggle('aflpp-expanded', expanded);
     }
 
     function toggleMode() {
@@ -344,9 +344,9 @@ export function createPreviewPanel(strings, {
             drag = null;
             mainWindow.cancelAnimationFrame(animation);
             if (control.hasPointerCapture(pointer)) control.releasePointerCapture(pointer);
-            panel.classList.remove('flp-dragging');
-            mainDocument.documentElement.classList.remove('flp-window-dragging');
-            mainDocument.documentElement.style.removeProperty('--flp-drag-cursor');
+            panel.classList.remove('aflpp-dragging');
+            mainDocument.documentElement.classList.remove('aflpp-window-dragging');
+            mainDocument.documentElement.style.removeProperty('--aflpp-drag-cursor');
             draw();
         }
         control.addEventListener('pointerdown', (event) => {
@@ -364,11 +364,11 @@ export function createPreviewPanel(strings, {
             const dy = event.clientY - drag.pointerY;
             if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
             drag.moved = true;
-            panel.classList.add('flp-dragging');
+            panel.classList.add('aflpp-dragging');
             mainDocument.documentElement.style.setProperty(
-                '--flp-drag-cursor', edge === 'move' ? 'grabbing' : mainWindow.getComputedStyle(control).cursor
+                '--aflpp-drag-cursor', edge === 'move' ? 'grabbing' : mainWindow.getComputedStyle(control).cursor
             );
-            mainDocument.documentElement.classList.add('flp-window-dragging');
+            mainDocument.documentElement.classList.add('aflpp-window-dragging');
             if (edge === 'move') {
                 Object.assign(bounds, fit({ x: drag.x + dx, y: drag.y + dy, width: drag.width, height: drag.height }));
             } else Object.assign(bounds, resizeBounds(drag, edge, dx, dy));
@@ -399,7 +399,7 @@ export function createPreviewPanel(strings, {
         s: strings.resizeBottom, sw: strings.resizeBottomLeft, w: strings.resizeLeft, nw: strings.resizeTopLeft,
     })) {
         const handle = button(text);
-        handle.className = `flp-resize flp-resize-${edge}`;
+        handle.className = `aflpp-resize aflpp-resize-${edge}`;
         handle.textContent = '';
         panel.append(handle);
         geometryControl(handle, edge);
@@ -424,15 +424,15 @@ export function createPreviewPanel(strings, {
                 const value = theme.getPropertyValue(name);
                 if (value) detached.document.documentElement.style.setProperty(name, value);
             }
-            const stylesheet = mainDocument.getElementById('floating-live-preview-css');
+            const stylesheet = mainDocument.getElementById('a-floating-live-preview-panel-css');
             if (stylesheet) {
                 const copy = stylesheet.cloneNode(true);
                 copy.addEventListener('load', responsiveViewport.layout, { once: true });
                 detached.document.head.append(copy);
             }
             detached.document.title = caption.textContent;
-            detached.document.body.className = 'flp-pip-document';
-            panel.classList.add('flp-pip');
+            detached.document.body.className = 'aflpp-pip-document';
+            panel.classList.add('aflpp-pip');
             detached.document.body.append(panel);
             responsiveViewport.layout();
             detached.addEventListener('resize', responsiveViewport.layout);
@@ -441,7 +441,7 @@ export function createPreviewPanel(strings, {
             detached.addEventListener('pagehide', () => {
                 beforeMove();
                 mainDocument.body.append(panel);
-                panel.classList.remove('flp-pip');
+                panel.classList.remove('aflpp-pip');
                 pipWindow = null;
                 draw();
                 responsiveViewport.layout();

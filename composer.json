@@ -1,5 +1,5 @@
 {
-    "name": "timohubois/floating-live-preview",
+    "name": "timohubois/a-floating-live-preview-panel",
     "description": "A floating live frontend preview while editing WordPress posts and pages.",
     "type": "wordpress-plugin",
     "license": "GPL-3.0-or-later",
@@ -26,7 +26,7 @@
     },
     "autoload": {
         "psr-4": {
-            "FloatingLivePreview\\": "classes/"
+            "AFloatingLivePreviewPanel\\": "classes/"
         }
     },
     "scripts": {

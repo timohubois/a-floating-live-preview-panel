@@ -1,8 +1,8 @@
 <?php
 
-namespace FloatingLivePreview\Features;
+namespace AFloatingLivePreviewPanel\Features;
 
-use FloatingLivePreview\Compatibility\Acf;
+use AFloatingLivePreviewPanel\Compatibility\Acf;
 use WP_Error;
 use WP_Post;
 use WP_REST_Request;
@@ -24,7 +24,7 @@ final class Preview
 
     public function registerRoutes(): void
     {
-        register_rest_route('floating-live-preview/v1', '/posts/(?P<id>\d+)/preview', [
+        register_rest_route('a-floating-live-preview-panel/v1', '/posts/(?P<id>\d+)/preview', [
             'methods' => WP_REST_Server::CREATABLE,
             'permission_callback' => [$this, 'canPreparePreview'],
             'callback' => [$this, 'preparePreview'],
@@ -46,8 +46,8 @@ final class Preview
             || !current_user_can('edit_post', $post->ID)
         ) {
             return new WP_Error(
-                'flp_cannot_preview',
-                __('You cannot preview this post.', 'floating-live-preview'),
+                'aflpp_cannot_preview',
+                __('You cannot preview this post.', 'a-floating-live-preview-panel'),
                 ['status' => rest_authorization_required_code()]
             );
         }
@@ -71,7 +71,7 @@ final class Preview
 
     private function stateAction(int $postId, int $revisionId): string
     {
-        return 'flp_read_' . $postId . '_' . $revisionId . '_' . $this->fingerprint($postId)
+        return 'aflpp_read_' . $postId . '_' . $revisionId . '_' . $this->fingerprint($postId)
             . ($revisionId ? $this->fingerprint($revisionId) : '');
     }
 
@@ -80,8 +80,8 @@ final class Preview
         // Editor writes require their REST nonce, including internal or alternative-auth requests.
         if (!wp_verify_nonce((string) $request->get_header('X-WP-Nonce'), 'wp_rest')) {
             return new WP_Error(
-                'flp_invalid_nonce',
-                __('The preview request expired. Reload the editor.', 'floating-live-preview'),
+                'aflpp_invalid_nonce',
+                __('The preview request expired. Reload the editor.', 'a-floating-live-preview-panel'),
                 ['status' => 403]
             );
         }
@@ -98,10 +98,10 @@ final class Preview
             || !hash_equals($this->fingerprint($postId), $input['base'])
         ) {
             return new WP_Error(
-                'flp_preview_conflict',
+                'aflpp_preview_conflict',
                 __(
                     'The post changed, is locked, or cannot use revisions. Reload the editor.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
                 ['status' => 409]
             );
@@ -148,7 +148,7 @@ final class Preview
             $acfError = $this->acf->verifySave(is_wp_error($revisionId) ? 0 : (int) $revisionId);
         }
         if (is_wp_error($revisionId)) {
-            return new WP_Error('flp_autosave_failed', $revisionId->get_error_message(), ['status' => 400]);
+            return new WP_Error('aflpp_autosave_failed', $revisionId->get_error_message(), ['status' => 400]);
         }
         if ($acfError) {
             return $acfError;
@@ -156,16 +156,16 @@ final class Preview
         $revisionId = (int) $revisionId;
         if ($revisionId && !$this->ownsRevision($postId, $revisionId)) {
             return new WP_Error(
-                'flp_revision_unavailable',
-                __('The preview revision is unavailable.', 'floating-live-preview'),
+                'aflpp_revision_unavailable',
+                __('The preview revision is unavailable.', 'a-floating-live-preview-panel'),
                 ['status' => 409]
             );
         }
 
         if (!hash_equals($base, $this->fingerprint($postId))) {
             return new WP_Error(
-                'flp_source_changed',
-                __('The saved post changed during preview. Reload the editor.', 'floating-live-preview'),
+                'aflpp_source_changed',
+                __('The saved post changed during preview. Reload the editor.', 'a-floating-live-preview-panel'),
                 ['status' => 409]
             );
         }
@@ -174,9 +174,9 @@ final class Preview
             'url' => get_preview_post_link($post, [
                 'preview_id' => $postId,
                 'preview_nonce' => wp_create_nonce('post_preview_' . $postId),
-                'flp_post' => $postId,
-                'flp_revision' => $revisionId,
-                'flp_token' => wp_create_nonce($action),
+                'aflpp_post' => $postId,
+                'aflpp_revision' => $revisionId,
+                'aflpp_token' => wp_create_nonce($action),
             ]),
         ]);
     }
@@ -212,18 +212,18 @@ final class Preview
 
     public function authorizePreview(): void
     {
-        if (!isset($_GET['flp_post'])) {
+        if (!isset($_GET['aflpp_post'])) {
             return;
         }
         if (!defined('DONOTCACHEPAGE')) {
             define('DONOTCACHEPAGE', true);
         }
         nocache_headers();
-        $postId = isset($_GET['flp_post']) && is_scalar($_GET['flp_post']) ? absint($_GET['flp_post']) : 0;
-        $revisionId = isset($_GET['flp_revision']) && is_scalar($_GET['flp_revision'])
-            ? absint($_GET['flp_revision']) : 0;
-        $token = isset($_GET['flp_token']) && is_string($_GET['flp_token'])
-            ? sanitize_text_field(wp_unslash($_GET['flp_token'])) : '';
+        $postId = isset($_GET['aflpp_post']) && is_scalar($_GET['aflpp_post']) ? absint($_GET['aflpp_post']) : 0;
+        $revisionId = isset($_GET['aflpp_revision']) && is_scalar($_GET['aflpp_revision'])
+            ? absint($_GET['aflpp_revision']) : 0;
+        $token = isset($_GET['aflpp_token']) && is_string($_GET['aflpp_token'])
+            ? sanitize_text_field(wp_unslash($_GET['aflpp_token'])) : '';
         if (
             !is_user_logged_in() || !$postId || !get_post($postId) || !current_user_can('edit_post', $postId)
             || ($revisionId && !$this->ownsRevision($postId, $revisionId))
@@ -232,7 +232,7 @@ final class Preview
             wp_die(
                 esc_html__(
                     'This preview expired or is unavailable. Refresh it from the editor.',
-                    'floating-live-preview'
+                    'a-floating-live-preview-panel'
                 ),
                 '',
                 ['response' => 403]
@@ -269,11 +269,11 @@ final class Preview
         // Enhance only the original authorized singular HTML; never require it as the routing result.
         add_filter('show_admin_bar', '__return_false', PHP_INT_MAX);
         add_action('wp_head', function (): void {
-            echo '<meta name="floating-live-preview" content="' . esc_attr($this->previewToken) . '">';
+            echo '<meta name="a-floating-live-preview-panel" content="' . esc_attr($this->previewToken) . '">';
         });
         add_action('wp_enqueue_scripts', function (): void {
             wp_enqueue_script(
-                'floating-live-preview-navigation',
+                'a-floating-live-preview-panel-navigation',
                 plugins_url('assets/preview.js', $this->file),
                 [],
                 $this->assetVersion('preview.js'),

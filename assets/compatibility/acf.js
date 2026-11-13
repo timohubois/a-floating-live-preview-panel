@@ -5,7 +5,7 @@ export function initAcf(form, changed, watchEditor) {
     for (const action of ['append', 'remove', 'sortstop', 'change_field']) acf.addAction(action, changed);
 
     // ACF uses jQuery events on inputs AND field containers; row moves also emit sortupdate.
-    window.jQuery(form).on('input.flpAcf change.flpAcf sortupdate.flpAcf', (event) => {
+    window.jQuery(form).on('input.aflppAcf change.aflppAcf sortupdate.aflppAcf', (event) => {
         if (event.target.closest('.acf-field')) changed();
     });
 

@@ -42,7 +42,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     try {
         if (mainWindow.BroadcastChannel) {
             channel = new mainWindow.BroadcastChannel(
-                `floating-live-preview:${config.endpoint}:${config.postId}:${config.userId}`
+                `a-floating-live-preview-panel:${config.endpoint}:${config.postId}:${config.userId}`
             );
             channel.onmessage = (event) => {
                 if (event.data?.type !== 'takeover' || !previewActive) return;
@@ -83,7 +83,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         mainWindow.tinymce.on('AddEditor', (event) => watchEditor(event.editor));
     }
     const acf = initAcf?.(form, changed, watchEditor);
-    $(form).on('input.flp change.flp', (event) => {
+    $(form).on('input.aflpp change.aflpp', (event) => {
         if (event.target.name === 'post_title') view.setTitle(event.target.value);
         if (['post_title', 'content', 'excerpt'].includes(event.target.name)) changed();
     });
@@ -108,7 +108,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     function loadFrame(address, version) {
         const url = new URL(address);
         if (url.origin === 'null' || url.origin !== mainWindow.location.origin) throw new Error(strings.browser);
-        const token = url.searchParams.get('flp_token');
+        const token = url.searchParams.get('aflpp_token');
         if (!token) throw new Error(strings.failed);
         previewAddress = url.href;
         // Keep the normal new-tab action pointed at the latest authorized URL, for every output type.
@@ -116,7 +116,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         return new Promise((resolve, reject) => {
             const frame = view.stage.ownerDocument.createElement('iframe');
             frame.title = strings.title;
-            frame.className = 'flp-frame flp-loading';
+            frame.className = 'aflpp-frame aflpp-loading';
             frame.setAttribute('aria-hidden', 'true');
             frame.setAttribute('tabindex', '-1');
             // Browser-native output: a sandbox blocks built-in viewers, including Chromium's PDF viewer.
@@ -147,7 +147,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
                 let doc;
                 try {
                     const candidate = frame.contentDocument;
-                    const marker = candidate?.querySelector('meta[name="floating-live-preview"]');
+                    const marker = candidate?.querySelector('meta[name="a-floating-live-preview-panel"]');
                     if (marker?.content === token) doc = candidate;
                 } catch { /* Cross-origin and browser-owned documents are not inspectable. */ }
                 let target;
@@ -164,7 +164,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
                 }
                 activeFrame = frame;
                 activeDocument = doc;
-                frame.classList.remove('flp-loading');
+                frame.classList.remove('aflpp-loading');
                 frame.removeAttribute('aria-hidden');
                 frame.removeAttribute('tabindex');
                 if (doc && replacing) scrolling.restore(doc, target);
@@ -272,7 +272,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
             // Queue cooperatively. Never steal: the current owner must finish its PHP write first.
             const options = controller ? { signal: controller.signal } : { ifAvailable: true };
             // Different sites can share an origin and post IDs; users of the same site/post must still contend.
-            ownershipTask = navigator.locks.request(`floating-live-preview:${config.endpoint}:${config.postId}`, options, async (lock) => {
+            ownershipTask = navigator.locks.request(`a-floating-live-preview-panel:${config.endpoint}:${config.postId}`, options, async (lock) => {
                 clearTimeout(takeoverTimer);
                 takeoverTimer = null;
                 takeoverRequest = null;

@@ -1,34 +1,34 @@
-.flp-panel,
-.flp-launcher {
-    --flp-bg: #fff;
-    --flp-border: #c3c4c7;
-    --flp-text: #1d2327;
-    --flp-muted: #50575e;
-    --flp-accent: var(--wp-admin-theme-color, #2271b1);
+.aflpp-panel,
+.aflpp-launcher {
+    --aflpp-bg: #fff;
+    --aflpp-border: #c3c4c7;
+    --aflpp-text: #1d2327;
+    --aflpp-muted: #50575e;
+    --aflpp-accent: var(--wp-admin-theme-color, #2271b1);
     box-sizing: border-box;
-    color: var(--flp-text);
+    color: var(--aflpp-text);
     font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
 }
 
-.flp-panel {
+.aflpp-panel {
     position: fixed;
     z-index: 99990;
     display: flex;
     flex-direction: column;
     isolation: isolate;
-    border: 1px solid var(--flp-border);
+    border: 1px solid var(--aflpp-border);
     border-radius: 6px;
-    background: var(--flp-bg);
+    background: var(--aflpp-bg);
     box-shadow: 0 8px 32px #0003, 0 2px 8px #0002;
 }
 
-.flp-panel[hidden],
-.flp-panel [hidden],
-.flp-launcher[hidden] { display: none !important; }
+.aflpp-panel[hidden],
+.aflpp-panel [hidden],
+.aflpp-launcher[hidden] { display: none !important; }
 
-.flp-panel button,
-.flp-panel summary {
+.aflpp-panel button,
+.aflpp-panel summary {
     appearance: none;
     box-sizing: border-box;
     margin: 0;
@@ -41,7 +41,7 @@
     cursor: pointer;
 }
 
-.flp-header {
+.aflpp-header {
     box-sizing: border-box;
     display: flex;
     flex-shrink: 0;
@@ -49,12 +49,12 @@
     gap: 2px;
     height: 40px;
     padding: 4px 7px;
-    border-bottom: 1px solid var(--flp-border);
+    border-bottom: 1px solid var(--aflpp-border);
     border-radius: 5px 5px 0 0;
     background: #f6f7f7;
 }
 
-.flp-panel .flp-move {
+.aflpp-panel .aflpp-move {
     display: flex;
     flex: 1;
     align-items: center;
@@ -69,24 +69,24 @@
     -webkit-user-select: none;
     user-select: none;
 }
-.flp-caption { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.flp-panel .flp-mode { margin-left: 6px; }
+.aflpp-caption { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aflpp-panel .aflpp-mode { margin-left: 6px; }
 
-.flp-dot {
+.aflpp-dot {
     flex-shrink: 0;
     width: 6px;
     height: 6px;
     border-radius: 50%;
     background: #8c8f94;
 }
-.flp-panel[data-state="ready"] .flp-dot { background: #008a20; }
-.flp-panel[data-state="loading"] .flp-dot { background: var(--flp-accent); }
-.flp-panel[data-state="stale"] .flp-dot,
-.flp-panel[data-state="conflict"] .flp-dot { background: #996800; }
-.flp-panel[data-state="handover"] .flp-dot { background: var(--flp-accent); }
-.flp-panel[data-state="error"] .flp-dot { background: #d63638; }
+.aflpp-panel[data-state="ready"] .aflpp-dot { background: #008a20; }
+.aflpp-panel[data-state="loading"] .aflpp-dot { background: var(--aflpp-accent); }
+.aflpp-panel[data-state="stale"] .aflpp-dot,
+.aflpp-panel[data-state="conflict"] .aflpp-dot { background: #996800; }
+.aflpp-panel[data-state="handover"] .aflpp-dot { background: var(--aflpp-accent); }
+.aflpp-panel[data-state="error"] .aflpp-dot { background: #d63638; }
 
-.flp-panel .flp-icon {
+.aflpp-panel .aflpp-icon {
     display: inline-flex;
     flex-shrink: 0;
     align-items: center;
@@ -94,99 +94,99 @@
     width: 28px;
     height: 28px;
     padding: 2px;
-    color: var(--flp-muted);
+    color: var(--aflpp-muted);
     list-style: none;
 }
-.flp-icon svg,
-.flp-launcher svg { display: block; width: 24px; height: 24px; flex-shrink: 0; }
-.flp-panel summary::-webkit-details-marker { display: none; }
-.flp-panel button:not(.flp-move, .flp-resize):hover,
-.flp-panel summary:hover,
-.flp-panel .flp-open-preview:hover,
-.flp-panel details[open] > summary { background: #dcdcde; color: var(--wp-admin-theme-color-darker-10, var(--flp-accent)); }
-.flp-panel .flp-icon[aria-pressed="true"] { background: var(--flp-accent); color: #fff; }
-.flp-panel button:disabled { color: #a7aaad; cursor: not-allowed; }
-.flp-panel button:focus-visible,
-.flp-panel summary:focus-visible,
-.flp-panel .flp-open-preview:focus-visible,
-.flp-launcher:focus-visible { outline: var(--wp-admin-border-width-focus, 2px) solid var(--flp-accent); outline-offset: 1px; }
+.aflpp-icon svg,
+.aflpp-launcher svg { display: block; width: 24px; height: 24px; flex-shrink: 0; }
+.aflpp-panel summary::-webkit-details-marker { display: none; }
+.aflpp-panel button:not(.aflpp-move, .aflpp-resize):hover,
+.aflpp-panel summary:hover,
+.aflpp-panel .aflpp-open-preview:hover,
+.aflpp-panel details[open] > summary { background: #dcdcde; color: var(--wp-admin-theme-color-darker-10, var(--aflpp-accent)); }
+.aflpp-panel .aflpp-icon[aria-pressed="true"] { background: var(--aflpp-accent); color: #fff; }
+.aflpp-panel button:disabled { color: #a7aaad; cursor: not-allowed; }
+.aflpp-panel button:focus-visible,
+.aflpp-panel summary:focus-visible,
+.aflpp-panel .aflpp-open-preview:focus-visible,
+.aflpp-launcher:focus-visible { outline: var(--wp-admin-border-width-focus, 2px) solid var(--aflpp-accent); outline-offset: 1px; }
 
-.flp-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #dcdcde; }
-.flp-stage { position: absolute; top: 0; transform-origin: top left; }
-.flp-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
-.flp-loading { opacity: 0; pointer-events: none; }
-.flp-empty { position: relative; display: grid; place-items: center; box-sizing: border-box; height: 100%; padding: 24px; background: #f6f7f7; color: var(--flp-muted); text-align: center; }
-.flp-devicebar { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 8px; border-top: 1px solid var(--flp-border); border-radius: 0 0 5px 5px; background: #f6f7f7; }
-.flp-devices { display: flex; gap: 3px; }
-.flp-dimensions { color: var(--flp-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.aflpp-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #dcdcde; }
+.aflpp-stage { position: absolute; top: 0; transform-origin: top left; }
+.aflpp-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
+.aflpp-loading { opacity: 0; pointer-events: none; }
+.aflpp-empty { position: relative; display: grid; place-items: center; box-sizing: border-box; height: 100%; padding: 24px; background: #f6f7f7; color: var(--aflpp-muted); text-align: center; }
+.aflpp-devicebar { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 8px; border-top: 1px solid var(--aflpp-border); border-radius: 0 0 5px 5px; background: #f6f7f7; }
+.aflpp-devices { display: flex; gap: 3px; }
+.aflpp-dimensions { color: var(--aflpp-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-.flp-actions { position: relative; flex-shrink: 0; }
-.flp-commands {
+.aflpp-actions { position: relative; flex-shrink: 0; }
+.aflpp-commands {
     position: absolute;
     z-index: 3;
     top: 33px;
     right: -66px;
     box-sizing: border-box;
     width: 248px;
-    max-height: var(--flp-menu-height, calc(100dvh - 96px));
+    max-height: var(--aflpp-menu-height, calc(100dvh - 96px));
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 5px;
-    border: 1px solid var(--flp-border);
+    border: 1px solid var(--aflpp-border);
     border-radius: 3px;
-    background: var(--flp-bg);
+    background: var(--aflpp-bg);
     box-shadow: 0 4px 16px #0003;
 }
-.flp-command-group { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #e5e5e5; }
-.flp-command-group:last-of-type { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
-.flp-command-heading { margin: 0; padding: 3px 9px 2px; color: var(--flp-muted); font-size: 10px; line-height: 14px; font-weight: 600; }
-.flp-panel .flp-command { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 28px; padding: 4px 9px; text-align: left; font-size: 12px; }
-.flp-command-hint { flex-shrink: 0; margin-left: auto; color: var(--flp-muted); font-size: 10px; }
-.flp-command-check { visibility: hidden; flex-shrink: 0; width: 20px; height: 20px; margin-left: auto; color: var(--flp-accent); }
-.flp-command-check svg { display: block; width: 20px; height: 20px; }
-.flp-command[aria-pressed="true"] .flp-command-check { visibility: visible; }
-.flp-feedback { display: flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 7px 10px; border-top: 1px solid var(--flp-border); border-radius: 0 0 5px 5px; background: #fcf0f1; color: #b32d2e; }
-.flp-error { flex: 1; max-height: 4.2em; overflow: auto; font-size: 11px; }
-.flp-panel .flp-open-preview { box-sizing: border-box; border-radius: 2px; color: inherit; text-decoration: none; }
-.flp-panel .flp-takeover { width: auto; gap: 4px; padding: 2px 8px; white-space: nowrap; }
-.flp-panel[data-state="conflict"] .flp-feedback,
-.flp-panel[data-state="handover"] .flp-feedback { background: #f6f7f7; color: var(--flp-text); }
-.flp-panel[data-state="error"] .flp-devicebar,
-.flp-panel[data-state="conflict"] .flp-devicebar,
-.flp-panel[data-state="handover"] .flp-devicebar { border-radius: 0; }
+.aflpp-command-group { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #e5e5e5; }
+.aflpp-command-group:last-of-type { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+.aflpp-command-heading { margin: 0; padding: 3px 9px 2px; color: var(--aflpp-muted); font-size: 10px; line-height: 14px; font-weight: 600; }
+.aflpp-panel .aflpp-command { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 28px; padding: 4px 9px; text-align: left; font-size: 12px; }
+.aflpp-command-hint { flex-shrink: 0; margin-left: auto; color: var(--aflpp-muted); font-size: 10px; }
+.aflpp-command-check { visibility: hidden; flex-shrink: 0; width: 20px; height: 20px; margin-left: auto; color: var(--aflpp-accent); }
+.aflpp-command-check svg { display: block; width: 20px; height: 20px; }
+.aflpp-command[aria-pressed="true"] .aflpp-command-check { visibility: visible; }
+.aflpp-feedback { display: flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 7px 10px; border-top: 1px solid var(--aflpp-border); border-radius: 0 0 5px 5px; background: #fcf0f1; color: #b32d2e; }
+.aflpp-error { flex: 1; max-height: 4.2em; overflow: auto; font-size: 11px; }
+.aflpp-panel .aflpp-open-preview { box-sizing: border-box; border-radius: 2px; color: inherit; text-decoration: none; }
+.aflpp-panel .aflpp-takeover { width: auto; gap: 4px; padding: 2px 8px; white-space: nowrap; }
+.aflpp-panel[data-state="conflict"] .aflpp-feedback,
+.aflpp-panel[data-state="handover"] .aflpp-feedback { background: #f6f7f7; color: var(--aflpp-text); }
+.aflpp-panel[data-state="error"] .aflpp-devicebar,
+.aflpp-panel[data-state="conflict"] .aflpp-devicebar,
+.aflpp-panel[data-state="handover"] .aflpp-devicebar { border-radius: 0; }
 
-.flp-panel .flp-resize {
+.aflpp-panel .aflpp-resize {
     position: absolute;
     z-index: 4;
     padding: 0;
     border-radius: 0;
     background: transparent;
-    cursor: var(--flp-resize-cursor);
+    cursor: var(--aflpp-resize-cursor);
     touch-action: none;
 }
-.flp-resize-n, .flp-resize-s { --flp-resize-cursor: ns-resize; left: 10px; right: 10px; height: 8px; }
-.flp-resize-e, .flp-resize-w { --flp-resize-cursor: ew-resize; top: 10px; bottom: 10px; width: 8px; }
-.flp-resize-n { top: -4px; }
-.flp-resize-s { bottom: -4px; }
-.flp-resize-e { right: -4px; }
-.flp-resize-w { left: -4px; }
-.flp-resize-ne, .flp-resize-se, .flp-resize-sw, .flp-resize-nw { width: 14px; height: 14px; }
-.flp-resize-ne { --flp-resize-cursor: nesw-resize; top: -4px; right: -4px; }
-.flp-resize-se { --flp-resize-cursor: nwse-resize; bottom: -4px; right: -4px; }
-.flp-resize-sw { --flp-resize-cursor: nesw-resize; bottom: -4px; left: -4px; }
-.flp-resize-nw { --flp-resize-cursor: nwse-resize; top: -4px; left: -4px; }
-.flp-panel .flp-resize:hover { background: transparent; }
-.flp-dragging iframe { pointer-events: none; }
-.flp-window-dragging,
-.flp-window-dragging * { cursor: var(--flp-drag-cursor) !important; -webkit-user-select: none !important; user-select: none !important; }
-.flp-expanded .flp-resize,
-.flp-panel:fullscreen .flp-resize,
-.flp-pip .flp-resize { display: none; }
-.flp-expanded .flp-move,
-.flp-panel:fullscreen .flp-move,
-.flp-pip .flp-move { cursor: default; }
+.aflpp-resize-n, .aflpp-resize-s { --aflpp-resize-cursor: ns-resize; left: 10px; right: 10px; height: 8px; }
+.aflpp-resize-e, .aflpp-resize-w { --aflpp-resize-cursor: ew-resize; top: 10px; bottom: 10px; width: 8px; }
+.aflpp-resize-n { top: -4px; }
+.aflpp-resize-s { bottom: -4px; }
+.aflpp-resize-e { right: -4px; }
+.aflpp-resize-w { left: -4px; }
+.aflpp-resize-ne, .aflpp-resize-se, .aflpp-resize-sw, .aflpp-resize-nw { width: 14px; height: 14px; }
+.aflpp-resize-ne { --aflpp-resize-cursor: nesw-resize; top: -4px; right: -4px; }
+.aflpp-resize-se { --aflpp-resize-cursor: nwse-resize; bottom: -4px; right: -4px; }
+.aflpp-resize-sw { --aflpp-resize-cursor: nesw-resize; bottom: -4px; left: -4px; }
+.aflpp-resize-nw { --aflpp-resize-cursor: nwse-resize; top: -4px; left: -4px; }
+.aflpp-panel .aflpp-resize:hover { background: transparent; }
+.aflpp-dragging iframe { pointer-events: none; }
+.aflpp-window-dragging,
+.aflpp-window-dragging * { cursor: var(--aflpp-drag-cursor) !important; -webkit-user-select: none !important; user-select: none !important; }
+.aflpp-expanded .aflpp-resize,
+.aflpp-panel:fullscreen .aflpp-resize,
+.aflpp-pip .aflpp-resize { display: none; }
+.aflpp-expanded .aflpp-move,
+.aflpp-panel:fullscreen .aflpp-move,
+.aflpp-pip .aflpp-move { cursor: default; }
 
-.flp-launcher {
+.aflpp-launcher {
     position: fixed;
     right: 16px;
     bottom: 16px;
@@ -195,26 +195,26 @@
     align-items: center;
     gap: 6px;
     padding: 7px 12px;
-    border: 1px solid var(--flp-border);
+    border: 1px solid var(--aflpp-border);
     border-radius: 3px;
-    background: var(--flp-bg);
+    background: var(--aflpp-bg);
     box-shadow: 0 2px 8px #0002;
     cursor: pointer;
 }
-.flp-launcher:hover { background: #f6f7f7; color: var(--wp-admin-theme-color-darker-10, var(--flp-accent)); }
-.flp-panel:fullscreen { width: 100% !important; height: 100% !important; inset: 0 !important; transform: none !important; border: 0; border-radius: 0; }
-.flp-panel:fullscreen { --flp-menu-height: calc(100dvh - 48px) !important; }
-.flp-panel:fullscreen .flp-header,
-.flp-panel:fullscreen .flp-devicebar { border-radius: 0; }
-.flp-pip-document { margin: 0; background: #f0f0f1; }
-.flp-panel.flp-pip { --flp-menu-height: calc(100dvh - 48px) !important; inset: 0 !important; width: 100% !important; height: 100% !important; transform: none !important; border: 0; border-radius: 0; box-shadow: none; }
-.flp-pip .flp-header,
-.flp-pip .flp-devicebar { border-radius: 0; }
-.flp-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.aflpp-launcher:hover { background: #f6f7f7; color: var(--wp-admin-theme-color-darker-10, var(--aflpp-accent)); }
+.aflpp-panel:fullscreen { width: 100% !important; height: 100% !important; inset: 0 !important; transform: none !important; border: 0; border-radius: 0; }
+.aflpp-panel:fullscreen { --aflpp-menu-height: calc(100dvh - 48px) !important; }
+.aflpp-panel:fullscreen .aflpp-header,
+.aflpp-panel:fullscreen .aflpp-devicebar { border-radius: 0; }
+.aflpp-pip-document { margin: 0; background: #f0f0f1; }
+.aflpp-panel.aflpp-pip { --aflpp-menu-height: calc(100dvh - 48px) !important; inset: 0 !important; width: 100% !important; height: 100% !important; transform: none !important; border: 0; border-radius: 0; box-shadow: none; }
+.aflpp-pip .aflpp-header,
+.aflpp-pip .aflpp-devicebar { border-radius: 0; }
+.aflpp-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 @media (prefers-reduced-motion: no-preference) {
-    .flp-icon { transition: background-color 100ms, color 100ms; }
-    .flp-panel[data-state="loading"] .flp-dot,
-    .flp-panel[data-state="handover"] .flp-dot { animation: flp-pulse 1s ease-in-out infinite alternate; }
-    @keyframes flp-pulse { to { opacity: .35; } }
+    .aflpp-icon { transition: background-color 100ms, color 100ms; }
+    .aflpp-panel[data-state="loading"] .aflpp-dot,
+    .aflpp-panel[data-state="handover"] .aflpp-dot { animation: aflpp-pulse 1s ease-in-out infinite alternate; }
+    @keyframes aflpp-pulse { to { opacity: .35; } }
 }
