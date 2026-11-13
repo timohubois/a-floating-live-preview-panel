@@ -80,8 +80,7 @@ composer check-platform-reqs
 composer php:lint
 ```
 
-There is no JavaScript build step. Optional JavaScript regression tests use Node.js;
-browser-based tests also require Chromium (`CHROMIUM_BIN` can override its executable):
+There is no JavaScript build step. Optional JavaScript regression tests use Node.js:
 
 ```sh
 node --test tests/*.mjs
