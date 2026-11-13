@@ -50,7 +50,7 @@ metadata, related content and global settings are not live inputs. WordPress's
 normal server autosave continues independently, including its usual updates to
 your own drafts.
 
-- **ACF:** support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters are unsupported; use ordinary WordPress Preview for those forms.
+- **ACF:** support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages.
 - **Frontend output:** your theme and plugins determine the result, including redirects and browser-native output such as PDFs. Scroll restoration and change-following only apply to recognized HTML previews. Styling-only changes may be missed; dynamic output can introduce unrelated differences. PDF page, zoom and scroll state may reset on refresh.
 - **Trusted code only:** the preview is not sandboxed. Same-origin frontend scripts can access the editor. Use trusted theme and plugin code.
 - **Embedding:** site and browser restrictions still apply. Do not weaken them to force embedding; use **Open preview in new tab** when needed. **Preview refreshed** reports a document load, not verified content or publication.

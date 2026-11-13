@@ -43,7 +43,7 @@ Use a disposable local or staging WordPress installation while this is in develo
 
 = Which fields update live? =
 
-Title, content, excerpt and supported post-local ACF fields. Other metadata, related content and global settings are not live inputs. ACF support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters are unsupported; use ordinary WordPress Preview for those forms.
+Title, content, excerpt and supported post-local ACF fields. Other metadata, related content and global settings are not live inputs. ACF support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages.
 
 = Does this replace saving or publishing? =
 

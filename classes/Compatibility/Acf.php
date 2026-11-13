@@ -51,18 +51,7 @@ final class Acf
                 ['status' => 400]
             );
         }
-        foreach (acf_get_field_groups(['post_id' => $payload['post_ID']]) as $group) {
-            if ($this->hasPaginatedRepeater(acf_get_fields($group))) {
-                return new WP_Error(
-                    'aflpp_acf_pagination_unsupported',
-                    __(
-                        'Live preview does not support paginated ACF repeaters yet. Use WordPress Preview.',
-                        'a-floating-live-preview-panel'
-                    ),
-                    ['status' => 422]
-                );
-            }
-        }
+        // Preserve row keys and status markers so ACF merges paginated edits with the seeded saved rows.
         $payload['acf'] = $input['acf'];
         $payload['_acf_nonce'] = $input['_acf_nonce'];
         $payload['_acf_changed'] = '1'; // Preserve ACF's classic-preview save context.
@@ -71,24 +60,6 @@ final class Acf
         }
         add_action('acf/save_post', [$this, 'recordSave'], PHP_INT_MAX);
         return $payload;
-    }
-
-    private function hasPaginatedRepeater(array $fields): bool
-    {
-        foreach ($fields as $field) {
-            if (($field['type'] ?? '') === 'repeater' && !empty($field['pagination'])) {
-                return true;
-            }
-            if ($this->hasPaginatedRepeater($field['sub_fields'] ?? [])) {
-                return true;
-            }
-            foreach ($field['layouts'] ?? [] as $layout) {
-                if ($this->hasPaginatedRepeater($layout['sub_fields'] ?? [])) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     /** Metadata seeding must also invalidate this revision's request-local ACF value cache. */
