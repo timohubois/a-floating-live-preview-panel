@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
+import { previewSourceForVm } from './helpers/modules.mjs';
 
-const source = (await readFile(new URL('../assets/editor-preview.js', import.meta.url), 'utf8'))
-    .replace('export function initPreview', 'function initPreview');
+const source = await previewSourceForVm(new URL('../assets/editor-preview.js', import.meta.url));
 const flush = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
 
 async function fixture({ visible = true, pending = true } = {}) {
@@ -30,7 +30,7 @@ async function fixture({ visible = true, pending = true } = {}) {
         FormData: class { *[Symbol.iterator]() { yield ['post_title', 'Unsaved title']; } },
         fetch: () => { requests++; return new Promise((resolve) => { finishRequest = resolve; }); },
     };
-    const initPreview = vm.runInNewContext(`${source}\ninitPreview`, context);
+    const initPreview = vm.runInNewContext(`${source}\n(...args) => initPreview(...args, createPreviewFrame)`, context);
     initPreview({ available: true, base: 'base', endpoint: '/preview', strings: {} }, null,
         nativeEditor, (strings, callbacks) => { options = callbacks; return view; },
         () => ({ remember() {} }));

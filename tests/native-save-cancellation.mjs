@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { sourceForVm } from './helpers/modules.mjs';
+import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
 
 async function browserFixture(initPreview, bootstrapSource) {
     const realJQuery = window.jQuery;
@@ -60,6 +60,7 @@ async function browserFixture(initPreview, bootstrapSource) {
             './preview-panel/index.js': { createPreviewPanel: (strings, callbacks) => { options = callbacks; return view; } },
             './preview-panel/viewport.js': { createPreviewViewport() {} },
             './preview-panel/controls.js': { createPreviewControls() {} },
+            './preview-frame.js': { createPreviewFrame() {} },
         }, async (name) => modules[name]);
         for (let i = 0; i < 40; i++) await Promise.resolve();
         native.isValidating = () => validating;
@@ -110,12 +111,11 @@ test('native save cancellation with trusted Chromium input', { timeout: 30000 },
     const abort = () => { rejectPending(t.signal.reason); chrome?.kill(); };
     t.signal.addEventListener('abort', abort, { once: true });
     try {
-        const editorSource = (await readFile(new URL('../assets/editor-preview.js', import.meta.url), 'utf8'))
-            .replace('export function initPreview', 'function initPreview');
+        const editorSource = await previewSourceForVm(new URL('../assets/editor-preview.js', import.meta.url));
         const bootstrap = await sourceForVm(new URL('../assets/editor-bootstrap.js', import.meta.url));
         const jquery = process.env.WORDPRESS_ROOT
             ? await readFile(join(process.env.WORDPRESS_ROOT, 'wp-includes/js/jquery/jquery.js'), 'utf8') : '';
-        const script = `const initPreview = new Function(${JSON.stringify(`${editorSource}; return initPreview;`)})();
+        const script = `const initPreview = new Function(${JSON.stringify(`${editorSource}; return (...args) => initPreview(...args, createPreviewFrame);`)})();
             (${browserFixture.toString()})(initPreview, ${JSON.stringify(bootstrap)});`;
         const page = join(directory, 'test.html');
         await writeFile(page, `<!doctype html><script src="data:text/javascript;base64,${Buffer.from(jquery).toString('base64')}"></script><body><script>${script.replace(/<\/script/gi, '<\\/script')}</script></body>`);

@@ -10,3 +10,10 @@ export async function sourceForVm(url) {
         })
         .replace(/^export (function|const) /gm, '$1 ');
 }
+
+// Execute the same shared iframe implementation in VM and data-URL browser fixtures.
+export async function previewSourceForVm(url) {
+    const frame = await readFile(new URL('../../assets/preview-frame.js', import.meta.url), 'utf8');
+    const source = await readFile(url, 'utf8');
+    return `${frame}\n${source}`.replace(/^export (function|const) /gm, '$1 ');
+}

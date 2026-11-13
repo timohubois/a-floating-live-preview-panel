@@ -1,5 +1,5 @@
 // One lifecycle owns field capture, refreshes, Web Locks, takeover and native-save sequencing.
-export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, createPreviewScroll) {
+export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, createPreviewScroll, createPreviewFrame) {
     const form = document.getElementById('post');
     if (!config || !form) return;
 
@@ -22,9 +22,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     let capturing = false;
     let generation = 0;
     let refreshTimer;
-    let activeFrame;
-    let activeDocument;
-    let previewAddress;
+    const frames = createPreviewFrame(view, scrolling, strings, report);
     let followPending = false;
     let refreshTask;
     let nativePreviewError;
@@ -33,7 +31,6 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     let requestStop;
     let takeoverRequest;
     let takeoverTimer;
-    let cancelFrame;
     const editors = new WeakSet();
     let channel;
     try {
@@ -54,8 +51,9 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     }
 
     function report(text, state = 'loading', { canRetry = true, reason = '' } = {}) {
+        if (state === 'ready') followPending = false;
         view.report(text, state, {
-            canTakeOver: !!channel, hasPreview: !!activeFrame, previewUrl: previewAddress, canRetry, reason,
+            canTakeOver: !!channel, hasPreview: frames.hasPreview, previewUrl: frames.address, canRetry, reason,
             canRefresh: previewActive && !nativeEditor.saving && ['ready', 'error'].includes(state) && (state !== 'error' || canRetry),
         });
     }
@@ -73,7 +71,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         if (reason) {
             previewActive = false;
             clearTimeout(refreshTimer);
-            cancelFrame?.();
+            frames.cancel();
             requestStop?.();
         }
         const text = typeof code === 'string' || error?.message === strings.browser ? error.message : strings.failed;
@@ -84,7 +82,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         if (!previewActive || capturing) return;
         generation += 1;
         followPending = true;
-        cancelFrame?.();
+        frames.cancel();
         clearTimeout(refreshTimer);
         if (nativeEditor.saving) return;
         report(strings.stale, 'stale');
@@ -95,7 +93,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     nativeEditor.beforePreview = () => {
         generation += 1;
         clearTimeout(refreshTimer);
-        cancelFrame?.();
+        frames.cancel();
         if (previewActive) report(strings.nativePreview);
         return refreshTask;
     };
@@ -154,82 +152,8 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     }
 
     function loadFrame(address, version) {
-        const url = new URL(address);
-        if (url.origin === 'null' || url.origin !== mainWindow.location.origin) throw new Error(strings.browser);
-        const token = url.searchParams.get('aflpp_token');
-        if (!token) throw new Error(strings.failed);
-        previewAddress = url.href;
-        // Keep the normal new-tab action pointed at the latest authorized URL, for every output type.
-        report(strings.updating);
-        return new Promise((resolve, reject) => {
-            const frame = view.stage.ownerDocument.createElement('iframe');
-            frame.title = strings.title;
-            frame.className = 'aflpp-frame aflpp-loading';
-            frame.setAttribute('aria-hidden', 'true');
-            frame.setAttribute('tabindex', '-1');
-            // Browser-native output: a sandbox blocks built-in viewers, including Chromium's PDF viewer.
-            // Authorization happens on the original WordPress request, not in the final document's DOM.
-            frame.referrerPolicy = 'same-origin';
-            let settled = false;
-            const timeout = setTimeout(() => finish(new Error(strings.failed)), 30000);
-            const cancel = () => finish();
-            cancelFrame = cancel;
-            function finish(error) {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timeout);
-                if (cancelFrame === cancel) cancelFrame = null;
-                if (frame !== activeFrame) {
-                    frame.onload = null;
-                    frame.onerror = null;
-                    frame.remove();
-                }
-                if (error) reject(error);
-                else resolve();
-            }
-            frame.onload = () => {
-                const replacing = frame !== activeFrame;
-                // Native navigation may replace even a previously verified HTML document.
-                if (!replacing) activeDocument = null;
-                if (!previewActive || version !== generation) { finish(); return; }
-                let doc;
-                try {
-                    const candidate = frame.contentDocument;
-                    const marker = candidate?.querySelector('meta[name="a-floating-live-preview-panel"]');
-                    if (marker?.content === token) doc = candidate;
-                } catch { /* Cross-origin and browser-owned documents are not inspectable. */ }
-                let target;
-                if (doc && replacing) {
-                    scrolling.remember(activeDocument);
-                    if (view.followChanges && followPending && activeDocument) {
-                        target = scrolling.findTarget(activeDocument, doc);
-                    }
-                }
-                if (replacing && activeFrame) {
-                    activeFrame.onload = null;
-                    activeFrame.onerror = null;
-                    activeFrame.remove();
-                }
-                activeFrame = frame;
-                activeDocument = doc;
-                frame.classList.remove('aflpp-loading');
-                frame.removeAttribute('aria-hidden');
-                frame.removeAttribute('tabindex');
-                if (doc && replacing) scrolling.restore(doc, target);
-                followPending = false;
-                // This reports a completed refresh, not verified content. The marker only enables HTML enhancements.
-                report(strings.current, 'ready');
-                finish();
-            };
-            frame.onerror = () => {
-                if (frame === activeFrame) {
-                    activeDocument = null;
-                    if (previewActive && version === generation) report(strings.failed, 'error');
-                } else finish(new Error(strings.failed));
-            };
-            frame.src = url.href;
-            view.stage.append(frame);
-        });
+        return frames.load(address, () => previewActive && version === generation,
+            () => view.followChanges && followPending);
     }
 
     function update() {
@@ -268,16 +192,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
 
     function discardFrames() {
         generation += 1;
-        cancelFrame?.();
-        scrolling.remember(activeDocument);
-        if (activeFrame) {
-            activeFrame.onload = null;
-            activeFrame.onerror = null;
-        }
-        activeFrame = null;
-        activeDocument = null;
-        previewAddress = null;
-        view.clearPreview();
+        frames.clear();
     }
 
     function stopPreview(keepVisible = false) {
@@ -374,7 +289,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         if (nativeEditor.saving) return;
         if (!previewActive) { startPreview(); return; }
         generation += 1;
-        cancelFrame?.();
+        frames.cancel();
         update();
     }
 
@@ -392,7 +307,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         nativeEditor.saving = true;
         generation += 1;
         clearTimeout(refreshTimer);
-        cancelFrame?.();
+        frames.cancel();
         if (previewActive) report(strings.saving);
         const pending = refreshTask || (nativeEditor.previewing ? nativeEditor.idle : null);
         if (!pending) return;

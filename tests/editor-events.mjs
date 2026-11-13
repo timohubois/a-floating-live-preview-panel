@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { sourceForVm } from './helpers/modules.mjs';
+import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
 
 async function browserTests(initPreview, initAcf, bootstrapSource) {
     const realJQuery = window.jQuery;
@@ -108,6 +108,7 @@ async function browserTests(initPreview, initAcf, bootstrapSource) {
                 './preview-panel/index.js': modules.panel,
                 './preview-panel/viewport.js': modules.viewport,
                 './preview-panel/controls.js': modules.controls,
+                './preview-frame.js': { createPreviewFrame() {} },
             }, async (name) => modules[name]);
             for (let i = 0; i < 30; i++) await Promise.resolve();
         } else initPreview(config, withAcf ? initAcf : null, nativeEditor, createPanel, createScroll);
@@ -313,7 +314,10 @@ test('native editor events and ACF compatibility boundaries in Chromium', async 
     const directory = await mkdtemp(join(tmpdir(), 'aflpp-events-'));
     try {
         const moduleUrls = await Promise.all(['editor-preview.js', 'compatibility/acf.js'].map(async (path) => {
-            const source = await readFile(new URL(`../assets/${path}`, import.meta.url), 'utf8');
+            const url = new URL(`../assets/${path}`, import.meta.url);
+            const source = path === 'editor-preview.js'
+                ? `${await previewSourceForVm(url)}\nconst init = (...args) => initPreview(...args, createPreviewFrame); export { init as initPreview };`
+                : await readFile(url, 'utf8');
             return `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
         }));
         const bootstrapSource = await sourceForVm(new URL('../assets/editor-bootstrap.js', import.meta.url));

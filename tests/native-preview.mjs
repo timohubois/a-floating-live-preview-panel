@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { sourceForVm } from './helpers/modules.mjs';
+import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
 import test from 'node:test';
 import vm from 'node:vm';
 
@@ -85,6 +85,7 @@ async function fixture(pending, startupControl) {
             './preview-panel/index.js': { createPreviewPanel() {} },
             './preview-panel/viewport.js': { createPreviewViewport() {} },
             './preview-panel/controls.js': { createPreviewControls() {} },
+            './preview-frame.js': { createPreviewFrame() {} },
         },
         importModule: async (name) => ({
             editor: { initPreview: (config, acf, native) => {
@@ -274,8 +275,7 @@ test('browser constraint validation resumes a rejected native Save', async () =>
     assert.equal(h.nativeEditor.saving, false);
 });
 
-const editorSource = (await readFile(new URL('../assets/editor-preview.js', import.meta.url), 'utf8'))
-    .replace('export function initPreview', 'function initPreview');
+const editorSource = await previewSourceForVm(new URL('../assets/editor-preview.js', import.meta.url));
 
 for (const [saved, structural, blocked] of [[true, true, true], [false, true, false], [true, false, false]]) {
     test(`saved=${saved}, structural ACF changes=${structural}: ${blocked ? 'retain reload protection on reopen' : 'allow live preview'}`, async () => {
@@ -293,7 +293,9 @@ for (const [saved, structural, blocked] of [[true, true, true], [false, true, fa
             window: { isSecureContext: true, jQuery: () => ({ on() {} }) },
             navigator: { locks: { request: () => { requests++; return new Promise(() => {}); } } },
         };
-        const initPreview = vm.runInNewContext(`${editorSource}\ninitPreview`, context);
+        const initPreview = vm.runInNewContext(
+            `${editorSource}\n(...args) => initPreview(...args, createPreviewFrame)`, context
+        );
         initPreview({ available: true, strings: { nativePreviewAcf: 'Copy later edits and reload.' } },
             () => ({ hasStructuralPaginationChanges: () => structural }), native,
             (strings, options) => { callbacks = options; return view; }, () => ({ remember() {} }));

@@ -1,6 +1,7 @@
 import { createPreviewPanel as createPanelView } from './preview-panel/index.js';
 import { createPreviewViewport } from './preview-panel/viewport.js';
 import { createPreviewControls } from './preview-panel/controls.js';
+import { createPreviewFrame } from './preview-frame.js';
 
 (() => {
     'use strict';
@@ -157,7 +158,8 @@ import { createPreviewControls } from './preview-panel/controls.js';
         const createPreviewPanel = (strings, options) => createPanelView(
             strings, options, createPreviewViewport, createPreviewControls
         );
-        editor.initPreview(config, acf?.initAcf, nativeEditor, createPreviewPanel, scroll.createPreviewScroll);
+        editor.initPreview(config, acf?.initAcf, nativeEditor, createPreviewPanel,
+            scroll.createPreviewScroll, createPreviewFrame);
     }).catch((error) => {
         stopWatchingStartupSave();
         nativeEditor.beforePreview = null;
