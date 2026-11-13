@@ -13,7 +13,7 @@ function fixture() {
     const calls = [];
     const container = {};
     const h = (type, props, ...children) => ({ type, props: props || {}, children });
-    const components = Object.fromEntries(['Button', 'DropdownMenu', 'MenuGroup', 'MenuItem', 'MenuItemsChoice', 'Toolbar', 'ToolbarButton', 'SlotFillProvider'].map((name) => [name, name]));
+    const components = Object.fromEntries(['Button', 'DropdownMenu', 'MenuGroup', 'MenuItem', 'MenuItemsChoice', 'Notice', 'Placeholder', 'Spinner', 'Toolbar', 'ToolbarButton', 'SlotFillProvider'].map((name) => [name, name]));
     components.Popover = { Slot: 'Popover.Slot' };
     const element = {
         createElement: h, Fragment: 'Fragment', createPortal: (child, target) => h('Portal', { target }, child), flushSync: (callback) => callback(),
@@ -23,7 +23,7 @@ function fixture() {
             return mount;
         },
     };
-    const callbacks = Object.fromEntries(['refresh', 'mode', 'close', 'popOut', 'fullscreen', 'dock', 'size', 'reset', 'follow', 'rememberVisibility', 'device']
+    const callbacks = Object.fromEntries(['refresh', 'retry', 'dismissNotice', 'mode', 'close', 'popOut', 'fullscreen', 'dock', 'size', 'reset', 'follow', 'rememberVisibility', 'device']
         .map((name) => [name, (...args) => calls.push({ name, args })]));
     const strings = new Proxy({ popOut: 'Pop out preview (PiP)' }, { get: (target, key) => target[key] ?? String(key) });
     const querySelector = (selector) => selector === '.aflpp-controls' ? container : {
@@ -38,7 +38,7 @@ function fixture() {
     const createPreviewControls = vm.runInNewContext(`${source}\ncreatePreviewControls`, { imports });
     const controls = createPreviewControls(panel, strings, callbacks);
     const state = {
-        inPage: true, inPip: false, mode: 'expand', modeLabel: 'Expand preview', canRefresh: true,
+        inPage: true, inPip: false, movable: true, mode: 'expand', modeLabel: 'Expand preview', canRefresh: true,
         hasPreview: true, previewUrl: '/preview',
         canPip: true, canFullscreen: true, dock: 'center', size: 'small', rememberVisibility: true, followChanges: false, device: 'desktop',
     };
@@ -105,6 +105,37 @@ test('viewport choices use native Toolbar buttons and pressed-state behavior', (
     assert.deepEqual(h.calls.at(-1), { name: 'device', args: ['mobile'] });
 });
 
+test('placeholder actions and loading use public components with no custom spinner or fake title button', () => {
+    const h = fixture();
+    h.controls.update({ ...h.state, hasPreview: false, empty: {
+        heading: 'Loading', description: 'Preparing', note: 'Each tab keeps its edits', busy: true,
+        retry: true, disabled: true, action: 'Switching',
+    } });
+    const placeholder = h.nodes('Placeholder')[0];
+    assert.equal(placeholder.props.instructions, 'Preparing');
+    assert.equal(placeholder.props.icon.type, 'Spinner');
+    const retry = h.nodes('Button').find(({ props }) => props['data-action'] === 'retry');
+    assert.equal(retry.props.disabled, true);
+    assert.equal(retry.props.variant, 'primary');
+    assert.equal(h.nodes('Button').find(({ props }) => props['data-action'] === 'move').props.icon, h.icons.move);
+});
+
+test('native notices keep unresolved failures persistent and dismiss only incidental window messages', () => {
+    const h = fixture();
+    h.controls.update({ ...h.state, notice: { heading: 'Failed', description: 'Previous frame', status: 'warning', dismissible: false, retry: true, action: 'Retry' } });
+    let notice = h.nodes('Notice')[0];
+    assert.equal(notice.props.isDismissible, false);
+    assert.equal(notice.props.status, 'warning');
+    assert.equal(notice.props.spokenMessage, '', 'The shell announces this state once.');
+    notice.props.actions[0].onClick();
+    assert.equal(h.calls.at(-1).name, 'retry');
+    h.controls.update({ ...h.state, notice: { heading: 'Pop-out failed', status: 'info', dismissible: true } });
+    notice = h.nodes('Notice')[0];
+    assert.equal(notice.props.isDismissible, true);
+    notice.props.onRemove();
+    assert.equal(h.calls.at(-1).name, 'dismissNotice');
+});
+
 test('document moves unmount old native hooks before creating the next root', () => {
     const h = fixture();
     const original = h.mounts[0];
@@ -122,12 +153,13 @@ test('controls pass the official bundled icon elements directly to native compon
     const h = fixture();
     const refresh = h.nodes('Button').find(({ props }) => props['data-action'] === 'refresh');
     assert.equal(refresh.props.icon, h.icons.refresh);
+    assert.equal(h.nodes('Button').find(({ props }) => props['data-action'] === 'move').props.tooltipPosition, 'bottom', 'do not cover the upper resize corner');
     assert.equal(h.nodes('DropdownMenu')[0].props.icon, h.icons.more);
     const portalIcon = (selector) => h.nodes('Portal').find(({ props }) => props.target.selector === selector).children[0];
     assert.equal(portalIcon('#aflpp-toggle .aflpp-launcher-icon'), h.icons.pip);
-    assert.equal(portalIcon('.aflpp-dismiss-icon'), h.icons.close);
-    assert.equal(portalIcon('.aflpp-resize-icon'), h.icons.resize);
-    const icons = [...h.nodes('Button'), ...h.nodes('ToolbarButton'), ...h.nodes('MenuItem')].map(({ props }) => props.icon).filter(Boolean);
+    assert.equal(h.nodes('Button').find(({ props }) => props['data-action'] === 'move').props.icon, h.icons.move);
+    assert.equal(h.nodes('Button').some(({ props }) => props.icon === h.icons.resize), false);
+    const icons = [...h.nodes('Button'), ...h.nodes('MenuItem')].map(({ props }) => props.icon).filter(Boolean);
     assert.ok(icons.length >= 7, 'cover header, viewport and preference icons');
     for (const icon of icons) {
         assert.ok(Object.values(h.icons).includes(icon), 'do not reconstruct or modify the library icons');

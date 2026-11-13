@@ -49,7 +49,11 @@ function fixture(open = false, {
             hasPointerCapture: (pointer) => captured.has(pointer),
             releasePointerCapture: (pointer) => captured.delete(pointer),
             querySelector: (selector) => node(`${key} ${selector}`),
-            querySelectorAll: () => [],
+            querySelectorAll: (selector) => selector === '[data-resize-edge]' ? ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'].map((edge) => {
+                const handle = node(`${key} .aflpp-edge-${edge}`);
+                handle.dataset.resizeEdge = edge;
+                return handle;
+            }) : [],
         });
         nodes.set(key, element);
         return element;
@@ -86,6 +90,7 @@ function fixture(open = false, {
     let actions;
     let state;
     const focusCalls = [];
+    const retryCalls = [];
     const controls = { closeMenu() {}, focus(action) { focusCalls.push(action); }, beforeMove() {}, remount() {}, update(next) { state = next; } };
     const createControls = (panel, labels, callbacks) => { actions = callbacks; return controls; };
     const imports = {
@@ -96,14 +101,14 @@ function fixture(open = false, {
     const createPreviewPanel = vm.runInNewContext(`${source}\ncreatePreviewPanel`, { window, document, imports });
     const view = createPreviewPanel(strings, {
         nativeSaving, beforeMove() {}, afterMove() {},
-        onOpen() { view.setVisible(true); }, onClose() { view.setVisible(false); },
+        onOpen() { view.setVisible(true); }, onClose() { view.setVisible(false); }, onRetry(takeOver) { retryCalls.push(takeOver); },
     }, () => ({
         device: 'desktop', layout() {}, beforeMove() {}, afterMove() {},
     }), createControls);
     const panel = node('aflpp-panel');
     return {
         view, launcher, panel, node, actions, window, document, preferences, writes, detached, copiedStyles,
-        requests, focusCalls,
+        requests, focusCalls, retryCalls,
         get state() { return state; },
         rect: () => Object.fromEntries(['left', 'top', 'width', 'height'].map((key) => [key, parseFloat(panel.style[key])])),
     };
@@ -261,7 +266,7 @@ test('keyboard moving becomes a remembered custom position, while resizing prese
     assert.equal(h.state.dock, 'right');
     assert.equal(h.rect().width, 470);
     assert.equal(h.rect().left + h.rect().width, 1424);
-    h.node('aflpp-panel .aflpp-move').fire('keydown', { key: 'ArrowLeft' });
+    h.node('aflpp-panel .aflpp-move-control').fire('keydown', { key: 'ArrowLeft' });
     assert.equal(h.state.dock, null);
     const reopened = fixture(true, { layout: h.preferences.get('layout') });
     assert.deepEqual(reopened.rect(), h.rect());
@@ -270,7 +275,7 @@ test('keyboard moving becomes a remembered custom position, while resizing prese
 
 test('pointer movement saves once on release, not during movement or a plain title click', () => {
     const h = fixture(true);
-    const move = h.node('aflpp-panel .aflpp-move');
+    const move = h.node('aflpp-panel .aflpp-move-control');
     move.fire('pointerdown');
     move.fire('pointerup');
     assert.equal(h.writes.length, 0);
@@ -284,6 +289,82 @@ test('pointer movement saves once on release, not during movement or a plain tit
     assert.deepEqual(plain(h.preferences.get('layout').bounds), {
         x: h.rect().left, y: h.rect().top, width: h.rect().width, height: h.rect().height,
     });
+});
+
+for (const [edge, dx, dy, expected] of [
+    ['n', 0, -20, { x: 150, y: 160, width: 560, height: 440 }],
+    ['ne', 20, -20, { x: 150, y: 160, width: 580, height: 440 }],
+    ['e', 20, 0, { x: 150, y: 180, width: 580, height: 420 }],
+    ['se', 20, 20, { x: 150, y: 180, width: 580, height: 440 }],
+    ['s', 0, 20, { x: 150, y: 180, width: 560, height: 440 }],
+    ['sw', -20, 20, { x: 130, y: 180, width: 580, height: 440 }],
+    ['w', -20, 0, { x: 130, y: 180, width: 580, height: 420 }],
+    ['nw', -20, -20, { x: 130, y: 160, width: 580, height: 440 }],
+]) test(`${edge} free border follows pointer input without changing untouched axes`, () => {
+    const h = fixture(true, { layout: layout({ anchor: 'right' }) });
+    const handle = h.node(`aflpp-panel .aflpp-edge-${edge}`);
+    assert.equal(handle.hidden, false);
+    assert.equal(handle.listeners.has('keydown'), false);
+    handle.fire('pointerdown');
+    handle.fire('pointermove', { clientX: 100 + dx, clientY: 100 + dy });
+    handle.fire('pointerup');
+    assert.deepEqual(plain(h.preferences.get('layout').bounds), expected);
+    assert.equal(h.state.dock, null);
+});
+
+for (const [dock, usable] of [[null, ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']], ['left', ['n', 'ne', 'e']], ['center', ['n', 'ne', 'e', 'w', 'nw']], ['right', ['n', 'w', 'nw']]]) {
+    test(`${dock || 'free'} layout exposes only pointer edges that can move with its anchor`, () => {
+        const h = fixture(true, { layout: layout({ dock }) });
+        for (const edge of ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']) {
+            assert.equal(h.node(`aflpp-panel .aflpp-edge-${edge}`).hidden, !usable.includes(edge));
+        }
+        h.actions.mode();
+        for (const edge of usable) assert.equal(h.node(`aflpp-panel .aflpp-edge-${edge}`).hidden, true);
+        assert.equal(h.state.movable, false);
+    });
+}
+
+test('no-frame and retained-frame recovery use native UI models without weakening retry or handover guards', () => {
+    const h = fixture(true);
+    assert.equal(h.state.empty.busy, true);
+    h.view.report('Failed', 'error', { canRetry: true });
+    assert.equal(h.state.empty.retry, true);
+    assert.equal(h.state.empty.close, false);
+    h.actions.retry();
+    assert.deepEqual(h.retryCalls, [false]);
+    h.view.report('Waiting', 'handover', { canTakeOver: true });
+    assert.equal(h.state.empty.busy, true);
+    assert.equal(h.state.empty.disabled, true);
+    h.actions.retry();
+    assert.deepEqual(h.retryCalls, [false]);
+    h.view.report('Other tab', 'conflict', { canTakeOver: true });
+    h.actions.retry();
+    assert.deepEqual(h.retryCalls, [false, true]);
+    h.view.report('Expired', 'error', { hasPreview: true, canRetry: false, reason: 'reload' });
+    assert.equal(h.state.empty, null);
+    assert.equal(h.state.notice.status, 'error');
+    assert.equal(h.state.notice.dismissible, false);
+    assert.equal(h.state.notice.retry, false);
+    assert.equal(h.state.notice.close, false);
+    h.actions.retry();
+    assert.deepEqual(h.retryCalls, [false, true]);
+    h.actions.dismissNotice();
+    assert.equal(h.state.notice.status, 'error', 'A window-notice callback cannot dismiss an unresolved preview problem.');
+    h.view.report('Write failed', 'error', { hasPreview: true, canRetry: true });
+    assert.equal(h.state.notice.status, 'warning');
+    assert.equal(h.state.notice.retry, true);
+    assert.equal(h.state.notice.dismissible, false);
+    h.view.report('Refreshing');
+    assert.equal(h.state.notice, null);
+});
+
+test('ordinary updates and native saving never replace a retained frame with a placeholder or success notice', () => {
+    const h = fixture(true);
+    for (const [text, state] of [['updating', 'loading'], ['saving', 'loading'], ['stale', 'stale'], ['current', 'ready']]) {
+        h.view.report(text, state, { hasPreview: true });
+        assert.equal(h.state.empty, null);
+        assert.equal(h.state.notice, null);
+    }
 });
 
 for (const expanded of [false, true]) {
@@ -417,7 +498,7 @@ test('moving in a small viewport never replaces the preferred size with the temp
     assert.equal(h.preferences.get('layout').bounds.width, 560);
     assert.equal(h.preferences.get('layout').bounds.height, 420);
     h.view.setVisible(true);
-    h.node('aflpp-panel .aflpp-move').fire('keydown', { key: 'ArrowUp' });
+    h.node('aflpp-panel .aflpp-move-control').fire('keydown', { key: 'ArrowUp' });
     assert.equal(h.preferences.get('layout').bounds.width, 560);
     assert.equal(h.preferences.get('layout').bounds.height, 420);
 });
@@ -465,13 +546,18 @@ for (const anchor of ['left', 'center', 'right']) {
     });
 }
 
-for (const [direction, ends] of Object.entries({
-    ltr: { left: 'lastElementChild', center: 'firstElementChild', right: 'firstElementChild' },
-    rtl: { left: 'firstElementChild', center: 'lastElementChild', right: 'lastElementChild' },
-})) for (const [anchor, end] of Object.entries(ends)) {
-    test(`${direction} ${anchor} anchor places the resize control at the physical free corner in DOM order`, () => {
+for (const direction of ['ltr', 'rtl']) for (const anchor of ['left', 'center', 'right']) {
+    test(`${direction} ${anchor} anchor retains physical free-corner pointer resizing`, () => {
         const h = fixture(true, { layout: layout({ dock: anchor, anchor }), direction });
-        assert.equal(h.node('aflpp-panel .aflpp-header')[end], h.node('aflpp-panel .aflpp-resize-control'));
+        const before = h.rect();
+        const grip = h.node(`aflpp-panel .aflpp-edge-${anchor === 'left' ? 'ne' : 'nw'}`);
+        const dx = anchor === 'left' ? 30 : -30;
+        grip.fire('pointerdown');
+        grip.fire('pointermove', { clientX: 100 + dx, clientY: 80 });
+        grip.fire('pointerup');
+        assert.equal(h.rect().width, before.width + (anchor === 'center' ? 60 : 30));
+        assert.equal(h.rect().height, before.height + 20);
+        assert.equal(h.rect().top + h.rect().height, before.top + before.height);
     });
 }
 

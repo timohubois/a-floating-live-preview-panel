@@ -27,9 +27,10 @@ Use a disposable local or staging WordPress installation while this is in develo
 
 ## Usage
 
-Move the window by its title or drag the closed **Live preview** launcher; they share
-one position. Resize using the visible grip at the free top corner. The title,
-launcher and resize grip support arrow keys, with Shift for larger steps.
+Move the window by its plain titlebar or drag the closed **Live preview** launcher;
+they share one position. Resize from usable borders and corners; docked edges that
+cannot move keep their anchor. The small move grip, launcher and single keyboard
+resize control at the boundary support arrow keys, with Shift for larger steps.
 Closing the window stops live updates without discarding editor fields and focuses
 the launcher; opening it moves focus to **Preview actions**, without trapping focus.
 WordPress's native **Preview** button keeps the panel and its last frame visible,
@@ -41,9 +42,10 @@ pause during this action and resume if browser, WordPress or ACF validation reje
 it. A successful save uses WordPress's normal editor reload and restores remembered
 panel preferences; an explicitly closed panel stays closed.
 
-- **Preview actions** uses native WordPress controls. **Position** remembers bottom-left, bottom-center or bottom-right docking; dragging freely clears the dock selection. Resizing keeps the selected dock. **Size → Small / Large** offers click/tap and keyboard alternatives to dragging the resize grip. **Reset size and position** restores the default compact, bottom-right panel. **Open preview in new tab**, fullscreen and pop-out **PiP** (Picture-in-Picture) appear where available.
+- **Preview actions** uses native WordPress controls. **Position** remembers bottom-left, bottom-center or bottom-right docking; dragging freely clears the dock selection. Resizing keeps the selected dock. **Size → Small / Large** offers click/tap and keyboard alternatives to border resizing. **Reset size and position** restores the default compact, bottom-right panel. **Open preview in new tab**, fullscreen and pop-out **PiP** (Picture-in-Picture) appear where available.
 - **Pop out preview (PiP)** appears only in browsers that support Document Picture-in-Picture, not just video PiP. Its icon-only shortcut sits inside the preview's bottom-right corner, fading in only when the pointer is near the button, or appearing immediately on keyboard focus. It stays visible on devices without hover, and reduced-motion settings disable the fade. The pop-out uses the browser's native **Back to tab** and close controls to return inline. Its **⋮** menu contains **Refresh preview** and **Close live preview**; the latter stops the preview instead of merely closing the pop-out. A normal WordPress page reload closes PiP; use the same **Pop out preview (PiP)** action to open it again. There is no PiP persistence or reload-specific behavior.
 - **Desktop**, **Tablet** and **Mobile** use a native WordPress toolbar with pressed states and arrow-key navigation. They change the preview's viewport width, not its device or user agent.
+- Loading and no-frame recovery use a centered native Placeholder. Problems with a retained frame appear in a native Notice below the header, without covering the preview. Unresolved problems remain visible; incidental window-operation notices can be dismissed.
 - **Remember preview visibility** is on by default. Visibility, viewport and **Scroll to changes** preferences are per user across posts. Compact size and position, docking and expanded/compact mode are also remembered. Restored layouts fit inside the current window; fullscreen and PiP are never reopened automatically. Preferences remain after deactivation; uninstalling through WordPress removes the plugin's server-stored preferences.
 - **Scroll to changes** is on by default. It follows detected content, structure and layout-attribute changes without theme-specific integration. It normally centers shorter changed content and shows taller content from its beginning. Detection and header handling are best-effort; disable it to retain manual positioning.
 

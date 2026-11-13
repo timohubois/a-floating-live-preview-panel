@@ -20,46 +20,20 @@ export function createPreviewPanel(strings, {
     const panel = mainDocument.getElementById('aflpp-panel');
     if (!launcher || !panel) throw new Error('Preview panel markup is missing.');
 
-    const move = panel.querySelector('.aflpp-move');
+    const move = panel.querySelector('.aflpp-move-control');
     const resize = panel.querySelector('.aflpp-resize');
-    const resizeControl = panel.querySelector('.aflpp-resize-control');
+    const resizeEdges = panel.querySelectorAll('[data-resize-edge]');
     const header = panel.querySelector('.aflpp-header');
     const dot = panel.querySelector('.aflpp-dot');
-    const statusTooltip = panel.querySelector('.aflpp-status-tooltip');
     const caption = panel.querySelector('.aflpp-caption');
-    const openPreviews = panel.querySelectorAll('.aflpp-open-preview');
     const viewport = panel.querySelector('.aflpp-viewport');
     const stage = panel.querySelector('.aflpp-stage');
     const empty = panel.querySelector('.aflpp-empty');
-    const emptyTitle = empty.querySelector('.aflpp-empty-title');
-    const emptyDescription = empty.querySelector('.aflpp-empty-description');
-    const emptyNote = empty.querySelector('.aflpp-empty-note');
-    const emptyActions = empty.querySelector('.aflpp-empty-actions');
-    const emptyRetry = empty.querySelector('[data-action="retry"]');
-    const emptyClose = empty.querySelector('[data-action="close"]');
-    const emptyPreview = empty.querySelector('.aflpp-open-preview');
-    const spinner = empty.querySelector('.aflpp-spinner');
     const devicebar = panel.querySelector('.aflpp-devicebar');
     const dimensions = panel.querySelector('.aflpp-dimensions');
     const feedback = panel.querySelector('.aflpp-feedback');
-    const feedbackTitle = feedback.querySelector('.aflpp-feedback-title');
-    const feedbackDescription = feedback.querySelector('.aflpp-feedback-description');
-    const feedbackRetry = feedback.querySelector('[data-action="retry"]');
-    const feedbackClose = feedback.querySelector('[data-action="close"]');
-    const dismissNotice = feedback.querySelector('[data-action="dismiss-notice"]');
     const status = panel.querySelector('[role="status"]');
     const responsiveViewport = createPreviewViewport(viewport, stage, dimensions, preferences.get(scope, 'viewport'));
-
-    function label(button, text) {
-        button.setAttribute('aria-label', text);
-        button.title = text;
-    }
-
-    // Native titles cover hover; expose the same status on keyboard focus, dismissible with Escape.
-    move.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') move.classList.add('aflpp-status-dismissed');
-    });
-    move.addEventListener('blur', () => move.classList.remove('aflpp-status-dismissed'));
 
     let visible = showOnLoad;
     let pipWindow;
@@ -84,25 +58,14 @@ export function createPreviewPanel(strings, {
     let launcherDragClick = false;
     const anchorFactor = () => anchor === 'left' ? 0 : anchor === 'center' ? 0.5 : 1;
 
-    function labelMove() {
-        const fixed = pipWindow || expanded || panel.ownerDocument.fullscreenElement === panel;
-        move.setAttribute('aria-label', fixed ? caption.textContent : `${caption.textContent} — ${strings.move}`);
-        move.title = `${caption.textContent} — ${current.text}`;
-    }
-
     function setTitle(value) {
-        // The editor's identity, not an iframe title or a claim that the preview is current/published.
+        // Plain text, not an editor field or a full-width focus/drag button.
         const title = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
         caption.textContent = title ? `${strings.preview} — ${title}` : strings.title;
+        caption.title = caption.textContent;
         if (pipWindow) pipWindow.document.title = caption.textContent;
-        labelMove();
     }
     setTitle(postTitle);
-
-    function copy(node, text) {
-        node.textContent = text;
-        node.hidden = !text;
-    }
 
     function presentation() {
         const { text, state, hasPreview, reason } = current;
@@ -139,83 +102,67 @@ export function createPreviewPanel(strings, {
         return { heading, description, note };
     }
 
-    function restoreFocus(focused) {
-        if (!focused || !panel.contains(focused)) return;
-        if (!focused.closest('[hidden]') && !focused.disabled) return;
-        if (!empty.hidden) emptyTitle.focus({ preventScroll: true });
-        else controls.focus(current.canRefresh ? 'refresh' : 'mode');
+    function restoreFocus(focused, wasInside) {
+        if (!focused || !wasInside) return;
+        if (panel.contains(focused) && !focused.closest('[hidden]') && !focused.disabled) return;
+        controls.focus(empty.hidden ? 'actions' : 'empty-title');
     }
 
-    function renderFeedback() {
+    function feedbackState() {
         const { state, hasPreview, canRetry, reason } = current;
         const problem = hasPreview && ['error', 'conflict', 'handover'].includes(state);
-        const { heading, description } = presentation();
         feedback.hidden = !problem && !windowNotice;
-        feedback.dataset.tone = problem && state === 'error' ? 'error' : 'notice';
-        copy(feedbackTitle, problem ? heading : windowNotice);
-        copy(feedbackDescription, problem ? description : windowNotice ? strings.windowNoticeHelp : '');
-        feedbackRetry.hidden = !problem || !(takeOverAction || (canRetry && ['error', 'conflict'].includes(state)));
-        feedbackClose.hidden = !(problem && state === 'error' && !canRetry && reason !== 'reload');
-        dismissNotice.hidden = problem || !windowNotice;
+        feedback.tabIndex = feedback.hidden ? -1 : 0;
         panel.dataset.hasFeedback = String(!feedback.hidden);
+        if (feedback.hidden) return null;
+        const { heading, description } = presentation();
+        return {
+            heading: problem ? heading : windowNotice,
+            description: problem ? description : strings.windowNoticeHelp,
+            status: !problem || state === 'handover' ? 'info' : state === 'error' && !canRetry ? 'error' : 'warning',
+            dismissible: !problem,
+            retry: problem && (takeOverAction || (canRetry && ['error', 'conflict'].includes(state))),
+            close: problem && state === 'error' && !canRetry && reason !== 'reload',
+            disabled: state === 'handover',
+            action: takeOverAction ? (state === 'handover' ? strings.takingOver : strings.takeOver) : strings.retry,
+        };
     }
 
     // A failed window operation must not change preview ownership, readiness or refresh controls.
     function showWindowNotice(text) {
         if (!(current.hasPreview && ['error', 'conflict', 'handover'].includes(current.state))) {
             windowNotice = text;
-            renderFeedback();
+            syncControls();
         }
         status.textContent = `${text} ${strings.windowNoticeHelp}`;
     }
 
     function clearWindowNotice() {
         windowNotice = '';
-        renderFeedback();
+        syncControls();
     }
 
     function report(text, state = 'loading', {
         canTakeOver = false, hasPreview = false, previewUrl, canRefresh = false, canRetry = true, reason = '',
     } = {}) {
         const focused = panel.ownerDocument.activeElement;
+        const wasInside = panel.contains(focused);
         const resetEmptyScroll = !hasPreview && (current.state !== state || current.text !== text || current.reason !== reason);
         current = { text, state, canTakeOver, hasPreview, previewUrl, canRefresh, canRetry, reason };
         if (['error', 'conflict', 'handover'].includes(state)) windowNotice = '';
         panel.dataset.state = state;
         panel.dataset.hasPreview = String(hasPreview);
+        panel.dataset.retryable = String(canRetry);
         dot.title = text;
-        statusTooltip.textContent = text;
-        labelMove();
-        // Keep the ordinary new-tab action stable across refresh/blur; only the empty-state fallback is conditional.
-        for (const link of openPreviews) {
-            link.hidden = !previewUrl;
-            if (previewUrl) link.href = previewUrl;
-            else link.removeAttribute('href');
-        }
-        const takingOver = state === 'handover';
-        takeOverAction = canTakeOver && (state === 'conflict' || takingOver);
-        const action = takeOverAction ? (takingOver ? strings.takingOver : strings.takeOver) : strings.retry;
-        for (const button of [emptyRetry, feedbackRetry]) {
-            label(button, action);
-            button.textContent = action;
-            button.disabled = takingOver;
-        }
+        takeOverAction = canTakeOver && ['conflict', 'handover'].includes(state);
         empty.hidden = hasPreview;
         devicebar.hidden = !hasPreview;
         const { heading, description, note } = presentation();
-        copy(emptyTitle, heading);
-        copy(emptyDescription, description);
-        copy(emptyNote, note);
-        spinner.hidden = hasPreview || !['loading', 'stale', 'ready'].includes(state);
-        emptyRetry.hidden = hasPreview || !(takeOverAction || (canRetry && ['error', 'conflict'].includes(state)));
-        emptyPreview.hidden = hasPreview || !previewUrl || state !== 'error';
-        emptyClose.hidden = hasPreview || state !== 'error' || !emptyRetry.hidden;
-        emptyActions.hidden = emptyRetry.hidden && emptyPreview.hidden && emptyClose.hidden;
-        renderFeedback();
         if (resetEmptyScroll) empty.scrollTop = 0;
-        status.textContent = [heading, description, note].filter(Boolean).join(' ');
+        // Placeholder announces its instructions; the live region supplies the heading without repeating them.
+        status.textContent = hasPreview ? [heading, description, note].filter(Boolean).join(' ') : heading;
         syncControls();
-        restoreFocus(focused);
+        restoreFocus(focused, wasInside);
     }
 
     function toggleFollow() {
@@ -277,16 +224,11 @@ export function createPreviewPanel(strings, {
         if (pipWindow) return;
         let rect = compactRect();
         const factor = anchorFactor();
-        const resizeAtEnd = (anchor === 'left') !== (mainWindow.getComputedStyle(header).direction === 'rtl');
         Object.assign(launcher.style, {
             left: `${rect.x + rect.width * factor}px`, top: `${rect.y + rect.height}px`,
             transform: `translate(${-100 * factor}%, -100%)`,
         });
         panel.dataset.anchor = anchor;
-        // Keep the physical free corner and keyboard order correct in either text direction.
-        if (resizeAtEnd) {
-            if (header.lastElementChild !== resizeControl) header.append(resizeControl);
-        } else if (header.firstElementChild !== resizeControl) header.prepend(resizeControl);
         if (expanded) {
             const available = area(12, 44);
             rect = { x: available.left, y: available.top, width: available.width, height: available.height };
@@ -325,11 +267,22 @@ export function createPreviewPanel(strings, {
     function syncControls() {
         const full = panel.ownerDocument.fullscreenElement === panel;
         const inPage = !pipWindow && !full;
-        labelMove();
+        const movable = inPage && !expanded;
         panel.classList.toggle('aflpp-expanded', expanded);
-        resize.hidden = !inPage || expanded;
+        resize.hidden = !movable;
+        for (const edge of resizeEdges) edge.hidden = !movable || !usableEdge(edge.dataset.resizeEdge);
+        const retry = takeOverAction || (current.canRetry && ['error', 'conflict'].includes(current.state));
         controls.update({
-            inPage, inPip: !!pipWindow, dock, rememberVisibility, followChanges, device: responsiveViewport.device,
+            inPage, inPip: !!pipWindow, movable, dock, rememberVisibility, followChanges, device: responsiveViewport.device,
+            busy: current.hasPreview && ['loading', 'handover'].includes(current.state) && current.text !== strings.saving,
+            empty: current.hasPreview ? null : {
+                ...presentation(), busy: ['loading', 'stale', 'ready', 'handover'].includes(current.state),
+                icon: ['unavailable', 'browser'].includes(current.reason) ? 'info' : current.state === 'conflict' ? 'pip' : 'warning',
+                retry, disabled: current.state === 'handover', close: current.state === 'error' && !retry,
+                action: takeOverAction ? (current.state === 'handover' ? strings.takingOver : strings.takeOver) : strings.retry,
+                previewUrl: current.state === 'error' ? current.previewUrl : undefined,
+            },
+            notice: feedbackState(),
             size: expanded ? undefined : Object.keys(sizes).find((name) => bounds.width === sizes[name].width && bounds.height === sizes[name].height),
             canRefresh: current.canRefresh, hasPreview: current.hasPreview, previewUrl: current.previewUrl,
             canPip: inPage && supportsPip(),
@@ -353,7 +306,9 @@ export function createPreviewPanel(strings, {
         controls.focus('mode');
     }
 
-    move.addEventListener('dblclick', () => { if (!pipWindow) toggleMode(); });
+    header.addEventListener('dblclick', (event) => {
+        if (!pipWindow && !event.target.closest('button, a')) toggleMode();
+    });
     async function enterFullscreen() {
         if (pipWindow || !mainDocument.fullscreenEnabled) return;
         controls.closeMenu();
@@ -368,25 +323,33 @@ export function createPreviewPanel(strings, {
     }
     mainDocument.addEventListener('fullscreenchange', syncControls);
 
-    // Resize from the free top corner, keeping the shared bottom anchor fixed.
-    // A centered panel grows symmetrically, so its corner still follows the pointer.
-    function resizeBounds(start, dx, dy) {
+    // Docked edges that cannot move must not advertise a resize cursor or eat pointer input.
+    function usableEdge(edge) {
+        return !dock || (!edge.includes('s') && !(dock === 'left' && edge.includes('w'))
+            && !(dock === 'right' && edge.includes('e')));
+    }
+
+    // Physical edges are independent of text direction. Center anchoring grows symmetrically.
+    function resizeBounds(start, edge, dx, dy) {
         const available = area();
-        const factor = anchorFactor();
+        const horizontal = edge.includes('e') || edge.includes('w');
+        const vertical = edge.includes('n') || edge.includes('s');
+        const factor = anchor === 'center' ? 0.5 : edge.includes('w') ? 1 : 0;
         const pinX = start.x + start.width * factor;
-        const pinY = start.y + start.height;
-        const maxWidth = anchor === 'left' ? available.right - pinX : anchor === 'right'
+        const fromTop = edge.includes('n');
+        const pinY = start.y + (fromTop ? start.height : 0);
+        const maxWidth = factor === 0 ? available.right - pinX : factor === 1
             ? pinX - available.left : 2 * Math.min(pinX - available.left, available.right - pinX);
-        const maxHeight = pinY - available.top;
-        const widthDelta = anchor === 'left' ? dx : anchor === 'center' ? -2 * dx : -dx;
+        const maxHeight = fromTop ? pinY - available.top : available.bottom - pinY;
+        const widthDelta = (edge.includes('w') ? -dx : dx) * (factor === 0.5 ? 2 : 1);
         const width = Math.max(Math.min(320, maxWidth), Math.min(maxWidth, start.width + widthDelta));
-        const height = Math.max(Math.min(220, maxHeight), Math.min(maxHeight, start.height - dy));
-        const widthChanged = dx !== 0 && width !== start.width;
-        const heightChanged = dy !== 0 && height !== start.height;
+        const height = Math.max(Math.min(220, maxHeight), Math.min(maxHeight, start.height + (fromTop ? -dy : dy)));
+        const widthChanged = horizontal && dx !== 0 && width !== start.width;
+        const heightChanged = vertical && dy !== 0 && height !== start.height;
         // Untouched axes retain preferred coordinates too, not their temporary viewport fit.
         return {
             x: widthChanged ? pinX - width * factor : start.preferredBounds.x,
-            y: heightChanged ? pinY - height : start.preferredBounds.y,
+            y: heightChanged ? (fromTop ? pinY - height : pinY) : start.preferredBounds.y,
             width: widthChanged ? width : start.preferredBounds.width,
             height: heightChanged ? height : start.preferredBounds.height,
         };
@@ -401,9 +364,12 @@ export function createPreviewPanel(strings, {
     }
 
     // Move the visible panel with a compositor transform. Hidden-panel/launcher layout and resizing are batched.
-    function geometryControl(control, resizing = false) {
+    function geometryControl(control, resizing = false, edge) {
         const isLauncher = control === launcher;
-        const fixed = () => pipWindow || (!isLauncher && expanded) || mainDocument.fullscreenElement === panel;
+        const isHeader = control === header;
+        const resizeEdge = () => edge || (anchor === 'left' ? 'ne' : 'nw');
+        const fixed = () => pipWindow || (!isLauncher && expanded) || mainDocument.fullscreenElement === panel
+            || (resizing && !usableEdge(resizeEdge()));
         let drag;
         let animation;
         const startRect = () => ({ ...compactRect(), preferredBounds: { ...bounds } });
@@ -422,6 +388,7 @@ export function createPreviewPanel(strings, {
             mainWindow.cancelAnimationFrame(animation);
             if (control.hasPointerCapture(pointer)) control.releasePointerCapture(pointer);
             panel.classList.remove('aflpp-dragging');
+            control.classList.remove('aflpp-edge-active');
             mainDocument.documentElement.classList.remove('aflpp-window-dragging');
             mainDocument.documentElement.style.removeProperty('--aflpp-drag-cursor');
             draw();
@@ -433,9 +400,11 @@ export function createPreviewPanel(strings, {
         }
         control.addEventListener('pointerdown', (event) => {
             if (event.button !== 0 || fixed()) return;
+            if (isHeader && event.target.closest('button, a, [role="button"]')) return;
             if (isLauncher) launcherDragClick = false;
             event.preventDefault();
-            control.focus({ preventScroll: true });
+            if (isLauncher) launcher.focus({ preventScroll: true });
+            else if (control === move) controls.focus('move');
             controls.closeMenu();
             drag = { ...startRect(), pointer: event.pointerId, pointerX: event.clientX, pointerY: event.clientY };
             control.setPointerCapture(event.pointerId);
@@ -447,16 +416,18 @@ export function createPreviewPanel(strings, {
             if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
             drag.moved = true;
             panel.classList.add('aflpp-dragging');
+            if (resizing) control.classList.add('aflpp-edge-active');
             mainDocument.documentElement.style.setProperty(
                 '--aflpp-drag-cursor', resizing ? mainWindow.getComputedStyle(control).cursor : 'grabbing'
             );
             mainDocument.documentElement.classList.add('aflpp-window-dragging');
-            if (resizing) Object.assign(bounds, resizeBounds(drag, dx, dy));
+            if (resizing) Object.assign(bounds, resizeBounds(drag, resizeEdge(), dx, dy));
             else moveBounds(drag, dx, dy);
             if (!animation) animation = mainWindow.requestAnimationFrame(paint);
         });
         for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) control.addEventListener(event, finish);
         mainWindow.addEventListener('blur', finish);
+        if (isHeader || edge) return; // Pointer-only titlebar/edges add no extra keyboard stops.
         control.addEventListener('keydown', (event) => {
             const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
             if (!delta || event.altKey || event.ctrlKey || event.metaKey || fixed()) return;
@@ -464,7 +435,7 @@ export function createPreviewPanel(strings, {
             controls.closeMenu();
             const start = startRect();
             const step = event.shiftKey ? 40 : 10;
-            if (resizing) Object.assign(bounds, resizeBounds(start, delta[0] * step, delta[1] * step));
+            if (resizing) Object.assign(bounds, resizeBounds(start, resizeEdge(), delta[0] * step, delta[1] * step));
             else moveBounds(start, delta[0] * step, delta[1] * step);
             draw();
             rememberLayout();
@@ -479,8 +450,10 @@ export function createPreviewPanel(strings, {
     });
     resize.addEventListener('blur', () => resize.classList.remove('aflpp-help-dismissed'));
     geometryControl(move);
+    geometryControl(header);
     geometryControl(launcher);
     geometryControl(resize, true);
+    for (const edge of resizeEdges) geometryControl(edge, true, edge.dataset.resizeEdge);
     // Viewport corrections are temporary, not new saved layout preferences.
     mainWindow.addEventListener('resize', draw);
 
@@ -558,14 +531,6 @@ export function createPreviewPanel(strings, {
         onClose();
         launcher.focus();
     }
-    for (const button of panel.querySelectorAll('[data-action="close"]')) {
-        button.addEventListener('click', closePanel);
-    }
-    dismissNotice.addEventListener('click', () => {
-        clearWindowNotice();
-        status.textContent = current.text;
-        controls.focus('actions');
-    });
     launcher.addEventListener('click', (event) => {
         if (launcherDragClick && event.detail !== 0) {
             launcherDragClick = false;
@@ -577,13 +542,18 @@ export function createPreviewPanel(strings, {
         onOpen();
         if (visible) controls.focus('actions');
     });
-    for (const button of [emptyRetry, feedbackRetry]) {
-        button.addEventListener('click', () => {
-            if (!button.disabled && !button.hidden) onRetry(takeOverAction);
-        });
-    }
     controls = createPreviewControls(panel, strings, {
         refresh: () => { if (current.canRefresh) onRefresh(); },
+        retry: () => {
+            if (current.state !== 'handover' && (takeOverAction || (current.canRetry && ['error', 'conflict'].includes(current.state)))) {
+                onRetry(takeOverAction);
+            }
+        },
+        dismissNotice: () => {
+            clearWindowNotice();
+            status.textContent = current.text;
+            controls.focus('actions');
+        },
         mode: toggleMode, close: closePanel, popOut, fullscreen: enterFullscreen,
         dock: (side) => dockWindow(side), size: sizeWindow, reset: () => dockWindow('right', true),
         follow: toggleFollow, rememberVisibility: toggleRememberVisibility,
@@ -609,7 +579,7 @@ export function createPreviewPanel(strings, {
             if (!value) {
                 controls.closeMenu();
                 windowNotice = '';
-                renderFeedback();
+                syncControls();
                 responsiveViewport.layout();
             }
             visible = value;

@@ -1,29 +1,39 @@
 import { createElement as h, createPortal, createRoot, flushSync, Fragment } from '@wordpress/element';
-import { Button, DropdownMenu, MenuGroup, MenuItem, MenuItemsChoice, Popover, SlotFillProvider, Toolbar, ToolbarButton } from '@wordpress/components';
+import {
+    Button, DropdownMenu, MenuGroup, MenuItem, MenuItemsChoice, Notice, Placeholder,
+    Popover, SlotFillProvider, Spinner, Toolbar, ToolbarButton,
+} from '@wordpress/components';
 import { icons } from '../../src/icons.js';
 
-// Native WordPress controls only. The panel owns geometry, preferences and preview state.
+// Public WordPress UI only. The shell owns geometry, recovery decisions and preview state.
 export function createPreviewControls(panel, strings, callbacks) {
     const container = panel.querySelector('.aflpp-controls');
     const refreshContainer = panel.querySelector('.aflpp-refresh-control');
+    const moveContainer = panel.querySelector('.aflpp-move-control');
     const devicesContainer = panel.querySelector('.aflpp-device-controls');
     const pipContainer = panel.querySelector('.aflpp-pip-control');
+    const emptyContainer = panel.querySelector('.aflpp-empty');
+    const feedbackContainer = panel.querySelector('.aflpp-feedback');
     const launcherContainer = panel.ownerDocument.querySelector('#aflpp-toggle .aflpp-launcher-icon');
-    const dismissContainer = panel.querySelector('.aflpp-dismiss-icon');
-    const resizeContainer = panel.querySelector('.aflpp-resize-icon');
     let root = createRoot(container);
     let state;
     let open = false;
 
     function Controls() {
-        const { inPage, inPip, mode, modeLabel, canRefresh, hasPreview, previewUrl, canPip, canFullscreen, dock, size, rememberVisibility, followChanges, device } = state;
+        const {
+            inPage, inPip, mode, modeLabel, movable, busy, canRefresh, hasPreview, previewUrl,
+            canPip, canFullscreen, dock, size, rememberVisibility, followChanges, device, empty, notice,
+        } = state;
         const command = (action) => () => { closeMenu(); action(); };
         return h(SlotFillProvider, null,
             createPortal(icons.pip, launcherContainer),
-            createPortal(icons.close, dismissContainer),
-            createPortal(icons.resize, resizeContainer),
+            createPortal(movable && inPage && h(Button, {
+                className: 'aflpp-icon aflpp-move', icon: icons.move, label: strings.move, showTooltip: true, tooltipPosition: 'bottom',
+                'data-action': 'move',
+            }), moveContainer),
             createPortal(!inPip && h(Button, {
-                className: 'aflpp-icon', icon: icons.refresh, label: strings.refresh, showTooltip: true,
+                className: 'aflpp-icon', icon: busy ? h(Spinner) : icons.refresh,
+                label: strings.refresh, showTooltip: true,
                 disabled: !canRefresh, onClick: callbacks.refresh, 'data-action': 'refresh',
             }), refreshContainer),
             createPortal(canPip && hasPreview && h(Button, {
@@ -99,6 +109,30 @@ export function createPreviewControls(panel, strings, callbacks) {
                     isPressed: device === name, 'data-viewport': name, onClick: () => callbacks.device(name),
                 })),
             ), devicesContainer),
+            createPortal(empty && h(Placeholder, {
+                className: 'aflpp-placeholder', icon: empty.busy ? h(Spinner) : icons[empty.icon],
+                label: h('h2', { className: 'aflpp-empty-title', tabIndex: -1, 'data-action': 'empty-title' }, empty.heading),
+                instructions: empty.description,
+            },
+            empty.retry && h(Button, {
+                key: 'retry', variant: 'primary', disabled: empty.disabled, onClick: callbacks.retry, 'data-action': 'retry',
+            }, empty.action),
+            empty.previewUrl && h(Button, {
+                key: 'link', variant: 'secondary', href: empty.previewUrl, target: '_blank',
+                rel: 'noopener noreferrer', referrerPolicy: 'no-referrer',
+            }, strings.openPreview),
+            empty.close && h(Button, { key: 'close', variant: 'secondary', onClick: callbacks.close, 'data-action': 'close' }, strings.close),
+            empty.note && h('p', { className: 'aflpp-empty-note' }, empty.note),
+            ), emptyContainer),
+            createPortal(notice && h(Notice, {
+                status: notice.status, isDismissible: notice.dismissible, onRemove: callbacks.dismissNotice,
+                // The shell's status region announces state changes once, including window-operation failures.
+                spokenMessage: '', politeness: 'polite',
+                actions: [
+                    ...(notice.retry ? [{ label: notice.action, disabled: notice.disabled, onClick: callbacks.retry }] : []),
+                    ...(notice.close ? [{ label: strings.close, onClick: callbacks.close }] : []),
+                ],
+            }, h('p', null, h('strong', null, notice.heading)), notice.description && h('p', null, notice.description)), feedbackContainer),
             // Keep every popover inside the panel's fullscreen/PiP document, not the editor body.
             h(Popover.Slot),
         );
@@ -123,7 +157,6 @@ export function createPreviewControls(panel, strings, callbacks) {
         update(next) { state = next; render(); },
         closeMenu,
         focus,
-        // Dispose document-bound focus/resize hooks before adopting the panel into another window.
         beforeMove() {
             open = false;
             root?.unmount();

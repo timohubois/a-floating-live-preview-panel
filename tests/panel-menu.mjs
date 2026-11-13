@@ -68,26 +68,48 @@ function browserTests(css) {
         results.push({ name });
     } catch (error) { results.push({ name, error: error.message }); }
     finally { panel.remove(); }
-    for (const anchor of ['left', 'center', 'right']) {
-        const name = `${anchor} resize grip is visible, keyboard-focusable and retains its resize cursor`;
+    for (const direction of ['ltr', 'rtl']) for (const anchor of ['left', 'center', 'right']) {
+        const name = `${direction} ${anchor} boundary resizing stays physical, keyboard-accessible and out of the header`;
+        panel.dir = direction;
         panel.dataset.anchor = anchor;
-        panel.innerHTML = '<div class="aflpp-header"><button class="aflpp-move">Move preview</button></div><button class="aflpp-resize" aria-label="Resize preview"></button>';
+        panel.innerHTML = `<div class="aflpp-header"><button class="components-button aflpp-move">Move preview</button><span class="aflpp-caption">Title</span></div>
+            <span class="aflpp-edge aflpp-edge-n"></span><span class="aflpp-edge aflpp-edge-e"></span><span class="aflpp-edge aflpp-edge-nw"></span>
+            <div class="aflpp-resize-control"><button class="aflpp-resize" aria-label="Resize preview"></button></div>`;
         document.body.append(panel);
         try {
             const grip = panel.querySelector('.aflpp-resize');
-            const rect = grip.getBoundingClientRect();
-            if (rect.width < 24 || rect.height < 24) throw new Error('The single grip needs a usable target.');
-            if (getComputedStyle(grip).cursor !== (anchor === 'left' ? 'nesw-resize' : 'nwse-resize')) throw new Error('Button resets must not override the resize cursor.');
-            if (getComputedStyle(panel.querySelector('.aflpp-move')).cursor !== 'grab') throw new Error('Button resets must not override the move cursor.');
+            const rect = grip.getBoundingClientRect(), box = panel.getBoundingClientRect();
+            if (rect.width < 24 || rect.height < 24) throw new Error('The keyboard boundary needs a usable focus indicator.');
+            if (anchor === 'left' ? rect.left < box.left + box.width / 2 : rect.left > box.left + box.width / 2) throw new Error('Keep the keyboard boundary at its physical free corner, including RTL.');
+            if (panel.querySelector('.aflpp-header .aflpp-resize')) throw new Error('No resize icon or resize Tab stop in the header.');
+            for (const [selector, cursor] of [['n', 'ns-resize'], ['e', 'ew-resize'], ['nw', 'nwse-resize']]) {
+                if (getComputedStyle(panel.querySelector('.aflpp-edge-' + selector)).cursor !== cursor) throw new Error('Pointer borders need directional cursors.');
+            }
+            if (getComputedStyle(panel.querySelector('.aflpp-move')).cursor !== 'grab') throw new Error('The dedicated move button retains its grab cursor.');
             grip.focus();
-            if (document.activeElement !== grip) throw new Error('The visible resize grip must remain focusable.');
+            if (document.activeElement !== grip) throw new Error('The boundary resize control must remain keyboard-focusable.');
             panel.classList.add('aflpp-expanded');
-            if (getComputedStyle(grip).display !== 'none') throw new Error('Expanded mode must not expose an unusable resize grip.');
+            if (grip.getClientRects().length) throw new Error('Expanded mode hides the keyboard boundary.');
             panel.classList.remove('aflpp-expanded');
             results.push({ name });
         } catch (error) { results.push({ name, error: error.message }); }
         finally { panel.remove(); }
     }
+    const placeholderName = 'native Placeholder instructions remain readable at compact widths';
+    panel.innerHTML = '<div class="aflpp-empty"><div class="components-placeholder aflpp-placeholder is-medium"><div class="components-placeholder__instructions">Recovery instructions</div></div></div>';
+    const coreStyle = document.createElement('style');
+    // Core hides block Placeholder instructions below its medium-width breakpoint.
+    coreStyle.textContent = '.components-placeholder.is-medium .components-placeholder__instructions, .components-placeholder.is-small .components-placeholder__instructions { display:none; }';
+    document.head.prepend(coreStyle);
+    document.body.append(panel);
+    try {
+        for (const size of ['is-medium', 'is-small']) {
+            panel.querySelector('.components-placeholder').className = `components-placeholder aflpp-placeholder ${size}`;
+            if (getComputedStyle(panel.querySelector('.components-placeholder__instructions')).display !== 'block') throw new Error('Do not hide loading, permission or recovery instructions.');
+        }
+        results.push({ name: placeholderName });
+    } catch (error) { results.push({ name: placeholderName, error: error.message }); }
+    finally { panel.remove(); coreStyle.remove(); }
     style.remove();
     return results;
 }
@@ -110,7 +132,7 @@ test('PiP menu bounds, preview shortcut and geometry controls in Chromium', asyn
         const output = result.stdout.match(/<script id="results" type="application\/json">([\s\S]*?)<\/script>/)?.[1];
         assert.ok(output && output !== 'null', `Browser tests did not finish.\n${result.stderr}\n${result.stdout}`);
         const results = JSON.parse(output);
-        assert.equal(results.length, 10);
+        assert.equal(results.length, 14);
         for (const result of results) await t.test(result.name, () => assert.equal(result.error, undefined, result.error));
     } finally { await rm(directory, { recursive: true, force: true }); }
 });
