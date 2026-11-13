@@ -203,11 +203,17 @@ test('closing a ready panel clears its frame without changing the launcher into 
     assert.equal(launcher.title, 'Live preview');
 });
 
-test('loading, ready and problem states retain screen-reader announcements without a status dot', () => {
+test('pending, loading, ready and problem states keep refresh activity and accessible status in sync', () => {
     const h = fixture(true);
     const status = h.node('aflpp-panel [role="status"]');
     h.view.report('Loading preview…', 'loading', { hasPreview: false });
     assert.equal(status.textContent, 'Loading preview…');
+    h.view.report('Changes pending…', 'stale', { hasPreview: true });
+    assert.equal(status.textContent, 'Changes pending…');
+    assert.equal(h.state.busy, true, 'Show activity while changes wait for the debounced refresh.');
+    assert.equal(h.state.canRefresh, false);
+    assert.equal(h.state.empty, null, 'Keep the previous frame visible.');
+    assert.equal(h.state.notice, null);
     h.view.report('Updating preview…', 'loading', { hasPreview: true });
     assert.equal(status.textContent, 'Updating preview…');
     assert.equal(h.state.busy, true);
@@ -216,6 +222,7 @@ test('loading, ready and problem states retain screen-reader announcements witho
     assert.equal(h.state.busy, false);
     h.view.report('Could not refresh', 'error', { hasPreview: true, canRetry: true });
     assert.match(status.textContent, /Could not refresh/);
+    assert.equal(h.state.busy, false, 'A failed refresh must not leave the spinner running.');
     assert.equal(h.state.notice.heading, 'Could not refresh');
 });
 

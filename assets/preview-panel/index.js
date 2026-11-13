@@ -271,7 +271,7 @@ export function createPreviewPanel(strings, {
         const retry = takeOverAction || (current.canRetry && ['error', 'conflict'].includes(current.state));
         controls.update({
             inPage, inPip: !!pipWindow, movable, dock, rememberVisibility, followChanges, device: responsiveViewport.device,
-            busy: current.hasPreview && ['loading', 'handover'].includes(current.state) && current.text !== strings.saving,
+            busy: current.hasPreview && ['stale', 'loading', 'handover'].includes(current.state) && current.text !== strings.saving,
             empty: current.hasPreview ? null : {
                 ...presentation(), busy: ['loading', 'stale', 'ready', 'handover'].includes(current.state),
                 icon: ['unavailable', 'browser'].includes(current.reason) ? 'info' : current.state === 'conflict' ? 'pip' : 'warning',
