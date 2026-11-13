@@ -346,6 +346,8 @@ final class Preview
         // Bind core and compatibility reads to the authorized source, not the latest revision.
         remove_filter('the_preview', '_set_preview');
         add_filter('the_preview', [$this, 'readPost']);
+        // Timber can reload the parent by ID instead of using WordPress's filtered preview object.
+        add_filter('timber/post/import_data', [$this, 'readTimberPost'], PHP_INT_MAX, 2);
         $this->acf->bindPreview($postId, $this->source->ID);
         add_action('template_redirect', [$this, 'checkPreviewTarget'], -1);
     }
@@ -358,6 +360,16 @@ final class Preview
             }
         }
         return $post;
+    }
+
+    public function readTimberPost(array $data, object $post): array
+    {
+        if ((int) $post->ID === $this->previewPostId && $this->source) {
+            foreach (['post_title', 'post_content', 'post_excerpt'] as $field) {
+                $data[$field] = $this->source->$field;
+            }
+        }
+        return $data;
     }
 
     public function checkPreviewTarget(): void
