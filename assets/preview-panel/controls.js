@@ -1,5 +1,5 @@
 import { createElement as h, createPortal, createRoot, flushSync, Fragment } from '@wordpress/element';
-import { Button, DropdownMenu, MenuGroup, MenuItem, MenuItemsChoice, Popover, SlotFillProvider } from '@wordpress/components';
+import { Button, DropdownMenu, MenuGroup, MenuItem, MenuItemsChoice, Popover, SlotFillProvider, Toolbar, ToolbarButton } from '@wordpress/components';
 import { icons } from '../../src/icons.js';
 
 // Native WordPress controls only. The panel owns geometry, preferences and preview state.
@@ -93,9 +93,9 @@ export function createPreviewControls(panel, strings, callbacks) {
                 className: 'aflpp-icon', icon: icons.close, label: strings.close, showTooltip: true,
                 onClick: callbacks.close, 'data-action': 'close',
             }),
-            createPortal(h('div', { className: 'aflpp-devices', role: 'group', 'aria-label': strings.viewport },
-                ...['desktop', 'tablet', 'mobile'].map((name) => h(Button, {
-                    key: name, className: 'aflpp-icon', icon: icons[name], label: strings[name], showTooltip: true,
+            createPortal(h(Toolbar, { className: 'aflpp-devices', label: strings.viewport, variant: 'unstyled' },
+                ...['desktop', 'tablet', 'mobile'].map((name) => h(ToolbarButton, {
+                    key: name, icon: icons[name], label: strings[name],
                     isPressed: device === name, 'data-viewport': name, onClick: () => callbacks.device(name),
                 })),
             ), devicesContainer),

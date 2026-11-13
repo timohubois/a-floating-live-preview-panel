@@ -13,7 +13,7 @@ function fixture() {
     const calls = [];
     const container = {};
     const h = (type, props, ...children) => ({ type, props: props || {}, children });
-    const components = Object.fromEntries(['Button', 'DropdownMenu', 'MenuGroup', 'MenuItem', 'MenuItemsChoice', 'SlotFillProvider'].map((name) => [name, name]));
+    const components = Object.fromEntries(['Button', 'DropdownMenu', 'MenuGroup', 'MenuItem', 'MenuItemsChoice', 'Toolbar', 'ToolbarButton', 'SlotFillProvider'].map((name) => [name, name]));
     components.Popover = { Slot: 'Popover.Slot' };
     const element = {
         createElement: h, Fragment: 'Fragment', createPortal: (child, target) => h('Portal', { target }, child), flushSync: (callback) => callback(),
@@ -95,6 +95,16 @@ test('size presets offer native single-choice controls without dragging and stay
     assert.equal(h.nodes('MenuItemsChoice').length, 0);
 });
 
+test('viewport choices use native Toolbar buttons and pressed-state behavior', () => {
+    const h = fixture();
+    assert.equal(h.nodes('Toolbar')[0].props.label, 'viewport');
+    const buttons = h.nodes('ToolbarButton');
+    assert.equal(buttons.length, 3);
+    assert.deepEqual(buttons.map(({ props }) => props.isPressed), [true, false, false]);
+    buttons[2].props.onClick();
+    assert.deepEqual(h.calls.at(-1), { name: 'device', args: ['mobile'] });
+});
+
 test('document moves unmount old native hooks before creating the next root', () => {
     const h = fixture();
     const original = h.mounts[0];
@@ -117,7 +127,7 @@ test('controls pass the official bundled icon elements directly to native compon
     assert.equal(portalIcon('#aflpp-toggle .aflpp-launcher-icon'), h.icons.pip);
     assert.equal(portalIcon('.aflpp-dismiss-icon'), h.icons.close);
     assert.equal(portalIcon('.aflpp-resize-icon'), h.icons.resize);
-    const icons = [...h.nodes('Button'), ...h.nodes('MenuItem')].map(({ props }) => props.icon).filter(Boolean);
+    const icons = [...h.nodes('Button'), ...h.nodes('ToolbarButton'), ...h.nodes('MenuItem')].map(({ props }) => props.icon).filter(Boolean);
     assert.ok(icons.length >= 7, 'cover header, viewport and preference icons');
     for (const icon of icons) {
         assert.ok(Object.values(h.icons).includes(icon), 'do not reconstruct or modify the library icons');

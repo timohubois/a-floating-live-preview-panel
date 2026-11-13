@@ -107,7 +107,6 @@
 .aflpp-launcher svg { display: block; width: 24px; height: 24px; flex-shrink: 0; }
 .aflpp-panel button:not(.components-button, .aflpp-move, .aflpp-resize):hover,
 .aflpp-panel .aflpp-open-preview:hover { background: #dcdcde; color: var(--wp-admin-theme-color-darker-10, var(--aflpp-accent)); }
-.aflpp-panel .aflpp-icon[aria-pressed="true"] { background: var(--aflpp-accent); color: #fff; }
 .aflpp-panel button:not(.components-button):disabled { color: #a7aaad; cursor: not-allowed; }
 .aflpp-panel button:not(.components-button):focus-visible,
 .aflpp-panel .aflpp-open-preview:focus-visible,
@@ -147,8 +146,8 @@
 .aflpp-panel .aflpp-primary:not(:disabled):hover { background: var(--wp-admin-theme-color-darker-10, var(--aflpp-accent)); color: #fff; }
 .aflpp-panel .aflpp-primary:disabled { background: #dcdcde; color: #646970; }
 .aflpp-spinner { display: block; width: 16px; height: 16px; margin: 0 auto 16px; border: 2px solid #dcdcde; border-top-color: var(--aflpp-accent); border-radius: 50%; }
-.aflpp-devicebar { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 8px; border-top: 1px solid var(--aflpp-border); border-radius: 0 0 5px 5px; background: #f6f7f7; }
-.aflpp-devices { display: flex; gap: 3px; }
+.aflpp-devicebar { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; border-top: 1px solid var(--aflpp-border); border-radius: 0 0 5px 5px; background: #f6f7f7; }
+.aflpp-devices.components-toolbar { border: 0; background: transparent; }
 .aflpp-dimensions { color: var(--aflpp-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .aflpp-controls,
