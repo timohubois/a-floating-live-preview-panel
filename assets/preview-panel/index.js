@@ -1,4 +1,4 @@
-// Presentation only: never capture fields, fetch previews, acquire locks or control native saves.
+// Bind the PHP-rendered panel. Never capture fields, fetch previews, acquire locks or control native saves.
 export function createPreviewPanel(strings, {
     postTitle = '', nativeSaving, onOpen, onClose, onRefresh, onRetry, onError, beforeMove, afterMove,
 }, createPreviewViewport) {
@@ -13,147 +13,60 @@ export function createPreviewPanel(strings, {
     let rememberVisibility = preferences.get(scope, 'rememberVisibility') !== false;
     let followChanges = preferences.get(scope, 'scrollToChanges') !== false;
     const showOnLoad = (!rememberVisibility || preferences.get(scope, 'panelOpen') !== false) && !nativeSaving;
-    // SVGs: WordPress Contributors, @wordpress/icons 20.0.0, GPL-2.0-or-later.
-    // Gutenberg 55ab503b80b1561f48414b2eb209c25b793a9e8a; unchanged paths and shared SVG presentation.
-    const icons = {
-        desktop: '<path d="M4.75 16.75V17H3.25C3.11193 17 3 17.1119 3 17.25H21C21 17.1119 20.8881 17 20.75 17H19.25V16.75M4.75 16.75V8.5C4.75 7.80964 5.30964 7.25 6 7.25H18C18.6904 7.25 19.25 7.80964 19.25 8.5V16.75M4.75 16.75H19.25" />',
-        tablet: '<path d="M10 16.5H14M18.25 18V6C18.25 5.30964 17.6904 4.75 17 4.75H7C6.30964 4.75 5.75 5.30964 5.75 6L5.75 18C5.75 18.6904 6.30964 19.25 7 19.25H17C17.6904 19.25 18.25 18.6904 18.25 18Z" />',
-        mobile: '<path d="M11 16.5H13M16.25 18V6C16.25 5.30964 15.6904 4.75 15 4.75H9C8.30964 4.75 7.75 5.30964 7.75 6L7.75 18C7.75 18.6904 8.30964 19.25 9 19.25H15C15.6904 19.25 16.25 18.6904 16.25 18Z" />',
-        update: '<path d="M12 5.5L17.7929 11.2929C18.1834 11.6834 18.1834 12.3166 17.7929 12.7071L16 14.5M16 5.5H12V9.5M12 18.5L6.20711 12.7071C5.81658 12.3166 5.81658 11.6834 6.20711 11.2929L8 9.5M8 18.5H12V14.5" />',
-        fullscreen: '<path d="M4.75 10V4.75H10M4.75 4.75L10 10M14 19.25H19.25V14M19.25 19.25L14 14" />',
-        fullscreenExit: '<path d="M10 4.75V10H4.75M10 10L4.75 4.75M19.25 14H14V19.25M14 14L19.25 19.25" />',
-        drawerRight: '<path d="M14.25 19.25L18 19.25C18.6904 19.25 19.25 18.6904 19.25 18L19.25 6C19.25 5.30964 18.6904 4.75 18 4.75L14.25 4.75M14.25 19.25L6 19.25C5.30964 19.25 4.75 18.6904 4.75 18L4.75 6C4.75 5.30964 5.30965 4.75 6 4.75L14.25 4.75M14.25 19.25L14.25 4.75" />',
-        replace: '<path d="M11 18H15.5C16.6046 18 17.5 17.1046 17.5 16V13.25M15 15.25L17.5 13.25L20 15.25M13 6.25L8.5 6.25C7.39543 6.25 6.5 7.14543 6.5 8.25L6.5 11M9 9L6.5 11L4 9M5 19.25H8C8.69036 19.25 9.25 18.6904 9.25 18V15C9.25 14.3096 8.69036 13.75 8 13.75H5C4.30964 13.75 3.75 14.3096 3.75 15V18C3.75 18.6904 4.30964 19.25 5 19.25ZM16 10.25H19C19.6904 10.25 20.25 9.69036 20.25 9V6C20.25 5.30964 19.6904 4.75 19 4.75H16C15.3096 4.75 14.75 5.30964 14.75 6V9C14.75 9.69036 15.3096 10.25 16 10.25Z" />',
-        moreHorizontal: '<path d="M18.25 12.25L18.25 11.75L17.75 11.75L17.75 12.25L18.25 12.25Z" fill="currentColor" stroke="none" /><path d="M12.25 12.25L12.25 11.75L11.75 11.75L11.75 12.25L12.25 12.25Z" fill="currentColor" stroke="none" /><path d="M6.25 12.25L6.25 11.75L5.75 11.75L5.75 12.25L6.25 12.25Z" fill="currentColor" stroke="none" /><path d="M18.25 12.25L18.25 11.75L17.75 11.75L17.75 12.25L18.25 12.25Z" /><path d="M12.25 12.25L12.25 11.75L11.75 11.75L11.75 12.25L12.25 12.25Z" /><path d="M6.25 12.25L6.25 11.75L5.75 11.75L5.75 12.25L6.25 12.25Z" />',
-        closeSmall: '<path d="M7.75 16.25L16.25 7.75M16.25 16.25L7.75 7.75" />',
-        check: '<path d="M7 12L10 15L17 8" />',
-    };
+    const launcher = mainDocument.getElementById('aflpp-toggle');
+    const panel = mainDocument.getElementById('aflpp-panel');
+    if (!launcher || !panel) throw new Error('Preview panel markup is missing.');
 
-    function element(tag, className, text) {
-        const node = mainDocument.createElement(tag);
-        node.className = className;
-        if (text) node.textContent = text;
-        return node;
-    }
-
-    function setIcon(node, name) {
-        // Only fixed, bundled Gutenberg SVG paths above are inserted as markup.
-        node.innerHTML = `<svg viewBox="0 0 24 24" style="fill: none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" focusable="false">${icons[name]}</svg>`;
-    }
+    const move = panel.querySelector('.aflpp-move');
+    const dot = panel.querySelector('.aflpp-dot');
+    const caption = panel.querySelector('.aflpp-caption');
+    const refresh = panel.querySelector('[data-action="refresh"]');
+    const modeButton = panel.querySelector('.aflpp-mode');
+    const actions = panel.querySelector('.aflpp-actions');
+    const actionsToggle = actions.querySelector('summary');
+    const pip = panel.querySelector('[data-action="pip"]');
+    const fullscreen = panel.querySelector('[data-action="fullscreen"]');
+    const reset = panel.querySelector('[data-action="reset"]');
+    const dockLeft = panel.querySelector('[data-action="dock-left"]');
+    const dockRight = panel.querySelector('[data-action="dock-right"]');
+    const rememberVisibilityOption = panel.querySelector('[data-action="remember-visibility"]');
+    const follow = panel.querySelector('[data-action="follow"]');
+    const openPreview = panel.querySelector('.aflpp-open-preview');
+    const displayGroup = panel.querySelector('[data-group="display"]');
+    const layoutGroup = panel.querySelector('[data-group="layout"]');
+    const close = panel.querySelector('[data-action="close"]');
+    const viewport = panel.querySelector('.aflpp-viewport');
+    const stage = panel.querySelector('.aflpp-stage');
+    const empty = panel.querySelector('.aflpp-empty');
+    const dimensions = panel.querySelector('.aflpp-dimensions');
+    const feedback = panel.querySelector('.aflpp-feedback');
+    const errorText = panel.querySelector('.aflpp-error');
+    const retry = panel.querySelector('[data-action="retry"]');
+    const retryText = panel.querySelector('.aflpp-retry-label');
+    const status = panel.querySelector('[role="status"]');
+    const responsiveViewport = createPreviewViewport(viewport, stage, dimensions, preferences.get(scope, 'viewport'));
+    const deviceButtons = panel.querySelectorAll('[data-viewport]');
 
     function label(button, text) {
         button.setAttribute('aria-label', text);
         button.title = text;
     }
 
-    function button(text, icon) {
-        const node = element('button', icon ? 'aflpp-icon' : 'aflpp-command', icon ? '' : text);
-        node.type = 'button';
-        label(node, text);
-        if (icon) setIcon(node, icon);
-        return node;
-    }
-
-    const launcher = button(strings.title, 'desktop');
-    launcher.id = 'aflpp-toggle';
-    launcher.className = 'aflpp-launcher';
-    launcher.append(element('span', '', strings.title));
-    launcher.setAttribute('aria-controls', 'aflpp-panel');
-    launcher.setAttribute('aria-expanded', String(showOnLoad));
-    launcher.hidden = showOnLoad;
-    const panel = element('section', 'aflpp-panel');
-    panel.hidden = !showOnLoad;
-    panel.id = 'aflpp-panel';
-    panel.setAttribute('aria-label', strings.title);
-    panel.dataset.state = 'loading';
-    const header = element('div', 'aflpp-header');
-    const move = button(strings.move);
-    move.className = 'aflpp-move';
-    const dot = element('span', 'aflpp-dot');
-    dot.setAttribute('aria-hidden', 'true');
-    const caption = element('span', 'aflpp-caption');
-    move.replaceChildren(dot, caption);
-    const refresh = button(strings.refresh, 'update');
-    refresh.disabled = true;
-    const modeButton = button(strings.expand, 'fullscreen');
-    modeButton.classList.add('aflpp-mode');
-    const actions = element('details', 'aflpp-actions');
-    const actionsToggle = element('summary', 'aflpp-icon');
-    label(actionsToggle, strings.actions);
-    setIcon(actionsToggle, 'moreHorizontal');
-    const commands = element('div', 'aflpp-commands');
-    function commandGroup(text, ...controls) {
-        const group = element('div', 'aflpp-command-group');
-        group.setAttribute('role', 'group');
-        group.setAttribute('aria-label', text);
-        group.append(element('p', 'aflpp-command-heading', text), ...controls);
-        return group;
-    }
-    const pip = button(strings.pip);
-    const pipHint = element('span', 'aflpp-command-hint', strings.pipHint);
-    pipHint.setAttribute('aria-hidden', 'true');
-    pip.append(pipHint);
-    const fullscreen = button(strings.fullscreen);
-    const reset = button(strings.reset);
-    const dockLeft = button(strings.dockLeft);
-    const dockRight = button(strings.dockRight);
-    const rememberVisibilityOption = button(strings.rememberVisibility);
     rememberVisibilityOption.setAttribute('aria-pressed', String(rememberVisibility));
-    const follow = button(strings.follow);
     follow.setAttribute('aria-pressed', String(followChanges));
-    for (const option of [rememberVisibilityOption, follow]) {
-        const check = element('span', 'aflpp-command-check');
-        check.setAttribute('aria-hidden', 'true');
-        setIcon(check, 'check');
-        option.append(check);
+    for (const control of deviceButtons) {
+        const name = control.dataset.viewport;
+        control.setAttribute('aria-pressed', String(name === responsiveViewport.device));
+        control.addEventListener('click', () => {
+            if (responsiveViewport.device !== name) preferenceActions.set(scope, 'viewport', name);
+            for (const node of deviceButtons) node.setAttribute('aria-pressed', String(node === control));
+            responsiveViewport.select(name, visible);
+        });
     }
-    const openPreview = element('a', 'aflpp-command aflpp-open-preview', strings.openPreview);
-    openPreview.target = '_blank';
-    openPreview.rel = 'noopener noreferrer';
-    openPreview.referrerPolicy = 'no-referrer';
-    openPreview.hidden = true;
     openPreview.addEventListener('click', () => {
         actions.open = false;
         actionsToggle.focus({ preventScroll: true });
     });
-    const displayGroup = commandGroup(strings.display, openPreview, pip, fullscreen);
-    const layoutGroup = commandGroup(strings.layout, dockLeft, dockRight, reset);
-    commands.append(displayGroup, layoutGroup, commandGroup(strings.preferences, rememberVisibilityOption, follow));
-    actions.append(actionsToggle, commands);
-    const close = button(strings.close, 'closeSmall');
-    header.append(refresh, move, actions, modeButton, close);
-    const viewport = element('div', 'aflpp-viewport');
-    const stage = element('div', 'aflpp-stage');
-    const empty = element('div', 'aflpp-empty', strings.loading);
-    viewport.append(stage, empty);
-    const devicebar = element('div', 'aflpp-devicebar');
-    const devices = element('div', 'aflpp-devices');
-    devices.setAttribute('role', 'group');
-    devices.setAttribute('aria-label', strings.viewport);
-    const dimensions = element('span', 'aflpp-dimensions');
-    dimensions.title = strings.viewportNotice;
-    const responsiveViewport = createPreviewViewport(viewport, stage, dimensions, preferences.get(scope, 'viewport'));
-    const deviceButtons = Object.fromEntries(responsiveViewport.presets.map((name) => {
-        const control = button(strings[name], name);
-        control.setAttribute('aria-pressed', String(name === responsiveViewport.device));
-        control.addEventListener('click', () => {
-            if (responsiveViewport.device !== name) preferenceActions.set(scope, 'viewport', name);
-            for (const [key, node] of Object.entries(deviceButtons)) node.setAttribute('aria-pressed', String(key === name));
-            responsiveViewport.select(name, visible);
-        });
-        devices.append(control);
-        return [name, control];
-    }));
-    devicebar.append(devices, dimensions);
-    const feedback = element('div', 'aflpp-feedback');
-    feedback.hidden = true;
-    const errorText = element('span', 'aflpp-error');
-    const retry = button(strings.retry, 'update');
-    feedback.append(errorText, retry);
-    const status = element('span', 'aflpp-sr-only');
-    status.setAttribute('role', 'status');
-    panel.append(header, viewport, devicebar, feedback, status);
-    mainDocument.body.append(launcher, panel);
 
     let visible = showOnLoad;
     let pipWindow;
@@ -196,8 +109,11 @@ export function createPreviewPanel(strings, {
         if (retry.title !== action) {
             label(retry, action);
             retry.classList.toggle('aflpp-takeover', takeOverAction);
-            setIcon(retry, takeOverAction ? 'replace' : 'update');
-            if (takeOverAction) retry.append(element('span', '', action));
+            for (const icon of retry.querySelectorAll('[data-icon]')) {
+                icon.toggleAttribute('hidden', icon.dataset.icon !== (takeOverAction ? 'takeover' : 'retry'));
+            }
+            retryText.textContent = action;
+            retryText.hidden = !takeOverAction;
         }
         refresh.disabled = !canRefresh;
         retry.hidden = !takeOverAction && !(canRetry && ['error', 'conflict'].includes(state));
@@ -263,7 +179,10 @@ export function createPreviewPanel(strings, {
         const full = panel.ownerDocument.fullscreenElement === panel;
         const inPage = !pipWindow && !full;
         label(modeButton, pipWindow ? strings.return : full ? strings.exitFullscreen : expanded ? strings.compact : strings.expand);
-        setIcon(modeButton, pipWindow ? 'drawerRight' : full || expanded ? 'fullscreenExit' : 'fullscreen');
+        const mode = pipWindow ? 'return' : full || expanded ? 'compact' : 'expand';
+        for (const icon of modeButton.querySelectorAll('[data-icon]')) {
+            icon.toggleAttribute('hidden', icon.dataset.icon !== mode);
+        }
         pip.hidden = !inPage || !mainWindow.documentPictureInPicture;
         fullscreen.hidden = !inPage || !mainDocument.fullscreenEnabled;
         displayGroup.hidden = openPreview.hidden && pip.hidden && fullscreen.hidden;
@@ -394,15 +313,8 @@ export function createPreviewPanel(strings, {
         });
     }
     geometryControl(move, 'move');
-    for (const [edge, text] of Object.entries({
-        n: strings.resizeTop, ne: strings.resizeTopRight, e: strings.resizeRight, se: strings.resizeBottomRight,
-        s: strings.resizeBottom, sw: strings.resizeBottomLeft, w: strings.resizeLeft, nw: strings.resizeTopLeft,
-    })) {
-        const handle = button(text);
-        handle.className = `aflpp-resize aflpp-resize-${edge}`;
-        handle.textContent = '';
-        panel.append(handle);
-        geometryControl(handle, edge);
+    for (const handle of panel.querySelectorAll('[data-edge]')) {
+        geometryControl(handle, handle.dataset.edge);
     }
     mainWindow.addEventListener('resize', () => {
         if (dock && !expanded) dockWindow(dock);
@@ -469,6 +381,10 @@ export function createPreviewPanel(strings, {
     refresh.addEventListener('click', () => { if (!refresh.disabled) onRefresh(); });
     retry.addEventListener('click', () => { if (!retry.disabled && !retry.hidden) onRetry(takeOverAction); });
     dockWindow('right', true);
+    // Reveal only after binding controls and positioning the server-rendered panel.
+    panel.hidden = !visible;
+    launcher.hidden = visible;
+    launcher.setAttribute('aria-expanded', String(visible));
 
     return {
         // The coordinator owns frame contents; the panel owns their document and viewport geometry.

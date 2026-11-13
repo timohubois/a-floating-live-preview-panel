@@ -14,6 +14,7 @@ final class Editor
         private readonly Acf $acf
     ) {
         add_action('admin_enqueue_scripts', [$this, 'enqueueEditor']);
+        add_action('admin_footer', [$this, 'renderPanel']);
     }
 
     private function editorPost(): ?WP_Post
@@ -85,40 +86,6 @@ final class Editor
                 'title' => __('Live preview', 'a-floating-live-preview-panel'),
                 'preview' => __('Preview', 'a-floating-live-preview-panel'),
                 'move' => __('Move preview: drag or use arrow keys', 'a-floating-live-preview-panel'),
-                'resizeTop' => __(
-                    'Resize top edge: drag or use Up/Down arrows; Shift for larger steps.',
-                    'a-floating-live-preview-panel'
-                ),
-                'resizeTopRight' => __(
-                    'Resize top-right corner: drag or use arrow keys; Shift for larger steps.',
-                    'a-floating-live-preview-panel'
-                ),
-                'resizeRight' => __(
-                    'Resize right edge: drag or use Left/Right arrows; Shift for larger steps.',
-                    'a-floating-live-preview-panel'
-                ),
-                'resizeBottomRight' => __(
-                    'Resize bottom-right corner: drag or use arrow keys; Shift for larger steps.',
-                    'a-floating-live-preview-panel'
-                ),
-                'resizeBottom' => __(
-                    'Resize bottom edge: drag or use Up/Down arrows; Shift for larger steps.',
-                    'a-floating-live-preview-panel'
-                ),
-                'resizeBottomLeft' => __(
-                    'Resize bottom-left corner: drag or use arrow keys; Shift for larger steps.',
-                    'a-floating-live-preview-panel'
-                ),
-                'resizeLeft' => __(
-                    'Resize left edge: drag or use Left/Right arrows; Shift for larger steps.',
-                    'a-floating-live-preview-panel'
-                ),
-                'resizeTopLeft' => __(
-                    'Resize top-left corner: drag or use arrow keys; Shift for larger steps.',
-                    'a-floating-live-preview-panel'
-                ),
-                'reset' => __('Reset size and position', 'a-floating-live-preview-panel'),
-                'close' => __('Close preview', 'a-floating-live-preview-panel'),
                 'retry' => __('Retry', 'a-floating-live-preview-panel'),
                 'takeOver' => __('Take over', 'a-floating-live-preview-panel'),
                 'takingOver' => __('Taking over…', 'a-floating-live-preview-panel'),
@@ -131,40 +98,19 @@ final class Editor
                     'The other preview is still busy. Try again, or close it in the other tab.',
                     'a-floating-live-preview-panel'
                 ),
-                'refresh' => __('Refresh preview', 'a-floating-live-preview-panel'),
                 'expand' => __('Expand preview', 'a-floating-live-preview-panel'),
                 'compact' => __('Make preview compact', 'a-floating-live-preview-panel'),
-                'fullscreen' => __('Enter fullscreen', 'a-floating-live-preview-panel'),
                 'exitFullscreen' => __('Exit fullscreen', 'a-floating-live-preview-panel'),
-                'pip' => __('Pop out preview', 'a-floating-live-preview-panel'),
-                'pipHint' => __('PiP', 'a-floating-live-preview-panel'),
                 'return' => __('Return to editor', 'a-floating-live-preview-panel'),
                 'pipUnavailable' => __(
                     'Picture-in-Picture is not available in this browser.',
                     'a-floating-live-preview-panel'
                 ),
-                'actions' => __('Preview actions', 'a-floating-live-preview-panel'),
-                'display' => __('Display', 'a-floating-live-preview-panel'),
-                'layout' => __('Layout', 'a-floating-live-preview-panel'),
-                'preferences' => __('Preferences', 'a-floating-live-preview-panel'),
-                'dockLeft' => __('Dock bottom left', 'a-floating-live-preview-panel'),
-                'dockRight' => __('Dock bottom right', 'a-floating-live-preview-panel'),
                 'loading' => __('Loading preview…', 'a-floating-live-preview-panel'),
                 'bootFailed' => __(
                     'Live preview could not start. Reload the editor or use WordPress Preview.',
                     'a-floating-live-preview-panel'
                 ),
-                'viewport' => __('Preview viewport', 'a-floating-live-preview-panel'),
-                'desktop' => __('Desktop', 'a-floating-live-preview-panel'),
-                'tablet' => __('Tablet', 'a-floating-live-preview-panel'),
-                'mobile' => __('Mobile', 'a-floating-live-preview-panel'),
-                'viewportNotice' => __(
-                    'Viewport width and scale; not device emulation.',
-                    'a-floating-live-preview-panel'
-                ),
-                'follow' => __('Scroll to changes', 'a-floating-live-preview-panel'),
-                'rememberVisibility' => __('Remember preview visibility', 'a-floating-live-preview-panel'),
-                'openPreview' => __('Open preview in new tab', 'a-floating-live-preview-panel'),
                 'updating' => __('Refreshing preview…', 'a-floating-live-preview-panel'),
                 'current' => __('Preview refreshed', 'a-floating-live-preview-panel'),
                 'stale' => __('Changes pending…', 'a-floating-live-preview-panel'),
@@ -191,6 +137,15 @@ final class Editor
                 'saving' => __('Finishing preview before continuing…', 'a-floating-live-preview-panel'),
             ],
         ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';', 'before');
+    }
+
+    public function renderPanel(): void
+    {
+        if (!$this->editorPost()) {
+            return;
+        }
+
+        require dirname($this->file) . '/assets/preview-panel/markup.php';
     }
 
     private function assetVersion(string $asset): string

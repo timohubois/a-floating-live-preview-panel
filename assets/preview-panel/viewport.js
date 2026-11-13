@@ -60,7 +60,6 @@ export function createPreviewViewport(container, stage, dimensions, savedDevice)
     motion.addEventListener('change', layout);
 
     return {
-        presets,
         get device() { return device; },
         select(name, animate = false) {
             if (!presets.includes(name)) return;
