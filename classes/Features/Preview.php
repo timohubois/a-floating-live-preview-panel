@@ -349,6 +349,46 @@ final class Preview
             && $revision->post_name === $this->revisionName($postId);
     }
 
+    /** Saved history is read-only and may belong to any author the current user can read. */
+    private function savedSource(int $postId, int $sourceId): ?WP_Post
+    {
+        $post = get_post($postId);
+        $source = get_post($sourceId);
+        $status = $post ? get_post_status_object($post->post_status) : null;
+        if (
+            !is_user_logged_in() || !$post || !$source || !is_post_type_viewable($post->post_type)
+            // Match the public, protected and private statuses core can render in an authenticated preview.
+            || !$status || !($status->public || $status->protected || $status->private)
+            || !current_user_can('edit_post', $postId) || !current_user_can('read_post', $sourceId)
+        ) {
+            return null;
+        }
+        if ($sourceId === $postId) {
+            return $source;
+        }
+        return $source->post_type === 'revision' && $source->post_status === 'inherit'
+            && (int) $source->post_parent === $postId ? $source : null;
+    }
+
+    private function savedAction(int $postId, int $sourceId): string
+    {
+        // A separate namespace must never authorize the mutable internal live-preview revision.
+        return 'aflpp_saved_' . $postId . '_' . $sourceId;
+    }
+
+    public function savedPreviewUrl(WP_Post $post, int $sourceId): ?string
+    {
+        if (!$this->savedSource($post->ID, $sourceId)) {
+            return null;
+        }
+        return get_preview_post_link($post, [
+            'aflpp_post' => $post->ID,
+            'aflpp_revision' => $sourceId,
+            'aflpp_saved' => '1',
+            'aflpp_token' => wp_create_nonce($this->savedAction($post->ID, $sourceId)),
+        ]);
+    }
+
     public function authorizePreview(): void
     {
         if (!isset($_GET['aflpp_post'])) {
@@ -363,14 +403,26 @@ final class Preview
             ? absint($_GET['aflpp_revision']) : 0;
         $token = isset($_GET['aflpp_token']) && is_string($_GET['aflpp_token'])
             ? sanitize_text_field(wp_unslash($_GET['aflpp_token'])) : '';
-        if (
-            !is_user_logged_in() || !$postId || !get_post($postId) || !current_user_can('edit_post', $postId)
-            || !$revisionId || !$this->ownsRevision($postId, $revisionId)
-            || !wp_verify_nonce($token, $this->stateAction($postId, $revisionId))
-        ) {
+        $saved = isset($_GET['aflpp_saved']);
+        $source = null;
+        if ($saved) {
+            if ($_GET['aflpp_saved'] === '1' && $postId && $revisionId) {
+                $source = $this->savedSource($postId, $revisionId);
+            }
+            $authorized = $source && wp_verify_nonce($token, $this->savedAction($postId, $revisionId));
+        } else {
+            $authorized = is_user_logged_in() && $postId && get_post($postId)
+                && current_user_can('edit_post', $postId) && $revisionId
+                && $this->ownsRevision($postId, $revisionId)
+                && wp_verify_nonce($token, $this->stateAction($postId, $revisionId));
+            if ($authorized) {
+                $source = get_post($revisionId);
+            }
+        }
+        if (!$authorized) {
             wp_die(
                 esc_html__(
-                    'This preview expired or is unavailable. Refresh it from the editor.',
+                    'This preview expired or is unavailable. Reload the editor or revision browser.',
                     'a-floating-live-preview-panel'
                 ),
                 '',
@@ -380,14 +432,33 @@ final class Preview
 
         $this->previewPostId = $postId;
         $this->previewToken = $token;
-        $this->source = sanitize_post(get_post($revisionId));
+        $this->source = sanitize_post($source);
         // Bind core and compatibility reads to the authorized source, not the latest revision.
         remove_filter('the_preview', '_set_preview');
         add_filter('the_preview', [$this, 'readPost']);
         // Timber can reload the parent by ID instead of using WordPress's filtered preview object.
         add_filter('timber/post/import_data', [$this, 'readTimberPost'], PHP_INT_MAX, 2);
-        $this->acf->bindPreview($postId, $this->source->ID);
+        $this->acf->bindPreview($postId, $this->source->ID, $saved);
+        if ($saved) {
+            add_filter('get_post_metadata', [$this, 'readRevisionMeta'], 10, 4);
+        }
         add_action('template_redirect', [$this, 'checkPreviewTarget'], -1);
+    }
+
+    /** Only explicitly revisioned metadata comes from history; unrelated metadata stays current. */
+    public function readRevisionMeta($value, int $postId, string $key, bool $single)
+    {
+        if (
+            $value !== null || $postId !== $this->previewPostId || !$this->source
+            || $this->source->ID === $postId
+            || !in_array($key, wp_post_revision_meta_keys(get_post_type($postId)), true)
+        ) {
+            return $value;
+        }
+        // Core unwraps the first item for single reads. Keep array-valued meta intact and
+        // return a falsey scalar for absent keys (also used by metadata_exists()).
+        $values = get_post_meta($this->source->ID, $key, false);
+        return $single && !$values ? '' : $values;
     }
 
     public function readPost(WP_Post $post): WP_Post

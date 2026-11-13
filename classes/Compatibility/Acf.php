@@ -11,6 +11,7 @@ final class Acf
     private int $savedId = 0;
     private int $previewPostId = 0;
     private int $sourceId = 0;
+    private bool $readOnly = false;
 
     /** Load ACF's classic JavaScript API before the admin entry point. */
     public function editorDependencies(): array
@@ -99,12 +100,27 @@ final class Acf
         return null;
     }
 
-    /** Called only after core authentication, revision ownership and state checks succeed. */
-    public function bindPreview(int $postId, int $sourceId): void
+    /** Bind only an authorized source; saved history must also reject redirected ACF writes. */
+    public function bindPreview(int $postId, int $sourceId, bool $readOnly = false): void
     {
         $this->previewPostId = $postId;
         $this->sourceId = $sourceId;
+        $this->readOnly = $readOnly;
         add_filter('acf/validate_post_id', [$this, 'readPostId'], PHP_INT_MAX, 2);
+        if ($readOnly) {
+            add_filter('acf/pre_update_metadata', [$this, 'preventSourceWrite'], PHP_INT_MAX, 2);
+            add_filter('acf/pre_delete_metadata', [$this, 'preventSourceWrite'], PHP_INT_MAX, 2);
+        }
+    }
+
+    /** Cover values, field references and repeater children without affecting other ACF objects. */
+    public function preventSourceWrite($check, $postId)
+    {
+        if (!$this->readOnly) {
+            return $check;
+        }
+        $target = acf_decode_post_id($postId);
+        return $target['type'] === 'post' && (int) $target['id'] === $this->sourceId ? false : $check;
     }
 
     public function readPostId($postId, $original)
