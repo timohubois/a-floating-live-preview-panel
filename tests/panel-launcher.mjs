@@ -475,6 +475,19 @@ for (const [direction, ends] of Object.entries({
     });
 }
 
+for (const size of ['small', 'large']) {
+    test(`the remembered ${size} preset remains selectable while expanded and restores compact mode`, () => {
+        const h = fixture(true);
+        h.actions.size(size);
+        assert.equal(h.state.size, size);
+        h.actions.mode();
+        assert.equal(h.state.size, undefined, 'An expanded panel must not mark a compact preset selected.');
+        h.actions.size(size);
+        assert.equal(h.state.size, size);
+        assert.equal(h.state.mode, 'expand');
+    });
+}
+
 for (const event of ['pointercancel', 'lostpointercapture', 'blur']) {
     test(`${event} ends launcher dragging and saves its completed movement only once`, () => {
         const h = fixture(false);
@@ -498,6 +511,26 @@ test('returning a resize drag to its origin restores both original preferred dim
     grip.fire('pointermove', { clientX: 100, clientY: 100 });
     grip.fire('pointerup');
     assert.deepEqual(h.rect(), before);
+});
+
+test('size presets preserve docking and preferred dimensions on small viewports and exit expanded mode', () => {
+    const h = fixture(true, { width: 390, height: 400 });
+    h.actions.dock('left');
+    h.actions.mode();
+    h.actions.size('large');
+    assert.equal(h.state.mode, 'expand');
+    assert.equal(h.state.dock, 'left');
+    assert.equal(h.state.size, 'large');
+    assert.equal(h.preferences.get('layout').bounds.width, 640);
+    assert.equal(h.preferences.get('layout').bounds.height, 440);
+    inside(h);
+    const writes = h.writes.length;
+    h.actions.size('__proto__');
+    assert.equal(h.writes.length, writes);
+    h.actions.size('small');
+    assert.equal(h.state.size, 'small');
+    assert.equal(h.preferences.get('layout').bounds.width, 480);
+    assert.equal(h.preferences.get('layout').bounds.height, 340);
 });
 
 test('explicit opening focuses actions and closing focuses the launcher, without automatic focus on load or visibility changes', () => {

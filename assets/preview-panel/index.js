@@ -76,7 +76,8 @@ export function createPreviewPanel(strings, {
     let current = {
         text: strings.loading, state: 'loading', hasPreview: false, canRetry: false, reason: '',
     };
-    const bounds = validLayout ? { ...saved.bounds } : { x: 0, y: 0, width: 480, height: 340 };
+    const sizes = { small: { width: 480, height: 340 }, large: { width: 640, height: 440 } };
+    const bounds = validLayout ? { ...saved.bounds } : { x: 0, y: 0, ...sizes.small };
     let dock = validLayout ? saved.dock : 'right';
     // Keep the same collapse/resize corner when dragging away from a dock. Older layouts default to the right.
     let anchor = dock || (validLayout && saved.anchor) || 'right';
@@ -296,9 +297,22 @@ export function createPreviewPanel(strings, {
     }
 
     function dockWindow(side = 'right', resetSize = false) {
-        if (resetSize) Object.assign(bounds, { width: 480, height: 340 });
+        if (resetSize) Object.assign(bounds, sizes.small);
         expanded = false;
         anchor = dock = side;
+        draw();
+        rememberLayout();
+        syncControls();
+    }
+
+    function sizeWindow(name) {
+        if (!Object.hasOwn(sizes, name)) return;
+        const rect = compactRect();
+        Object.assign(bounds, sizes[name], {
+            x: rect.x + (rect.width - sizes[name].width) * anchorFactor(),
+            y: rect.y + rect.height - sizes[name].height,
+        });
+        expanded = false;
         draw();
         rememberLayout();
         syncControls();
@@ -316,6 +330,7 @@ export function createPreviewPanel(strings, {
         resize.hidden = !inPage || expanded;
         controls.update({
             inPage, inPip: !!pipWindow, dock, rememberVisibility, followChanges, device: responsiveViewport.device,
+            size: expanded ? undefined : Object.keys(sizes).find((name) => bounds.width === sizes[name].width && bounds.height === sizes[name].height),
             canRefresh: current.canRefresh, hasPreview: current.hasPreview, previewUrl: current.previewUrl,
             canPip: inPage && supportsPip(),
             canFullscreen: inPage && !!mainDocument.fullscreenEnabled,
@@ -570,7 +585,7 @@ export function createPreviewPanel(strings, {
     controls = createPreviewControls(panel, strings, {
         refresh: () => { if (current.canRefresh) onRefresh(); },
         mode: toggleMode, close: closePanel, popOut, fullscreen: enterFullscreen,
-        dock: (side) => dockWindow(side), reset: () => dockWindow('right', true),
+        dock: (side) => dockWindow(side), size: sizeWindow, reset: () => dockWindow('right', true),
         follow: toggleFollow, rememberVisibility: toggleRememberVisibility,
         device(name) {
             if (responsiveViewport.device !== name) preferenceActions.set(scope, 'viewport', name);

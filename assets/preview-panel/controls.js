@@ -16,7 +16,7 @@ export function createPreviewControls(panel, strings, callbacks) {
     let open = false;
 
     function Controls() {
-        const { inPage, inPip, mode, modeLabel, canRefresh, hasPreview, previewUrl, canPip, canFullscreen, dock, rememberVisibility, followChanges, device } = state;
+        const { inPage, inPip, mode, modeLabel, canRefresh, hasPreview, previewUrl, canPip, canFullscreen, dock, size, rememberVisibility, followChanges, device } = state;
         const command = (action) => () => { closeMenu(); action(); };
         return h(SlotFillProvider, null,
             createPortal(icons.pip, launcherContainer),
@@ -59,6 +59,14 @@ export function createPreviewControls(panel, strings, callbacks) {
                         { value: 'right', label: strings.bottomRight },
                     ],
                     onSelect: (side) => { closeMenu(); callbacks.dock(side); },
+                })),
+                inPage && h(MenuGroup, { label: strings.size }, h(MenuItemsChoice, {
+                    value: size,
+                    choices: [
+                        { value: 'small', label: strings.small },
+                        { value: 'large', label: strings.large },
+                    ],
+                    onSelect: (name) => { closeMenu(); callbacks.size(name); },
                 })),
                 h(MenuGroup, { label: strings.preferences },
                     h(MenuItem, {

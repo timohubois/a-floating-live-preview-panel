@@ -23,7 +23,7 @@ function fixture() {
             return mount;
         },
     };
-    const callbacks = Object.fromEntries(['refresh', 'mode', 'close', 'popOut', 'fullscreen', 'dock', 'reset', 'follow', 'rememberVisibility', 'device']
+    const callbacks = Object.fromEntries(['refresh', 'mode', 'close', 'popOut', 'fullscreen', 'dock', 'size', 'reset', 'follow', 'rememberVisibility', 'device']
         .map((name) => [name, (...args) => calls.push({ name, args })]));
     const strings = new Proxy({ popOut: 'Pop out preview (PiP)' }, { get: (target, key) => target[key] ?? String(key) });
     const querySelector = (selector) => selector === '.aflpp-controls' ? container : {
@@ -40,7 +40,7 @@ function fixture() {
     const state = {
         inPage: true, inPip: false, mode: 'expand', modeLabel: 'Expand preview', canRefresh: true,
         hasPreview: true, previewUrl: '/preview',
-        canPip: true, canFullscreen: true, dock: 'center', rememberVisibility: true, followChanges: false, device: 'desktop',
+        canPip: true, canFullscreen: true, dock: 'center', size: 'small', rememberVisibility: true, followChanges: false, device: 'desktop',
     };
     controls.update(state);
     function nodes(type) {
@@ -82,6 +82,17 @@ test('position choices and preferences use native radio and checkbox components'
     assert.equal(toggles[0].props.isSelected, true);
     assert.equal(toggles[1].props.isSelected, false);
     assert.equal(h.nodes('Popover.Slot').length, 1);
+});
+
+test('size presets offer native single-choice controls without dragging and stay out of PiP/fullscreen', () => {
+    const h = fixture();
+    const sizes = h.nodes('MenuItemsChoice')[1];
+    assert.equal(sizes.props.value, 'small');
+    assert.deepEqual(Array.from(sizes.props.choices, ({ value }) => value), ['small', 'large']);
+    sizes.props.onSelect('large');
+    assert.deepEqual(h.calls.at(-1), { name: 'size', args: ['large'] });
+    h.controls.update({ ...h.state, inPage: false });
+    assert.equal(h.nodes('MenuItemsChoice').length, 0);
 });
 
 test('document moves unmount old native hooks before creating the next root', () => {
