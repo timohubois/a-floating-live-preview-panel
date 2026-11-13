@@ -25,6 +25,7 @@ final class Preview
         add_action('init', [$this, 'registerStatus']);
         add_action('init', [$this, 'authorizePreview'], 20);
         add_action('post_updated', [$this, 'deletePreviews']);
+        add_action('load-post.php', [$this, 'trackNativePreview']);
         // Core's heartbeat_autosave runs at priority 500.
         add_filter('heartbeat_received', [$this, 'trackAutosave'], 499, 2);
         add_filter('heartbeat_received', [$this, 'rebaseAutosave'], 501);
@@ -111,6 +112,43 @@ final class Preview
             $response['aflpp_base'] = $this->fingerprint($this->autosavePostId);
         }
         return $response;
+    }
+
+    /** Acknowledge the native Preview POST without replacing its save or redirect. */
+    public function trackNativePreview(): void
+    {
+        $postId = isset($_POST['post_ID']) && is_scalar($_POST['post_ID']) ? absint($_POST['post_ID']) : 0;
+        // phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Exact string contracts below.
+        $token = isset($_POST['aflpp_preview']) && is_string($_POST['aflpp_preview'])
+            ? wp_unslash($_POST['aflpp_preview']) : '';
+        $base = isset($_POST['aflpp_base']) && is_string($_POST['aflpp_base'])
+            ? wp_unslash($_POST['aflpp_base']) : '';
+        $action = isset($_POST['wp-preview']) && is_string($_POST['wp-preview'])
+            ? wp_unslash($_POST['wp-preview']) : '';
+        // phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $nonce = isset($_POST['_wpnonce']) && is_string($_POST['_wpnonce'])
+            ? sanitize_text_field(wp_unslash($_POST['_wpnonce'])) : '';
+        if (
+            $action !== 'dopreview' || !$postId
+            || !preg_match('/^[a-f0-9]{32}$/D', $token) || !preg_match('/^[a-f0-9]{64}$/D', $base)
+            || !current_user_can('edit_post', $postId) || !wp_verify_nonce($nonce, 'update-post_' . $postId)
+        ) {
+            return;
+        }
+        $matches = hash_equals($this->fingerprint($postId), $base);
+        add_filter('wp_redirect', function ($location) use ($postId, $token, $base, $matches) {
+            if ($location && !headers_sent()) {
+                // A short-lived, tab/request-specific receipt also works for redirects and non-HTML previews.
+                $receipt = $matches ? $base . '.' . $this->fingerprint($postId) : 'conflict';
+                setcookie('aflpp_preview_' . $token, $receipt, [
+                    'expires' => time() + MINUTE_IN_SECONDS,
+                    'path' => ADMIN_COOKIE_PATH,
+                    'secure' => is_ssl(),
+                    'samesite' => 'Strict',
+                ]);
+            }
+            return $location;
+        }, PHP_INT_MAX);
     }
 
     private function stateAction(int $postId, int $revisionId): string
@@ -379,6 +417,8 @@ final class Preview
             // The authorized source remains bound only to its original post; do not label other output verified.
             return;
         }
+        // Core canonical redirects drop preview=true without native autosave parameters, losing our core-field overlay.
+        remove_action('template_redirect', 'redirect_canonical');
         // Enhance only the original authorized singular HTML; never require it as the routing result.
         add_filter('show_admin_bar', '__return_false', PHP_INT_MAX);
         add_action('wp_head', function (): void {

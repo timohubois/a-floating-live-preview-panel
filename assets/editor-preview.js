@@ -29,6 +29,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     let previewAddress;
     let followPending = false;
     let refreshTask;
+    let nativePreviewError;
     // Covers queued acquisition, active ownership and draining the final refresh before release.
     let ownershipTask;
     let requestStop;
@@ -88,10 +89,27 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         cancelFrame?.();
         report(strings.stale, 'stale');
         clearTimeout(refreshTimer);
-        refreshTimer = setTimeout(update, 1000);
+        if (!nativeEditor.previewing) refreshTimer = setTimeout(update, 1000);
     }
 
     nativeEditor.onAutosave = changed;
+    nativeEditor.beforePreview = () => {
+        generation += 1;
+        clearTimeout(refreshTimer);
+        cancelFrame?.();
+        if (previewActive) report(strings.nativePreview);
+        return refreshTask;
+    };
+    nativeEditor.onPreview = (error, saved) => {
+        // ACF's remaining row deltas still reference the pre-Preview draft; do not apply them twice.
+        if (!error && saved && acf?.hasStructuralPaginationChanges()) {
+            error = Object.assign(new Error(strings.nativePreviewAcf), { code: 'aflpp_source_changed' });
+        }
+        nativePreviewError = error;
+        if (!previewActive) return;
+        if (error) reportFailure(error);
+        else changed();
+    };
 
     function watchEditor(editor) {
         if (!editor || editors.has(editor)) return;
@@ -205,7 +223,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     }
 
     function update() {
-        if (!previewActive || refreshTask) return;
+        if (!previewActive || refreshTask || nativeEditor.previewing) return;
         clearTimeout(refreshTimer);
         const version = generation;
         report(strings.updating);
@@ -230,7 +248,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
                 if (previewActive) reportFailure(error);
             } finally {
                 refreshTask = null;
-                if (previewActive && version !== generation) {
+                if (previewActive && !nativeEditor.previewing && version !== generation) {
                     clearTimeout(refreshTimer);
                     refreshTimer = setTimeout(update, 1000);
                 }
@@ -267,6 +285,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     async function startPreview(takeOver = false) {
         view.setVisible(true);
         if (previewActive) return;
+        if (nativePreviewError) { reportFailure(nativePreviewError); return; }
         if (ownershipTask) {
             if (takeoverRequest && !takeoverRequest.signal.aborted) return;
             const version = generation;
@@ -364,10 +383,11 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         pending.then(proceed, proceed);
     }
     form.addEventListener('click', (event) => {
-        const control = event.target.closest('#publish, #save-post, #post-preview');
+        const control = event.target.closest('#publish, #save-post');
         if (control) continueAfterPreview(event, () => control.click());
     }, true);
     form.addEventListener('submit', (event) => {
+        if (form.querySelector('#wp-preview')?.value === 'dopreview') return;
         continueAfterPreview(event, () => form.requestSubmit(event.submitter || undefined));
     }, true);
 

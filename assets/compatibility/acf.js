@@ -10,6 +10,11 @@ export function initAcf(form, changed, watchEditor) {
     });
 
     return {
+        hasStructuralPaginationChanges() {
+            return !!form.querySelector(
+                '.acf-repeater[data-pagination="1"] .acf-row:is(.acf-added, .acf-inserted, .acf-reordered, .acf-deleted)'
+            );
+        },
         accepts(name) {
             return name === '_acf_nonce' || name.startsWith('acf[') || name.startsWith('_acf_fields[');
         },

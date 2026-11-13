@@ -81,6 +81,7 @@ final class Editor
             'userId' => get_current_user_id(),
             'nonce' => wp_create_nonce('wp_rest'),
             'base' => $this->preview->fingerprint($post->ID),
+            'adminCookiePath' => ADMIN_COOKIE_PATH,
             'available' => $post->post_status !== 'auto-draft' && wp_revisions_enabled($post),
             'strings' => [
                 'title' => __('Live preview', 'a-floating-live-preview-panel'),
@@ -154,6 +155,15 @@ final class Editor
                     'a-floating-live-preview-panel'
                 ),
                 'saving' => __('Finishing preview before continuing…', 'a-floating-live-preview-panel'),
+                'nativePreview' => __('Preparing WordPress Preview…', 'a-floating-live-preview-panel'),
+                'nativePreviewAcf' => __(
+                    'WordPress Preview saved these repeater changes. Copy later edits and reload before saving again.',
+                    'a-floating-live-preview-panel'
+                ),
+                'nativePreviewFailed' => __(
+                    'Could not confirm WordPress Preview. Check its tab before continuing.',
+                    'a-floating-live-preview-panel'
+                ),
             ],
         ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';', 'before');
     }

@@ -31,6 +31,9 @@ Use a disposable local or staging WordPress installation while this is in develo
 Move the window by its title and resize from its edges or corners. The title and
 resize handles also support keyboard focus and arrow keys, with Shift for larger steps.
 Closing the window stops live updates without discarding editor fields.
+WordPress's native **Preview** button keeps the panel and its last frame visible,
+waits for outstanding live writes, and normally resumes live updates afterward.
+It retains WordPress's normal behavior, including saving changes to your own drafts.
 
 - **Preview actions** offers docking, reset size and position, and **Open preview in new tab**. Fullscreen and pop-out Picture-in-Picture appear where supported.
 - **Desktop**, **Tablet** and **Mobile** change the preview's viewport width, not its device or user agent.
@@ -48,9 +51,11 @@ is updated or permanently deleted. Existing recovery autosaves are left untouche
 Live inputs are title, content, excerpt and supported post-local ACF fields. Other
 metadata, related content and global settings are not live inputs. WordPress's
 normal server autosave continues independently, including its usual updates to
-your own drafts.
+your own drafts. Native Preview completion is acknowledged by a request-specific
+cookie containing state fingerprints, not editor content. It is cleared on completion
+and expires after one minute.
 
-- **ACF:** support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages.
+- **ACF:** support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages. If native Preview saves draft repeater additions, deletions or reordering, the panel retains its last frame but requires an editor reload: ACF's remaining row changes still refer to the old saved order. Copy any later edits before reloading, and reload before saving again.
 - **Frontend output:** your theme and plugins determine the result, including redirects and browser-native output such as PDFs. Scroll restoration and change-following only apply to recognized HTML previews. Changes made only through stylesheets or frontend state may be missed; dynamic output at load can introduce unrelated differences. PDF page, zoom and scroll state may reset on refresh.
 - **Trusted code only:** the preview is not sandboxed. Same-origin frontend scripts can access the editor. Use trusted theme and plugin code.
 - **Embedding:** site and browser restrictions still apply. Do not weaken them to force embedding; use **Open preview in new tab** when needed. **Preview refreshed** reports a document load, not verified content or publication.
@@ -75,11 +80,11 @@ composer check-platform-reqs
 composer php:lint
 ```
 
-There is no JavaScript build step. Optional scroll-detection regression tests use
-Node.js and Chromium (`CHROMIUM_BIN` can override the browser executable):
+There is no JavaScript build step. Optional JavaScript regression tests use Node.js;
+browser-based tests also require Chromium (`CHROMIUM_BIN` can override its executable):
 
 ```sh
-node --test tests/preview-scroll.mjs
+node --test tests/*.mjs
 ```
 
 Verify the editor-to-preview workflow on a disposable WordPress site with the theme

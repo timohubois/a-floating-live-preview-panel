@@ -49,6 +49,12 @@ Title, content, excerpt and supported post-local ACF fields. Other metadata, rel
 
 No. It writes a separate internal preview revision per user and post, without updating the saved parent post, overwriting recovery autosaves or publishing changes. Preview revisions are reused on refresh and deleted when the parent post is updated or permanently deleted. WordPress's normal server autosave continues independently, including its usual updates to your own drafts. Closing the preview does not discard editor fields.
 
+= What happens when I use WordPress's Preview button? =
+
+The panel and its last frame stay visible while outstanding live writes finish. Native Preview retains WordPress's normal behavior, including saving changes to your own drafts, and live updates normally resume afterward. A request-specific cookie containing state fingerprints, not editor content, acknowledges completion; it is cleared on completion and expires after one minute.
+
+If native Preview saves additions, deletions or reordering in a draft's paginated ACF repeaters, the panel keeps its last frame but asks you to reload. ACF's remaining row changes still refer to the old saved order. Copy any later edits, then reload the editor before saving again.
+
 = Does it work with the Block Editor? =
 
 No. It supports classic post-editing screens, not the Block Editor or Site Editor.
