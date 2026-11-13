@@ -1,17 +1,19 @@
 <?php
 
-namespace AFloatingLivePreviewPanel\Features;
+namespace AFloatingLivePreviewPanel\Compatibility;
 
-use AFloatingLivePreviewPanel\Compatibility\Acf;
+use AFloatingLivePreviewPanel\Features\Panel;
+use AFloatingLivePreviewPanel\Features\Preview;
 use WP_Post;
 
-/** Own classic-editor eligibility, assets, module configuration and UI strings. */
+/** Connect the classic editor to the shared panel and preview features. */
 final class Editor
 {
     public function __construct(
         private readonly string $file,
         private readonly Preview $preview,
-        private readonly Acf $acf
+        private readonly Acf $acf,
+        private readonly Panel $panel
     ) {
         add_action('admin_enqueue_scripts', [$this, 'enqueueEditor']);
         add_action('admin_footer', [$this, 'renderPanel']);
@@ -40,30 +42,11 @@ final class Editor
             return;
         }
 
-        wp_enqueue_style(
-            'a-floating-live-preview-panel',
-            plugins_url('assets/preview-panel/style.css', $this->file),
-            ['wp-components'],
-            $this->assetVersion('preview-panel/style.css')
-        );
-        $asset = require dirname($this->file) . '/assets/build/editor-bootstrap.asset.php';
-        wp_enqueue_script(
-            'a-floating-live-preview-panel',
-            plugins_url('assets/build/editor-bootstrap.js', $this->file),
-            array_merge(['jquery', 'autosave'], $asset['dependencies'], $this->acf->editorDependencies()),
-            $asset['version'],
-            true
-        );
-        wp_add_inline_script('a-floating-live-preview-panel', 'window.aFloatingLivePreviewPanel = ' . wp_json_encode([
+        $this->panel->enqueue('editor-bootstrap', [
             'editorModule' => add_query_arg(
                 'ver',
                 $this->assetVersion('editor-preview.js'),
                 plugins_url('assets/editor-preview.js', $this->file)
-            ),
-            'scrollModule' => add_query_arg(
-                'ver',
-                $this->assetVersion('preview-scroll.js'),
-                plugins_url('assets/preview-scroll.js', $this->file)
             ),
             'acfModule' => $this->acf->editorModule($this->file),
             'endpoint' => rest_url('a-floating-live-preview-panel/v1/posts/' . $post->ID . '/preview'),
@@ -75,12 +58,6 @@ final class Editor
             'adminCookiePath' => ADMIN_COOKIE_PATH,
             'available' => $post->post_status !== 'auto-draft' && wp_revisions_enabled($post),
             'strings' => [
-                'title' => __('Live preview', 'a-floating-live-preview-panel'),
-                'preview' => __('Preview', 'a-floating-live-preview-panel'),
-                'move' => __('Move preview: drag or use arrow keys', 'a-floating-live-preview-panel'),
-                'moved' => __('Preview moved', 'a-floating-live-preview-panel'),
-                'resize' => __('Resize preview', 'a-floating-live-preview-panel'),
-                'retry' => __('Try again', 'a-floating-live-preview-panel'),
                 'takeOver' => __('Preview here', 'a-floating-live-preview-panel'),
                 'takingOver' => __('Switching…', 'a-floating-live-preview-panel'),
                 'switchingPreview' => __('Switching preview…', 'a-floating-live-preview-panel'),
@@ -99,48 +76,10 @@ final class Editor
                     'a-floating-live-preview-panel'
                 ),
                 'tabEdits' => __('Each tab keeps its own edits.', 'a-floating-live-preview-panel'),
-                'actions' => __('Preview actions', 'a-floating-live-preview-panel'),
-                'refresh' => __('Refresh preview', 'a-floating-live-preview-panel'),
-                'close' => __('Close preview', 'a-floating-live-preview-panel'),
-                'closeLivePreview' => __('Close live preview', 'a-floating-live-preview-panel'),
-                'display' => __('Display', 'a-floating-live-preview-panel'),
-                'openPreview' => __('Open preview in new tab', 'a-floating-live-preview-panel'),
-                'popOut' => __('Pop out preview (PiP)', 'a-floating-live-preview-panel'),
-                'fullscreen' => __('Enter fullscreen', 'a-floating-live-preview-panel'),
-                'position' => __('Position', 'a-floating-live-preview-panel'),
-                'bottomLeft' => __('Bottom left', 'a-floating-live-preview-panel'),
-                'bottomCenter' => __('Bottom center', 'a-floating-live-preview-panel'),
-                'bottomRight' => __('Bottom right', 'a-floating-live-preview-panel'),
-                'size' => __('Size', 'a-floating-live-preview-panel'),
-                'small' => __('Small', 'a-floating-live-preview-panel'),
-                'large' => __('Large', 'a-floating-live-preview-panel'),
-                'preferences' => __('Preferences', 'a-floating-live-preview-panel'),
-                'rememberVisibility' => __('Remember preview visibility', 'a-floating-live-preview-panel'),
-                'follow' => __('Scroll to changes', 'a-floating-live-preview-panel'),
-                'reset' => __('Reset size and position', 'a-floating-live-preview-panel'),
-                'viewport' => __('Preview viewport', 'a-floating-live-preview-panel'),
-                'desktop' => __('Desktop', 'a-floating-live-preview-panel'),
-                'tablet' => __('Tablet', 'a-floating-live-preview-panel'),
-                'mobile' => __('Mobile', 'a-floating-live-preview-panel'),
-                'expand' => __('Expand preview', 'a-floating-live-preview-panel'),
-                'compact' => __('Make preview compact', 'a-floating-live-preview-panel'),
-                'exitFullscreen' => __('Exit fullscreen', 'a-floating-live-preview-panel'),
-                'pipFailed' => __('The preview couldn’t pop out.', 'a-floating-live-preview-panel'),
-                'fullscreenFailed' => __('Couldn’t change fullscreen mode.', 'a-floating-live-preview-panel'),
-                'windowNoticeHelp' => __('Continue in this panel.', 'a-floating-live-preview-panel'),
-                'loading' => __('Loading preview…', 'a-floating-live-preview-panel'),
-                'preparing' => __('Preparing your first preview.', 'a-floating-live-preview-panel'),
                 'bootFailed' => __(
                     'Live preview could not start. Reload the editor or use WordPress Preview.',
                     'a-floating-live-preview-panel'
                 ),
-                'updating' => __('Updating preview…', 'a-floating-live-preview-panel'),
-                'current' => __('Preview refreshed', 'a-floating-live-preview-panel'),
-                'stale' => __('Changes pending…', 'a-floating-live-preview-panel'),
-                'failed' => __('Preview couldn’t load', 'a-floating-live-preview-panel'),
-                'failedHelp' => __('Try loading the preview again.', 'a-floating-live-preview-panel'),
-                'refreshFailed' => __('Preview couldn’t refresh.', 'a-floating-live-preview-panel'),
-                'previousPreview' => __('Showing the previous preview.', 'a-floating-live-preview-panel'),
                 'reviewBeforeReload' => __(
                     'Review your edits, then reload the editor.',
                     'a-floating-live-preview-panel'
@@ -180,7 +119,7 @@ final class Editor
                     'a-floating-live-preview-panel'
                 ),
             ],
-        ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';', 'before');
+        ], array_merge(['jquery', 'autosave'], $this->acf->editorDependencies()));
     }
 
     public function renderPanel(): void
@@ -189,7 +128,7 @@ final class Editor
             return;
         }
 
-        require dirname($this->file) . '/assets/preview-panel/markup.php';
+        $this->panel->render();
     }
 
     private function assetVersion(string $asset): string

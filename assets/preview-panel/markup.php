@@ -1,23 +1,23 @@
 <?php
 
 /**
- * Classic-editor floating shell. Public WordPress components render its controls and feedback.
+ * Shared admin floating shell. Public WordPress components render its controls and feedback.
  */
 
 defined('ABSPATH') || exit;
 ?>
 <button type="button" id="aflpp-toggle" class="aflpp-launcher" aria-controls="aflpp-panel" aria-expanded="false"
-    aria-label="<?php esc_attr_e('Live preview', 'a-floating-live-preview-panel'); ?>"
-    title="<?php esc_attr_e('Live preview', 'a-floating-live-preview-panel'); ?>"
+    aria-label="<?php echo esc_attr($title); ?>"
+    title="<?php echo esc_attr($title); ?>"
     aria-description="<?php esc_attr_e(
         'Drag or use arrow keys to move; Shift for larger steps.',
         'a-floating-live-preview-panel'
     ); ?>" hidden>
     <span class="aflpp-launcher-icon" aria-hidden="true"></span>
-    <span><?php esc_html_e('Live preview', 'a-floating-live-preview-panel'); ?></span>
+    <span><?php echo esc_html($title); ?></span>
 </button>
 <section id="aflpp-panel" class="aflpp-panel" data-state="loading" data-has-preview="false" data-has-feedback="false"
-    aria-label="<?php esc_attr_e('Live preview', 'a-floating-live-preview-panel'); ?>" hidden>
+    aria-label="<?php echo esc_attr($title); ?>" hidden>
     <div class="aflpp-header">
         <div class="aflpp-move-control"></div>
         <div class="aflpp-refresh-control"></div>
