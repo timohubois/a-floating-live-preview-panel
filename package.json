@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "wp-scripts build assets/editor-bootstrap.js --output-path=assets/build",
-    "start": "wp-scripts start assets/editor-bootstrap.js --output-path=assets/build",
+    "build": "wp-scripts build assets/editor-bootstrap.js assets/revisions-bootstrap.js --output-path=assets/build",
+    "start": "wp-scripts start assets/editor-bootstrap.js assets/revisions-bootstrap.js --output-path=assets/build",
     "test": "node --test tests/*.mjs"
   },
   "dependencies": {

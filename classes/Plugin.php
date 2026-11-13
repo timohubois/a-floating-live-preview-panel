@@ -4,6 +4,7 @@ namespace AFloatingLivePreviewPanel;
 
 use AFloatingLivePreviewPanel\Compatibility\Acf;
 use AFloatingLivePreviewPanel\Compatibility\Editor;
+use AFloatingLivePreviewPanel\Compatibility\Revisions;
 use AFloatingLivePreviewPanel\Features\Panel;
 use AFloatingLivePreviewPanel\Features\Preview;
 
@@ -16,5 +17,6 @@ final class Plugin
         $preview = new Preview($file, $acf);
         $panel = new Panel($file);
         new Editor($file, $preview, $acf, $panel);
+        new Revisions($file, $preview, $panel);
     }
 }

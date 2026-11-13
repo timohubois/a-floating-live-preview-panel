@@ -49,6 +49,15 @@ test('the editor build declares its public WordPress runtime dependencies', () =
     assert.match(bundle, /import\(/, 'retain native loading for the separate preview coordination modules');
 });
 
+test('the revision build uses the same public runtime without editor save coordination', async () => {
+    const revisionBundle = await readFile(new URL('../assets/build/revisions-bootstrap.js', import.meta.url), 'utf8');
+    const revisionAsset = await readFile(new URL('../assets/build/revisions-bootstrap.asset.php', import.meta.url), 'utf8');
+    const dependencies = (source) => source.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1];
+    assert.equal(dependencies(revisionAsset), dependencies(asset));
+    assert.doesNotMatch(revisionBundle, /__experimental|__unstable|before-autosave|heartbeat-send|deferredSaves/);
+    assert.match(revisionBundle, /import\(/, 'retain native loading for revision coordination and scrolling');
+});
+
 test('the shipped editor bundle uses WordPress runtime globals and bundles exactly the selected official icons', () => {
     const bundledIcons = [];
     const jsx = (type, props) => {
