@@ -81,24 +81,51 @@ function visibleHeaderBottom(target) {
     return 0;
 }
 
-// Compare content, not the whole HTML: ignore scripts, live regions, nonces and runtime classes.
+// Compare content and presentation without theme/field knowledge or viewport-dependent geometry.
 function contentSnapshot(doc) {
     const root = doc.querySelector('main, [role="main"]') || doc.querySelector('article') || doc.body;
     if (!root) return [];
     const entries = [];
+    // Ancestor attributes can control the content's layout; ignore their unrelated siblings/text.
+    for (let node = root.parentElement; node; node = node.parentElement) {
+        entries.unshift({ node: root, signature: JSON.stringify([node.localName, presentationAttributes(node)]) });
+    }
+    const depths = new Map([[root, 0]]);
     for (const node of [root, ...root.querySelectorAll('*')]) {
-        if (node.closest('script, style, noscript, template, nav, [role="navigation"], [aria-live]')) continue;
+        if (node.closest('script, style, noscript, template, link, meta, nav, [role="navigation"], [aria-live], input[type="hidden"]')) continue;
+        const depth = node === root ? 0 : depths.get(node.parentElement) + 1;
+        depths.set(node, depth);
         const text = [...node.childNodes].filter((child) => child.nodeType === 3)
             .map((child) => child.textContent).join(' ').replace(/\s+/g, ' ').trim();
         const media = ['img', 'source', 'video', 'audio', 'iframe'].includes(node.localName)
             ? ['src', 'srcset', 'poster'].map((name) => node.getAttribute(`data-${name}`) || node.getAttribute(name) || '')
             : [];
         const background = node.style?.backgroundImage || node.getAttribute('data-bg') || '';
-        if (text || media.some(Boolean) || background) {
-            entries.push({ node, signature: JSON.stringify([node.localName, text, media, background]) });
-        }
+        // Include empty wrappers: layout/structure changes need not alter text or media.
+        entries.push({ node, signature: JSON.stringify([depth, node.localName, text, media, background, presentationAttributes(node)]) });
     }
     return entries;
+}
+
+function presentationAttributes(node) {
+    const attributes = [];
+    for (const { name, value } of node.attributes) {
+        // Generated IDs, security values and interactive accessibility state are not edited content.
+        if (name === 'id' || name.startsWith('on') || name.startsWith('aria-')
+            || /(?:^|-)(nonce|token)(?:-|$)/.test(name)) continue;
+        // Media sources are normalized separately, so loading a declared lazy source is not an edit.
+        if (/^(?:data-)?(?:src|srcset|poster|sizes|bg)$/.test(name)) continue;
+        let normalized = value;
+        if (name === 'class') normalized = [...node.classList].sort().join(' ');
+        if (name === 'style') {
+            normalized = [...node.style].sort().map((property) => [
+                property, node.style.getPropertyValue(property), node.style.getPropertyPriority(property),
+            ]);
+        }
+        if ((name === 'class' || name === 'style') && !normalized.length) continue;
+        attributes.push([name, normalized]);
+    }
+    return attributes.sort(([a], [b]) => a.localeCompare(b));
 }
 
 function changedTarget(previous, next) {
