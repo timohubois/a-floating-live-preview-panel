@@ -55,11 +55,31 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         channel = null; // Keep manual close/retry when cross-tab messaging is unavailable.
     }
 
-    function report(text, state = 'loading', { canRetry = true } = {}) {
+    function report(text, state = 'loading', { canRetry = true, reason = '' } = {}) {
         view.report(text, state, {
-            canTakeOver: !!channel, hasPreview: !!activeFrame, previewUrl: previewAddress, canRetry,
-            canRefresh: previewActive && ['ready', 'stale', 'error'].includes(state),
+            canTakeOver: !!channel, hasPreview: !!activeFrame, previewUrl: previewAddress, canRetry, reason,
+            canRefresh: previewActive && ['ready', 'stale', 'error'].includes(state) && (state !== 'error' || canRetry),
         });
+    }
+
+    function reportFailure(error) {
+        // Recovery hints only affect the panel; never reload or alter native editor controls.
+        const code = error?.code;
+        const reload = [
+            'aflpp_invalid_nonce', 'rest_cookie_invalid_nonce', 'aflpp_preview_conflict',
+            'aflpp_source_changed', 'aflpp_acf_unavailable',
+        ].includes(code);
+        const reason = reload ? 'reload'
+            : ['aflpp_cannot_preview', 'rest_forbidden', 'rest_cannot_edit'].includes(code) ? 'permission'
+                : error?.message === strings.browser ? 'browser' : '';
+        if (reason) {
+            previewActive = false;
+            clearTimeout(refreshTimer);
+            cancelFrame?.();
+            requestStop?.();
+        }
+        const text = typeof code === 'string' || error?.message === strings.browser ? error.message : strings.failed;
+        report(text, 'error', { reason, canRetry: !reason });
     }
 
     function changed() {
@@ -203,10 +223,12 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
                 // An overlapping native draft autosave can invalidate this request and its revision.
                 await nativeEditor.idle;
                 if (!previewActive || base !== config.base) return;
-                if (!response.ok || typeof result.url !== 'string') throw new Error(result.message || strings.failed);
+                if (!response.ok || typeof result.url !== 'string') {
+                    throw Object.assign(new Error(result.message || strings.failed), { code: result.code });
+                }
                 if (previewActive && version === generation) await loadFrame(result.url, version);
             } catch (error) {
-                if (previewActive) report(error.message || strings.failed, 'error');
+                if (previewActive) reportFailure(error);
             } finally {
                 refreshTask = null;
                 if (previewActive && version !== generation) {
@@ -300,7 +322,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         } catch (error) {
             previewActive = false;
             if (view.visible && timedOut) report(strings.takeoverTimeout, 'conflict');
-            else if (view.visible && error.name !== 'AbortError') report(error.message || strings.failed, 'error');
+            else if (view.visible && error.name !== 'AbortError') reportFailure(error);
         } finally {
             clearTimeout(takeoverTimer);
             takeoverTimer = null;
