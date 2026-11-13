@@ -86,52 +86,71 @@ final class Editor
                 'title' => __('Live preview', 'a-floating-live-preview-panel'),
                 'preview' => __('Preview', 'a-floating-live-preview-panel'),
                 'move' => __('Move preview: drag or use arrow keys', 'a-floating-live-preview-panel'),
-                'retry' => __('Retry', 'a-floating-live-preview-panel'),
-                'takeOver' => __('Take over', 'a-floating-live-preview-panel'),
-                'takingOver' => __('Taking over…', 'a-floating-live-preview-panel'),
-                'waiting' => __('Waiting for the other preview to finish…', 'a-floating-live-preview-panel'),
-                'handedOff' => __(
-                    'Live preview is paused in this tab. Take over to continue here.',
+                'retry' => __('Try again', 'a-floating-live-preview-panel'),
+                'takeOver' => __('Preview here', 'a-floating-live-preview-panel'),
+                'takingOver' => __('Switching…', 'a-floating-live-preview-panel'),
+                'switchingPreview' => __('Switching preview…', 'a-floating-live-preview-panel'),
+                'waiting' => __(
+                    'Waiting for the other tab to finish its current update.',
                     'a-floating-live-preview-panel'
                 ),
-                'takeoverTimeout' => __(
-                    'The other preview is still busy. Try again, or close it in the other tab.',
+                'handedOff' => __('Preview is paused here', 'a-floating-live-preview-panel'),
+                'handedOffHelp' => __(
+                    'Another tab now runs live updates. Starting here pauses that preview.',
                     'a-floating-live-preview-panel'
                 ),
+                'takeoverTimeout' => __('The other preview is still busy', 'a-floating-live-preview-panel'),
+                'takeoverTimeoutHelp' => __(
+                    'Try again, or close the preview in the other tab.',
+                    'a-floating-live-preview-panel'
+                ),
+                'tabEdits' => __('Each tab keeps its own edits.', 'a-floating-live-preview-panel'),
                 'expand' => __('Expand preview', 'a-floating-live-preview-panel'),
                 'compact' => __('Make preview compact', 'a-floating-live-preview-panel'),
                 'exitFullscreen' => __('Exit fullscreen', 'a-floating-live-preview-panel'),
                 'return' => __('Return to editor', 'a-floating-live-preview-panel'),
-                'pipUnavailable' => __(
-                    'Picture-in-Picture is not available in this browser.',
-                    'a-floating-live-preview-panel'
-                ),
+                'pipFailed' => __('The preview couldn’t pop out.', 'a-floating-live-preview-panel'),
+                'fullscreenFailed' => __('Couldn’t change fullscreen mode.', 'a-floating-live-preview-panel'),
+                'windowNoticeHelp' => __('Continue in this panel.', 'a-floating-live-preview-panel'),
                 'loading' => __('Loading preview…', 'a-floating-live-preview-panel'),
+                'preparing' => __('Preparing your first preview.', 'a-floating-live-preview-panel'),
                 'bootFailed' => __(
                     'Live preview could not start. Reload the editor or use WordPress Preview.',
                     'a-floating-live-preview-panel'
                 ),
-                'updating' => __('Refreshing preview…', 'a-floating-live-preview-panel'),
+                'updating' => __('Updating preview…', 'a-floating-live-preview-panel'),
                 'current' => __('Preview refreshed', 'a-floating-live-preview-panel'),
                 'stale' => __('Changes pending…', 'a-floating-live-preview-panel'),
-                'failed' => __(
-                    'Preview could not be loaded. Retry or open preview in a new tab.',
+                'failed' => __('Preview couldn’t load', 'a-floating-live-preview-panel'),
+                'failedHelp' => __('Try loading the preview again.', 'a-floating-live-preview-panel'),
+                'refreshFailed' => __('Preview couldn’t refresh.', 'a-floating-live-preview-panel'),
+                'previousPreview' => __('Showing the previous preview.', 'a-floating-live-preview-panel'),
+                'reviewBeforeReload' => __(
+                    'Review your edits, then reload the editor.',
                     'a-floating-live-preview-panel'
                 ),
-                'conflict' => __(
-                    'Live preview is active in another tab. Take over to use this tab.',
+                'conflict' => __('Preview is running in another tab', 'a-floating-live-preview-panel'),
+                'conflictHelp' => __(
+                    'Starting it here pauses live updates in the other tab.',
                     'a-floating-live-preview-panel'
                 ),
-                'closeOther' => __(
-                    'Close live preview in the other editor tab first.',
+                'closeOther' => __('Finish in the other tab first', 'a-floating-live-preview-panel'),
+                'closeOtherHelp' => __(
+                    'Close its live preview, then start one here.',
                     'a-floating-live-preview-panel'
                 ),
+                'manualSwitchHint' => __(
+                    'This browser can’t switch previews between tabs.',
+                    'a-floating-live-preview-panel'
+                ),
+                'unavailableTitle' => __('Live preview isn’t available yet', 'a-floating-live-preview-panel'),
                 'unavailable' => __(
-                    'Save a draft first and enable post revisions to use live preview.',
+                    'Save a draft first. If revisions are disabled, enable them for this post.',
                     'a-floating-live-preview-panel'
                 ),
+                'browserTitle' => __('Live preview isn’t supported here', 'a-floating-live-preview-panel'),
                 'browser' => __(
-                    'Live preview needs a secure, same-origin site and a browser with Web Locks support.',
+                    'Open a secure, same-origin site in a browser with Web Locks support.',
                     'a-floating-live-preview-panel'
                 ),
                 'saving' => __('Finishing preview before continuing…', 'a-floating-live-preview-panel'),

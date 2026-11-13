@@ -14,7 +14,6 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         onClose: () => stopPreview(),
         onRefresh: refreshPreview,
         onRetry: (takeOver) => takeOver ? startPreview(true) : refreshPreview(),
-        onError: (message) => report(message, 'error', { canRetry: false }),
         beforeMove: discardFrames,
         afterMove: () => { if (previewActive) refreshPreview(); },
     });
@@ -46,7 +45,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
             channel.onmessage = (event) => {
                 if (event.data?.type !== 'takeover' || !previewActive) return;
                 stopPreview(true);
-                report(strings.handedOff, 'conflict');
+                report(strings.handedOff, 'conflict', { reason: 'handed-off' });
             };
             mainWindow.addEventListener('pagehide', (event) => { if (!event.persisted) channel.close(); });
         }
@@ -275,8 +274,14 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
             if (view.visible && version === generation) startPreview(takeOver);
             return;
         }
-        if (!config.available) { report(strings.unavailable, 'error', { canRetry: false }); return; }
-        if (!mainWindow.isSecureContext || !navigator.locks) { report(strings.browser, 'error', { canRetry: false }); return; }
+        if (!config.available) {
+            report(strings.unavailable, 'error', { canRetry: false, reason: 'unavailable' });
+            return;
+        }
+        if (!mainWindow.isSecureContext || !navigator.locks) {
+            report(strings.browser, 'error', { canRetry: false, reason: 'browser' });
+            return;
+        }
         const controller = takeOver && channel ? new AbortController() : null;
         let timedOut = false;
         takeoverRequest = controller;
@@ -293,7 +298,12 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
                 takeoverTimer = null;
                 takeoverRequest = null;
                 if (!view.visible || controller?.signal.aborted) return;
-                if (!lock) { report(channel ? strings.conflict : strings.closeOther, 'conflict'); return; }
+                if (!lock) {
+                    report(channel ? strings.conflict : strings.closeOther, 'conflict', {
+                        reason: channel ? 'other-tab' : 'manual',
+                    });
+                    return;
+                }
                 report(strings.updating);
                 try {
                     await new Promise((resolve) => {
@@ -318,10 +328,10 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
                 }
             }
             await ownershipTask;
-            if (view.visible && timedOut) report(strings.takeoverTimeout, 'conflict');
+            if (view.visible && timedOut) report(strings.takeoverTimeout, 'conflict', { reason: 'busy' });
         } catch (error) {
             previewActive = false;
-            if (view.visible && timedOut) report(strings.takeoverTimeout, 'conflict');
+            if (view.visible && timedOut) report(strings.takeoverTimeout, 'conflict', { reason: 'busy' });
             else if (view.visible && error.name !== 'AbortError') reportFailure(error);
         } finally {
             clearTimeout(takeoverTimer);

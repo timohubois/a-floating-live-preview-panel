@@ -1,6 +1,6 @@
 // Bind the PHP-rendered panel. Never capture fields, fetch previews, acquire locks or control native saves.
 export function createPreviewPanel(strings, {
-    postTitle = '', nativeSaving, onOpen, onClose, onRefresh, onRetry, onError, beforeMove, afterMove,
+    postTitle = '', nativeSaving, onOpen, onClose, onRefresh, onRetry, beforeMove, afterMove,
 }, createPreviewViewport) {
     const mainWindow = window;
     const mainDocument = document;
@@ -31,18 +31,30 @@ export function createPreviewPanel(strings, {
     const dockRight = panel.querySelector('[data-action="dock-right"]');
     const rememberVisibilityOption = panel.querySelector('[data-action="remember-visibility"]');
     const follow = panel.querySelector('[data-action="follow"]');
-    const openPreview = panel.querySelector('.aflpp-open-preview');
+    const openPreviews = panel.querySelectorAll('.aflpp-open-preview');
+    const menuPreview = actions.querySelector('.aflpp-open-preview');
     const displayGroup = panel.querySelector('[data-group="display"]');
     const layoutGroup = panel.querySelector('[data-group="layout"]');
-    const close = panel.querySelector('[data-action="close"]');
     const viewport = panel.querySelector('.aflpp-viewport');
     const stage = panel.querySelector('.aflpp-stage');
     const empty = panel.querySelector('.aflpp-empty');
+    const emptyTitle = empty.querySelector('.aflpp-empty-title');
+    const emptyDescription = empty.querySelector('.aflpp-empty-description');
+    const emptyNote = empty.querySelector('.aflpp-empty-note');
+    const emptyActions = empty.querySelector('.aflpp-empty-actions');
+    const emptyRetry = empty.querySelector('[data-action="retry"]');
+    const emptyClose = empty.querySelector('[data-action="close"]');
+    const emptyPreview = empty.querySelector('.aflpp-open-preview');
+    const spinner = empty.querySelector('.aflpp-spinner');
+    const devicebar = panel.querySelector('.aflpp-devicebar');
+    const activity = panel.querySelector('.aflpp-activity');
     const dimensions = panel.querySelector('.aflpp-dimensions');
     const feedback = panel.querySelector('.aflpp-feedback');
-    const errorText = panel.querySelector('.aflpp-error');
-    const retry = panel.querySelector('[data-action="retry"]');
-    const retryText = panel.querySelector('.aflpp-retry-label');
+    const feedbackTitle = feedback.querySelector('.aflpp-feedback-title');
+    const feedbackDescription = feedback.querySelector('.aflpp-feedback-description');
+    const feedbackRetry = feedback.querySelector('[data-action="retry"]');
+    const feedbackClose = feedback.querySelector('[data-action="close"]');
+    const dismissNotice = feedback.querySelector('[data-action="dismiss-notice"]');
     const status = panel.querySelector('[role="status"]');
     const responsiveViewport = createPreviewViewport(viewport, stage, dimensions, preferences.get(scope, 'viewport'));
     const deviceButtons = panel.querySelectorAll('[data-viewport]');
@@ -63,15 +75,22 @@ export function createPreviewPanel(strings, {
             responsiveViewport.select(name, visible);
         });
     }
-    openPreview.addEventListener('click', () => {
-        actions.open = false;
-        actionsToggle.focus({ preventScroll: true });
-    });
+    for (const link of openPreviews) {
+        link.addEventListener('click', () => {
+            if (!actions.contains(link)) return;
+            actions.open = false;
+            actionsToggle.focus({ preventScroll: true });
+        });
+    }
 
     let visible = showOnLoad;
     let pipWindow;
     let expanded = false;
     let takeOverAction = false;
+    let windowNotice = '';
+    let current = {
+        text: strings.loading, state: 'loading', hasPreview: false, canRetry: false, reason: '',
+    };
     const bounds = { x: 0, y: 0, width: 480, height: 340 };
     let dock = 'right';
 
@@ -90,38 +109,124 @@ export function createPreviewPanel(strings, {
     }
     setTitle(postTitle);
 
+    function copy(node, text) {
+        node.textContent = text;
+        node.hidden = !text;
+    }
+
+    function presentation() {
+        const { text, state, hasPreview, reason } = current;
+        let heading = text;
+        let description = '';
+        let note = '';
+        if (state === 'handover') {
+            heading = strings.switchingPreview;
+            description = text;
+            note = strings.tabEdits;
+        } else if (state === 'conflict') {
+            description = {
+                'handed-off': strings.handedOffHelp,
+                busy: strings.takeoverTimeoutHelp,
+                manual: strings.closeOtherHelp,
+            }[reason] || strings.conflictHelp;
+            note = reason === 'manual' ? strings.manualSwitchHint : strings.tabEdits;
+        } else if (state === 'error') {
+            if (reason === 'unavailable' || reason === 'browser') {
+                heading = reason === 'unavailable' ? strings.unavailableTitle : strings.browserTitle;
+                description = text;
+            } else if (!hasPreview) {
+                heading = strings.failed;
+                description = text === strings.failed ? strings.failedHelp : text;
+                if (reason === 'reload') description += ` ${strings.reviewBeforeReload}`;
+            } else {
+                if (text === strings.failed) heading = strings.refreshFailed;
+                description = reason === 'reload' ? strings.reviewBeforeReload : strings.previousPreview;
+            }
+        } else if (!hasPreview) {
+            heading = strings.loading;
+            description = strings.preparing;
+        }
+        return { heading, description, note };
+    }
+
+    function restoreFocus(focused) {
+        if (!focused || !panel.contains(focused)) return;
+        if (!focused.closest('[hidden]') && !focused.disabled) return;
+        const target = !empty.hidden ? emptyTitle : !refresh.disabled ? refresh : modeButton;
+        target.focus({ preventScroll: true });
+    }
+
+    function renderFeedback() {
+        const { state, hasPreview, canRetry, reason } = current;
+        const problem = hasPreview && ['error', 'conflict', 'handover'].includes(state);
+        const { heading, description } = presentation();
+        feedback.hidden = !problem && !windowNotice;
+        feedback.dataset.tone = problem && state === 'error' ? 'error' : 'notice';
+        copy(feedbackTitle, problem ? heading : windowNotice);
+        copy(feedbackDescription, problem ? description : windowNotice ? strings.windowNoticeHelp : '');
+        feedbackRetry.hidden = !problem || !(takeOverAction || (canRetry && ['error', 'conflict'].includes(state)));
+        feedbackClose.hidden = !(problem && state === 'error' && !canRetry && reason !== 'reload');
+        dismissNotice.hidden = problem || !windowNotice;
+        panel.dataset.hasFeedback = String(!feedback.hidden);
+    }
+
+    // A failed window operation must not change preview ownership, readiness or refresh controls.
+    function showWindowNotice(text) {
+        if (!(current.hasPreview && ['error', 'conflict', 'handover'].includes(current.state))) {
+            windowNotice = text;
+            renderFeedback();
+        }
+        status.textContent = `${text} ${strings.windowNoticeHelp}`;
+    }
+
+    function clearWindowNotice() {
+        windowNotice = '';
+        renderFeedback();
+    }
+
     function report(text, state = 'loading', {
-        canTakeOver = false, hasPreview = false, previewUrl, canRefresh = false, canRetry = true,
+        canTakeOver = false, hasPreview = false, previewUrl, canRefresh = false, canRetry = true, reason = '',
     } = {}) {
+        const focused = panel.ownerDocument.activeElement;
+        const resetEmptyScroll = !hasPreview && (current.state !== state || current.text !== text || current.reason !== reason);
+        current = { text, state, canTakeOver, hasPreview, previewUrl, canRefresh, canRetry, reason };
+        if (['error', 'conflict', 'handover'].includes(state)) windowNotice = '';
         panel.dataset.state = state;
-        status.textContent = text;
+        panel.dataset.hasPreview = String(hasPreview);
         dot.title = text;
         launcher.title = `${strings.title} — ${text}`;
-        feedback.hidden = !['error', 'conflict', 'handover'].includes(state);
-        // Keep the ordinary new-tab action stable across refresh/blur; it is not an output warning.
-        openPreview.hidden = !previewUrl;
-        displayGroup.hidden = openPreview.hidden && pip.hidden && fullscreen.hidden;
-        if (previewUrl) openPreview.href = previewUrl;
-        else openPreview.removeAttribute('href');
+        // Keep the ordinary new-tab action stable across refresh/blur; only the empty-state fallback is conditional.
+        for (const link of openPreviews) {
+            link.hidden = !previewUrl;
+            if (previewUrl) link.href = previewUrl;
+            else link.removeAttribute('href');
+        }
+        displayGroup.hidden = menuPreview.hidden && pip.hidden && fullscreen.hidden;
         const takingOver = state === 'handover';
         takeOverAction = canTakeOver && (state === 'conflict' || takingOver);
         const action = takeOverAction ? (takingOver ? strings.takingOver : strings.takeOver) : strings.retry;
-        if (retry.title !== action) {
-            label(retry, action);
-            retry.classList.toggle('aflpp-takeover', takeOverAction);
-            for (const icon of retry.querySelectorAll('[data-icon]')) {
-                icon.toggleAttribute('hidden', icon.dataset.icon !== (takeOverAction ? 'takeover' : 'retry'));
-            }
-            retryText.textContent = action;
-            retryText.hidden = !takeOverAction;
+        for (const button of [emptyRetry, feedbackRetry]) {
+            label(button, action);
+            button.textContent = action;
+            button.disabled = takingOver;
         }
         refresh.disabled = !canRefresh;
-        retry.hidden = !takeOverAction && !(canRetry && ['error', 'conflict'].includes(state));
-        retry.disabled = takingOver;
-        errorText.textContent = text;
-        errorText.title = errorText.textContent;
-        empty.textContent = feedback.hidden ? strings.loading : text;
         empty.hidden = hasPreview;
+        devicebar.hidden = !hasPreview;
+        const { heading, description, note } = presentation();
+        copy(emptyTitle, heading);
+        copy(emptyDescription, description);
+        copy(emptyNote, note);
+        spinner.hidden = hasPreview || !['loading', 'stale', 'ready'].includes(state);
+        emptyRetry.hidden = hasPreview || !(takeOverAction || (canRetry && ['error', 'conflict'].includes(state)));
+        emptyPreview.hidden = hasPreview || !previewUrl || state !== 'error';
+        emptyClose.hidden = hasPreview || state !== 'error' || !emptyRetry.hidden;
+        emptyActions.hidden = emptyRetry.hidden && emptyPreview.hidden && emptyClose.hidden;
+        copy(activity, hasPreview && ['loading', 'stale'].includes(state) ? text : '');
+        renderFeedback();
+        if (resetEmptyScroll) empty.scrollTop = 0;
+        status.textContent = [heading, description, note].filter(Boolean).join(' ');
+        restoreFocus(focused);
     }
 
     follow.addEventListener('click', () => {
@@ -185,7 +290,7 @@ export function createPreviewPanel(strings, {
         }
         pip.hidden = !inPage || !mainWindow.documentPictureInPicture;
         fullscreen.hidden = !inPage || !mainDocument.fullscreenEnabled;
-        displayGroup.hidden = openPreview.hidden && pip.hidden && fullscreen.hidden;
+        displayGroup.hidden = menuPreview.hidden && pip.hidden && fullscreen.hidden;
         layoutGroup.hidden = !inPage;
         labelMove();
         panel.classList.toggle('aflpp-expanded', expanded);
@@ -195,7 +300,7 @@ export function createPreviewPanel(strings, {
         actions.open = false;
         if (pipWindow) { pipWindow.close(); return; }
         if (mainDocument.fullscreenElement === panel) {
-            mainDocument.exitFullscreen().catch((error) => onError(error.message));
+            mainDocument.exitFullscreen().then(clearWindowNotice, () => showWindowNotice(strings.fullscreenFailed));
             return;
         }
         expanded = !expanded;
@@ -212,8 +317,12 @@ export function createPreviewPanel(strings, {
         actions.open = false;
         try {
             await panel.requestFullscreen();
+            clearWindowNotice();
             modeButton.focus({ preventScroll: true });
-        } catch (error) { actionsToggle.focus({ preventScroll: true }); onError(error.message); }
+        } catch {
+            actionsToggle.focus({ preventScroll: true });
+            showWindowNotice(strings.fullscreenFailed);
+        }
     });
     mainDocument.addEventListener('fullscreenchange', syncControls);
     for (const [control, side, resetSize] of [[reset, 'right', true], [dockLeft, 'left'], [dockRight, 'right']]) {
@@ -324,13 +433,24 @@ export function createPreviewPanel(strings, {
     pip.addEventListener('click', async () => {
         if (pip.hidden) return;
         actions.open = false;
-        try {
-            // This must run directly from a user gesture; browsers cannot auto-open native PiP.
-            const detached = await mainWindow.documentPictureInPicture.requestWindow({ width: 640, height: 440 });
-            if (!visible) { detached.close(); return; }
-            pipWindow = detached;
-            actions.open = false;
+        let detached;
+        const restore = () => {
+            if (pipWindow !== detached) return;
             beforeMove();
+            mainDocument.body.append(panel);
+            panel.classList.remove('aflpp-pip');
+            pipWindow = null;
+            draw();
+            responsiveViewport.layout();
+            syncControls();
+            // Moving an iframe between documents can reload it. Refresh from current editor values.
+            afterMove();
+            if (visible) modeButton.focus({ preventScroll: true });
+        };
+        try {
+            // A rejected request leaves the current document and preview completely untouched.
+            detached = await mainWindow.documentPictureInPicture.requestWindow({ width: 640, height: 440 });
+            if (!visible) { detached.close(); return; }
             const theme = mainWindow.getComputedStyle(panel);
             for (const name of ['--wp-admin-theme-color', '--wp-admin-theme-color-darker-10', '--wp-admin-border-width-focus']) {
                 const value = theme.getPropertyValue(name);
@@ -344,43 +464,54 @@ export function createPreviewPanel(strings, {
             }
             detached.document.title = caption.textContent;
             detached.document.body.className = 'aflpp-pip-document';
-            panel.classList.add('aflpp-pip');
-            detached.document.body.append(panel);
-            responsiveViewport.layout();
             detached.addEventListener('resize', responsiveViewport.layout);
             detached.document.addEventListener('pointerdown', dismissActions);
             detached.document.addEventListener('keydown', dismissActions);
-            detached.addEventListener('pagehide', () => {
-                beforeMove();
-                mainDocument.body.append(panel);
-                panel.classList.remove('aflpp-pip');
-                pipWindow = null;
-                draw();
-                responsiveViewport.layout();
-                syncControls();
-                // Moving an iframe between documents can reload it. Refresh from current editor values.
-                afterMove();
-                if (visible) modeButton.focus({ preventScroll: true });
-            }, { once: true });
+            detached.addEventListener('pagehide', restore, { once: true });
+            pipWindow = detached;
+            beforeMove();
+            panel.classList.add('aflpp-pip');
+            detached.document.body.append(panel);
+            responsiveViewport.layout();
             syncControls();
+            clearWindowNotice();
             modeButton.focus({ preventScroll: true });
             afterMove();
-        } catch (error) { actionsToggle.focus({ preventScroll: true }); onError(error.message || strings.pipUnavailable); }
+        } catch {
+            if (detached) {
+                restore();
+                detached.close();
+            }
+            actionsToggle.focus({ preventScroll: true });
+            showWindowNotice(strings.pipFailed);
+        }
     });
 
     // Only explicit user opening/closing changes the preference, never coordinator cleanup or window moves.
-    close.addEventListener('click', () => {
-        rememberPanelVisibility(false);
-        onClose();
-        launcher.focus();
+    for (const button of panel.querySelectorAll('[data-action="close"]')) {
+        button.addEventListener('click', () => {
+            rememberPanelVisibility(false);
+            onClose();
+            launcher.focus();
+        });
+    }
+    dismissNotice.addEventListener('click', () => {
+        clearWindowNotice();
+        status.textContent = current.text;
+        actionsToggle.focus({ preventScroll: true });
     });
     launcher.addEventListener('click', () => {
         rememberPanelVisibility(true);
         onOpen();
     });
     refresh.addEventListener('click', () => { if (!refresh.disabled) onRefresh(); });
-    retry.addEventListener('click', () => { if (!retry.disabled && !retry.hidden) onRetry(takeOverAction); });
+    for (const button of [emptyRetry, feedbackRetry]) {
+        button.addEventListener('click', () => {
+            if (!button.disabled && !button.hidden) onRetry(takeOverAction);
+        });
+    }
     dockWindow('right', true);
+    report(strings.loading, 'loading', { canRetry: false });
     // Reveal only after binding controls and positioning the server-rendered panel.
     panel.hidden = !visible;
     launcher.hidden = visible;
@@ -392,7 +523,11 @@ export function createPreviewPanel(strings, {
         get visible() { return visible; },
         get followChanges() { return followChanges; },
         setVisible(value) {
-            if (!value) responsiveViewport.layout();
+            if (!value) {
+                windowNotice = '';
+                renderFeedback();
+                responsiveViewport.layout();
+            }
             visible = value;
             panel.hidden = !visible;
             launcher.hidden = visible;
@@ -402,7 +537,11 @@ export function createPreviewPanel(strings, {
         setTitle,
         clearPreview() {
             stage.replaceChildren();
-            empty.hidden = false;
+            const loading = ['ready', 'stale', 'loading'].includes(current.state);
+            report(loading ? strings.loading : current.text, loading ? 'loading' : current.state, {
+                ...current, hasPreview: false, previewUrl: undefined, canRefresh: false,
+                canRetry: loading ? false : current.canRetry,
+            });
         },
         returnToEditor() {
             actions.open = false;

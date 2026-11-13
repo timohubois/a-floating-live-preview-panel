@@ -20,7 +20,7 @@ defined('ABSPATH') || exit;
     </svg>
     <span><?php esc_html_e('Live preview', 'a-floating-live-preview-panel'); ?></span>
 </button>
-<section id="aflpp-panel" class="aflpp-panel" data-state="loading"
+<section id="aflpp-panel" class="aflpp-panel" data-state="loading" data-has-preview="false" data-has-feedback="false"
     aria-label="<?php esc_attr_e('Live preview', 'a-floating-live-preview-panel'); ?>" hidden>
     <div class="aflpp-header">
         <button type="button" class="aflpp-icon" data-action="refresh"
@@ -161,9 +161,30 @@ defined('ABSPATH') || exit;
     </div>
     <div class="aflpp-viewport">
         <div class="aflpp-stage"></div>
-        <div class="aflpp-empty"><?php esc_html_e('Loading preview…', 'a-floating-live-preview-panel'); ?></div>
+        <div class="aflpp-empty">
+            <div class="aflpp-empty-content">
+                <span class="aflpp-spinner" aria-hidden="true"></span>
+                <h2 class="aflpp-empty-title" tabindex="-1">
+                    <?php esc_html_e('Loading preview…', 'a-floating-live-preview-panel'); ?>
+                </h2>
+                <p class="aflpp-empty-description" hidden></p>
+                <div class="aflpp-empty-actions" hidden>
+                    <button type="button" class="aflpp-primary" data-action="retry" hidden>
+                        <?php esc_html_e('Try again', 'a-floating-live-preview-panel'); ?>
+                    </button>
+                    <a class="aflpp-secondary aflpp-open-preview" target="_blank" rel="noopener noreferrer"
+                        referrerpolicy="no-referrer" hidden>
+                        <?php esc_html_e('Open in new tab', 'a-floating-live-preview-panel'); ?>
+                    </a>
+                    <button type="button" class="aflpp-secondary" data-action="close" hidden>
+                        <?php esc_html_e('Close preview', 'a-floating-live-preview-panel'); ?>
+                    </button>
+                </div>
+                <p class="aflpp-empty-note" hidden></p>
+            </div>
+        </div>
     </div>
-    <div class="aflpp-devicebar">
+    <div class="aflpp-devicebar" hidden>
         <div class="aflpp-devices" role="group"
             aria-label="<?php esc_attr_e('Preview viewport', 'a-floating-live-preview-panel'); ?>">
             <button type="button" class="aflpp-icon" data-viewport="desktop" aria-pressed="true"
@@ -197,34 +218,34 @@ defined('ABSPATH') || exit;
                 </svg>
             </button>
         </div>
-        <span class="aflpp-dimensions"
-            title="<?php esc_attr_e(
-                'Viewport width and scale; not device emulation.',
-                'a-floating-live-preview-panel'
-            ); ?>">
-        </span>
+        <div class="aflpp-viewport-meta">
+            <span class="aflpp-activity" hidden></span>
+            <span class="aflpp-dimensions"
+                title="<?php esc_attr_e(
+                    'Viewport width and scale; not device emulation.',
+                    'a-floating-live-preview-panel'
+                ); ?>">
+            </span>
+        </div>
     </div>
     <div class="aflpp-feedback" hidden>
-        <span class="aflpp-error"></span>
-        <button type="button" class="aflpp-icon" data-action="retry"
-            aria-label="<?php esc_attr_e('Retry', 'a-floating-live-preview-panel'); ?>"
-            title="<?php esc_attr_e('Retry', 'a-floating-live-preview-panel'); ?>">
+        <div class="aflpp-feedback-copy" tabindex="0">
+            <span class="aflpp-feedback-title"></span>
+            <span class="aflpp-feedback-description" hidden></span>
+        </div>
+        <button type="button" class="aflpp-feedback-action" data-action="retry" hidden>
+            <?php esc_html_e('Try again', 'a-floating-live-preview-panel'); ?>
+        </button>
+        <button type="button" class="aflpp-feedback-action" data-action="close" hidden>
+            <?php esc_html_e('Close preview', 'a-floating-live-preview-panel'); ?>
+        </button>
+        <button type="button" class="aflpp-icon" data-action="dismiss-notice" hidden
+            aria-label="<?php esc_attr_e('Dismiss notice', 'a-floating-live-preview-panel'); ?>"
+            title="<?php esc_attr_e('Dismiss notice', 'a-floating-live-preview-panel'); ?>">
             <svg viewBox="0 0 24 24" style="fill: none" stroke="currentColor" stroke-width="1.5"
-                aria-hidden="true" focusable="false" data-icon="retry">
-                <path d="M12 5.5L17.7929 11.2929C18.1834 11.6834 18.1834 12.3166 17.7929 12.7071L16 14.5
-                M16 5.5H12V9.5M12 18.5L6.20711 12.7071
-                C5.81658 12.3166 5.81658 11.6834 6.20711 11.2929L8 9.5M8 18.5H12V14.5" />
+                aria-hidden="true" focusable="false">
+                <path d="M7.75 16.25L16.25 7.75M16.25 16.25L7.75 7.75" />
             </svg>
-            <svg viewBox="0 0 24 24" style="fill: none" stroke="currentColor" stroke-width="1.5"
-                aria-hidden="true" focusable="false" data-icon="takeover" hidden>
-                <path d="M11 18H15.5C16.6046 18 17.5 17.1046 17.5 16V13.25M15 15.25L17.5 13.25L20 15.25
-                M13 6.25L8.5 6.25C7.39543 6.25 6.5 7.14543 6.5 8.25L6.5 11M9 9L6.5 11L4 9M5 19.25H8
-                C8.69036 19.25 9.25 18.6904 9.25 18V15C9.25 14.3096 8.69036 13.75 8 13.75H5
-                C4.30964 13.75 3.75 14.3096 3.75 15V18C3.75 18.6904 4.30964 19.25 5 19.25ZM16 10.25
-                H19C19.6904 10.25 20.25 9.69036 20.25 9V6C20.25 5.30964 19.6904 4.75 19 4.75H16
-                C15.3096 4.75 14.75 5.30964 14.75 6V9C14.75 9.69036 15.3096 10.25 16 10.25Z" />
-            </svg>
-            <span class="aflpp-retry-label" hidden></span>
         </button>
     </div>
     <span class="aflpp-sr-only" role="status"></span>

@@ -63,7 +63,7 @@ Preview visibility, the last device viewport and Scroll to changes are stored pe
 
 = What happens with multiple editor tabs? =
 
-**Take over** switches preview ownership after pending writes finish. Each tab keeps its own fields; values are not copied or merged. Handover is cooperative within the same browser. If it fails, preserve unsaved edits and close the other preview manually before retrying. Other browsers and devices are not coordinated; this is not a collaborative editing tool.
+**Preview here** switches preview ownership after pending writes finish. Each tab keeps its own fields; values are not copied or merged. Handover is cooperative within the same browser. If it fails, preserve unsaved edits and close the other preview manually before retrying. Other browsers and devices are not coordinated; this is not a collaborative editing tool.
 
 = Why is the preview blank or not updating? =
 
