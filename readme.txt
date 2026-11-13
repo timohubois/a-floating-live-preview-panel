@@ -55,7 +55,7 @@ No. It supports classic post-editing screens, not the Block Editor or Site Edito
 
 = What does Scroll to changes do? =
 
-It follows the first detected text or media change in recognized HTML previews. Shorter changes are normally centered; taller ones are shown from their beginning. It respects site scrolling behavior, but complex headers may still obscure content. Styling-only changes may be missed and dynamic output can introduce unrelated differences. Turn it off to retain manual positioning. PDF page, zoom and scroll state are browser-owned and may reset on refresh.
+It follows the first detected content, structure or layout-attribute change in recognized HTML previews, without theme-specific integration. Shorter changes are normally centered; taller ones are shown from their beginning. It respects site scrolling behavior, but complex headers may still obscure content. Changes made only through stylesheets or frontend state may be missed, and dynamic output at load can introduce unrelated differences. Turn it off to retain manual positioning. PDF page, zoom and scroll state are browser-owned and may reset on refresh.
 
 = What preferences are remembered? =
 

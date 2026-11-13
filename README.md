@@ -35,7 +35,7 @@ Closing the window stops live updates without discarding editor fields.
 - **Preview actions** offers docking, reset size and position, and **Open preview in new tab**. Fullscreen and pop-out Picture-in-Picture appear where supported.
 - **Desktop**, **Tablet** and **Mobile** change the preview's viewport width, not its device or user agent.
 - **Remember preview visibility** is on by default. Visibility, viewport and **Scroll to changes** preferences are per user across posts; window size and position reset on a new editor load. Preferences remain after deactivation; uninstalling through WordPress removes the plugin's server-stored preferences.
-- **Scroll to changes** is on by default. It normally centers shorter changed content and shows taller content from its beginning. Detection and header handling are best-effort; disable it to retain manual positioning.
+- **Scroll to changes** is on by default. It follows detected content, structure and layout-attribute changes without theme-specific integration. It normally centers shorter changed content and shows taller content from its beginning. Detection and header handling are best-effort; disable it to retain manual positioning.
 
 ## Data and limitations
 
@@ -51,7 +51,7 @@ normal server autosave continues independently, including its usual updates to
 your own drafts.
 
 - **ACF:** support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages.
-- **Frontend output:** your theme and plugins determine the result, including redirects and browser-native output such as PDFs. Scroll restoration and change-following only apply to recognized HTML previews. Styling-only changes may be missed; dynamic output can introduce unrelated differences. PDF page, zoom and scroll state may reset on refresh.
+- **Frontend output:** your theme and plugins determine the result, including redirects and browser-native output such as PDFs. Scroll restoration and change-following only apply to recognized HTML previews. Changes made only through stylesheets or frontend state may be missed; dynamic output at load can introduce unrelated differences. PDF page, zoom and scroll state may reset on refresh.
 - **Trusted code only:** the preview is not sandboxed. Same-origin frontend scripts can access the editor. Use trusted theme and plugin code.
 - **Embedding:** site and browser restrictions still apply. Do not weaken them to force embedding; use **Open preview in new tab** when needed. **Preview refreshed** reports a document load, not verified content or publication.
 - **Multiple tabs:** **Preview here** switches preview ownership between editor tabs after pending writes finish. Fields are not copied or merged. Coordination is limited to the same browser, not other browsers or devices; this is not a collaborative editing tool.
