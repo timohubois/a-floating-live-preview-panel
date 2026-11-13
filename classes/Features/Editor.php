@@ -41,22 +41,22 @@ final class Editor
 
         wp_enqueue_style(
             'a-floating-live-preview-panel',
-            plugins_url('assets/editor.css', $this->file),
+            plugins_url('assets/preview-panel/style.css', $this->file),
             [],
-            $this->assetVersion('editor.css')
+            $this->assetVersion('preview-panel/style.css')
         );
         wp_enqueue_script(
             'a-floating-live-preview-panel',
-            plugins_url('assets/admin.js', $this->file),
+            plugins_url('assets/editor-bootstrap.js', $this->file),
             array_merge(['jquery', 'autosave', 'wp-preferences'], $this->acf->editorDependencies()),
-            $this->assetVersion('admin.js'),
+            $this->assetVersion('editor-bootstrap.js'),
             true
         );
         wp_add_inline_script('a-floating-live-preview-panel', 'window.aFloatingLivePreviewPanel = ' . wp_json_encode([
             'editorModule' => add_query_arg(
                 'ver',
-                $this->assetVersion('editor.js'),
-                plugins_url('assets/editor.js', $this->file)
+                $this->assetVersion('editor-preview.js'),
+                plugins_url('assets/editor-preview.js', $this->file)
             ),
             'panelModule' => add_query_arg(
                 'ver',

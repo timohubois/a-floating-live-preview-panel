@@ -274,9 +274,9 @@ final class Preview
         add_action('wp_enqueue_scripts', function (): void {
             wp_enqueue_script(
                 'a-floating-live-preview-panel-navigation',
-                plugins_url('assets/preview.js', $this->file),
+                plugins_url('assets/preview-navigation.js', $this->file),
                 [],
-                $this->assetVersion('preview.js'),
+                $this->assetVersion('preview-navigation.js'),
                 false
             );
         });
