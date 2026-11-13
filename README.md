@@ -39,11 +39,16 @@ Closing the window stops live updates without discarding editor fields.
 
 ## Data and limitations
 
-Live updates write the current user's WordPress autosave revision, not the saved
-parent post, and do not publish changes. Live inputs are title, content, excerpt
-and supported post-local ACF fields. Other metadata, related content and global
-settings are not live inputs. WordPress's normal server autosave pauses while the
-panel is open and resumes after closing it and finishing any pending preview write.
+Live updates write a separate internal preview revision per user and post, not the
+saved parent post or WordPress's recovery autosave, and do not publish changes.
+Preview revisions stay out of the normal revision history and do not trigger the
+newer-autosave notice. They are reused on refresh and deleted when the parent post
+is updated or permanently deleted. Existing recovery autosaves are left untouched.
+
+Live inputs are title, content, excerpt and supported post-local ACF fields. Other
+metadata, related content and global settings are not live inputs. WordPress's
+normal server autosave continues independently, including its usual updates to
+your own drafts.
 
 - **ACF:** support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters are unsupported; use ordinary WordPress Preview for those forms.
 - **Frontend output:** your theme and plugins determine the result, including redirects and browser-native output such as PDFs. Scroll restoration and change-following only apply to recognized HTML previews. Styling-only changes may be missed; dynamic output can introduce unrelated differences. PDF page, zoom and scroll state may reset on refresh.

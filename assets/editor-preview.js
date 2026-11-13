@@ -35,7 +35,6 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     let requestStop;
     let takeoverRequest;
     let takeoverTimer;
-    let autosavePaused = false;
     let cancelFrame;
     const editors = new WeakSet();
     let channel;
@@ -72,6 +71,8 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         clearTimeout(refreshTimer);
         refreshTimer = setTimeout(update, 1000);
     }
+
+    nativeEditor.onAutosave = changed;
 
     function watchEditor(editor) {
         if (!editor || editors.has(editor)) return;
@@ -193,11 +194,15 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
             try {
                 await nativeEditor.idle;
                 if (!previewActive) return;
+                const base = config.base;
                 const response = await fetch(config.endpoint, {
                     method: 'POST', credentials: 'same-origin',
                     headers: { 'X-WP-Nonce': config.nonce }, body: capture(),
                 });
                 const result = await response.json();
+                // An overlapping native draft autosave can invalidate this request and its revision.
+                await nativeEditor.idle;
+                if (!previewActive || base !== config.base) return;
                 if (!response.ok || typeof result.url !== 'string') throw new Error(result.message || strings.failed);
                 if (previewActive && version === generation) await loadFrame(result.url, version);
             } catch (error) {
@@ -226,12 +231,6 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         view.clearPreview();
     }
 
-    function resumeAutosave() {
-        if (!autosavePaused || view.visible || refreshTask) return;
-        mainWindow.wp?.autosave?.server.resume();
-        autosavePaused = false;
-    }
-
     function stopPreview(keepVisible = false) {
         view.setVisible(keepVisible);
         previewActive = false;
@@ -242,7 +241,6 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         takeoverRequest?.abort();
         view.returnToEditor();
         requestStop?.();
-        resumeAutosave();
     }
 
     async function startPreview(takeOver = false) {
@@ -257,10 +255,6 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         }
         if (!config.available) { report(strings.unavailable, 'error', { canRetry: false }); return; }
         if (!mainWindow.isSecureContext || !navigator.locks) { report(strings.browser, 'error', { canRetry: false }); return; }
-        if (!autosavePaused) {
-            mainWindow.wp?.autosave?.server.suspend();
-            autosavePaused = true;
-        }
         const controller = takeOver && channel ? new AbortController() : null;
         let timedOut = false;
         takeoverRequest = controller;
@@ -290,7 +284,6 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
                     await refreshTask;
                 } finally {
                     requestStop = null;
-                    resumeAutosave();
                 }
             });
             if (controller) {
@@ -313,7 +306,6 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
             takeoverTimer = null;
             takeoverRequest = null;
             ownershipTask = null;
-            resumeAutosave();
         }
     }
 
@@ -326,7 +318,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
 
     let resumingNativeSave = false;
     function continueAfterPreview(event, resume) {
-        if (resumingNativeSave || (!previewActive && !refreshTask && !ownershipTask && !autosavePaused)) return;
+        if (resumingNativeSave || (!previewActive && !refreshTask && !ownershipTask)) return;
         const pending = ownershipTask || refreshTask;
         stopPreview();
         if (!pending) return;

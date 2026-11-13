@@ -10,8 +10,16 @@
     const nativeEditor = { idle: Promise.resolve(), saving: false };
     let finishNative;
     window.jQuery(document).on('heartbeat-send.aflpp', (event, data) => {
-        if (data.wp_autosave) nativeEditor.idle = new Promise((resolve) => { finishNative = resolve; });
-    }).on('heartbeat-tick.aflpp heartbeat-error.aflpp', () => {
+        data.aflpp_base = config.base;
+    }).on('before-autosave.aflpp', () => {
+        // Core emits this even when its heartbeat-send handler was registered after ours.
+        nativeEditor.idle = new Promise((resolve) => { finishNative = resolve; });
+        nativeEditor.onAutosave?.();
+    }).on('heartbeat-tick.aflpp heartbeat-error.aflpp', (event, data) => {
+        if (typeof data?.aflpp_base === 'string' && /^[a-f0-9]{64}$/.test(data.aflpp_base)) {
+            config.base = data.aflpp_base;
+        }
+        if (typeof data?.rest_nonce === 'string') config.nonce = data.rest_nonce;
         finishNative?.();
         finishNative = null;
     });

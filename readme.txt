@@ -12,7 +12,7 @@ A floating live frontend preview while editing posts, pages and eligible custom 
 
 A Floating Live Preview Panel adds a movable, resizable frontend preview to classic WordPress editing screens. Your theme and plugins render the output through WordPress's native preview routing, including redirects and browser-native output such as PDFs.
 
-Live updates write the current user's autosave revision, not the saved parent post, and do not publish changes. Use the normal WordPress save, update or publish controls to save your changes to the post.
+Live updates write a separate internal preview revision, not the saved parent post or WordPress's recovery autosave, and do not publish changes. Preview revisions do not appear in the normal revision history or trigger the newer-autosave notice. Use the normal WordPress save, update or publish controls to save your changes to the post.
 
 **Features**
 
@@ -47,7 +47,7 @@ Title, content, excerpt and supported post-local ACF fields. Other metadata, rel
 
 = Does this replace saving or publishing? =
 
-No. It writes the current user's autosave revision, without updating the saved parent post or publishing changes. WordPress's normal server autosave pauses while the preview panel is open and resumes after closing it and finishing any pending preview write. Closing the preview does not discard editor fields.
+No. It writes a separate internal preview revision per user and post, without updating the saved parent post, overwriting recovery autosaves or publishing changes. Preview revisions are reused on refresh and deleted when the parent post is updated or permanently deleted. WordPress's normal server autosave continues independently, including its usual updates to your own drafts. Closing the preview does not discard editor fields.
 
 = Does it work with the Block Editor? =
 

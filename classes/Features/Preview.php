@@ -9,17 +9,37 @@ use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
 
-/** Own native preview writes, integrity checks and authorized revision reads. */
+/** Own isolated preview writes, integrity checks and authorized revision reads. */
 final class Preview
 {
+    private const POST_STATUS = 'aflpp-preview';
+
     private ?WP_Post $source = null;
     private int $previewPostId = 0;
     private string $previewToken = '';
+    private int $autosavePostId = 0;
 
     public function __construct(private readonly string $file, private readonly Acf $acf)
     {
         add_action('rest_api_init', [$this, 'registerRoutes']);
+        add_action('init', [$this, 'registerStatus']);
         add_action('init', [$this, 'authorizePreview'], 20);
+        add_action('post_updated', [$this, 'deletePreviews']);
+        // Core's heartbeat_autosave runs at priority 500.
+        add_filter('heartbeat_received', [$this, 'trackAutosave'], 499, 2);
+        add_filter('heartbeat_received', [$this, 'rebaseAutosave'], 501);
+    }
+
+    /** Core autosave lookups and revision history only select revisions with status inherit. */
+    public function registerStatus(): void
+    {
+        register_post_status(self::POST_STATUS, [
+            'internal' => true,
+            'public' => false,
+            'exclude_from_search' => true,
+            'show_in_admin_all_list' => false,
+            'show_in_admin_status_list' => false,
+        ]);
     }
 
     public function registerRoutes(): void
@@ -67,6 +87,30 @@ final class Preview
         ksort($meta);
 
         return hash('sha256', (string) wp_json_encode([get_post($postId, ARRAY_A), $meta]));
+    }
+
+    /** Only the same editor's successful native autosave may advance its known saved state. */
+    public function trackAutosave(array $response, array $data): array
+    {
+        $this->autosavePostId = 0;
+        $postId = isset($data['wp_autosave']['post_id']) && is_scalar($data['wp_autosave']['post_id'])
+            ? absint($data['wp_autosave']['post_id']) : 0;
+        if (
+            $postId && isset($data['aflpp_base']) && is_string($data['aflpp_base'])
+            && current_user_can('edit_post', $postId)
+            && hash_equals($this->fingerprint($postId), $data['aflpp_base'])
+        ) {
+            $this->autosavePostId = $postId;
+        }
+        return $response;
+    }
+
+    public function rebaseAutosave(array $response): array
+    {
+        if ($this->autosavePostId && !empty($response['wp_autosave']['success'])) {
+            $response['aflpp_base'] = $this->fingerprint($this->autosavePostId);
+        }
+        return $response;
     }
 
     private function stateAction(int $postId, int $revisionId): string
@@ -131,7 +175,7 @@ final class Preview
 
         $payload = wp_slash($payload);
 
-        // Core revisioned-meta and ACF form hooks read $_POST during the native save.
+        // ACF's classic-preview form hooks read $_POST during the revision save.
         $originalPost = $_POST;
         $revisionId = 0;
         $seed = fn (int $revisionId) => $this->seedPreviewMeta($postId, $revisionId);
@@ -141,20 +185,20 @@ final class Preview
         }
         try {
             $_POST = $payload;
-            $revisionId = wp_create_post_autosave($payload);
+            $revisionId = $this->writeRevision($postId, $payload);
         } finally {
             remove_action('save_post_revision', $seed, 0);
             $_POST = $originalPost;
             $acfError = $this->acf->verifySave(is_wp_error($revisionId) ? 0 : (int) $revisionId);
         }
         if (is_wp_error($revisionId)) {
-            return new WP_Error('aflpp_autosave_failed', $revisionId->get_error_message(), ['status' => 400]);
+            return new WP_Error('aflpp_preview_failed', $revisionId->get_error_message(), ['status' => 400]);
         }
         if ($acfError) {
             return $acfError;
         }
         $revisionId = (int) $revisionId;
-        if ($revisionId && !$this->ownsRevision($postId, $revisionId)) {
+        if (!$revisionId || !$this->ownsRevision($postId, $revisionId)) {
             return new WP_Error(
                 'aflpp_revision_unavailable',
                 __('The preview revision is unavailable.', 'a-floating-live-preview-panel'),
@@ -171,9 +215,8 @@ final class Preview
         }
         $action = $this->stateAction($postId, $revisionId);
         return new WP_REST_Response([
+            // Our state token authorizes this revision; native autosave parameters would select recovery data.
             'url' => get_preview_post_link($post, [
-                'preview_id' => $postId,
-                'preview_nonce' => wp_create_nonce('post_preview_' . $postId),
                 'aflpp_post' => $postId,
                 'aflpp_revision' => $revisionId,
                 'aflpp_token' => wp_create_nonce($action),
@@ -181,7 +224,63 @@ final class Preview
         ]);
     }
 
-    /** Start from saved metadata before ACF overlays the submitted fields, including on reused autosaves. */
+    private function revisionName(int $postId): string
+    {
+        return $postId . '-aflpp-preview-' . get_current_user_id();
+    }
+
+    /** Reuse one internal revision per post/user without reading or overwriting recovery autosaves. */
+    private function writeRevision(int $postId, array $payload): int|WP_Error
+    {
+        $revisions = get_posts([
+            'post_type' => 'revision',
+            'post_status' => self::POST_STATUS,
+            'post_parent' => $postId,
+            'author' => get_current_user_id(),
+            'name' => $this->revisionName($postId),
+            'posts_per_page' => 1,
+            'fields' => 'ids',
+        ]);
+
+        // The payload is already slashed; wp_insert_post applies the native post sanitization filters.
+        return wp_insert_post([
+            'ID' => $revisions[0] ?? 0,
+            'post_type' => 'revision',
+            'post_status' => self::POST_STATUS,
+            'post_parent' => $postId,
+            'post_name' => $this->revisionName($postId),
+            'post_author' => get_current_user_id(),
+            'post_title' => $payload['post_title'],
+            'post_content' => $payload['content'],
+            'post_excerpt' => $payload['excerpt'],
+        ], true);
+    }
+
+    /** Saved changes invalidate preview URLs; discard only our internal revisions at that point. */
+    public function deletePreviews(int $postId): void
+    {
+        if (!get_post_status_object(self::POST_STATUS) || wp_is_post_revision($postId)) {
+            return;
+        }
+        $revisions = get_posts([
+            'post_type' => 'revision',
+            'post_status' => self::POST_STATUS,
+            'post_parent' => $postId,
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+        ]);
+        foreach ($revisions as $revisionId) {
+            $revision = get_post($revisionId);
+            if (
+                $revision && $revision->post_type === 'revision' && $revision->post_status === self::POST_STATUS
+                && (int) $revision->post_parent === $postId
+            ) {
+                wp_delete_post_revision($revisionId);
+            }
+        }
+    }
+
+    /** Start from saved metadata before ACF overlays the submitted fields, including on reused previews. */
     private function seedPreviewMeta(int $postId, int $revisionId): void
     {
         if (!$this->ownsRevision($postId, $revisionId)) {
@@ -206,8 +305,10 @@ final class Preview
     private function ownsRevision(int $postId, int $revisionId): bool
     {
         $revision = get_post($revisionId);
-        return $revision && (int) wp_is_post_autosave($revision) === $postId
-            && (int) $revision->post_author === get_current_user_id();
+        return $revision && $revision->post_type === 'revision'
+            && $revision->post_status === self::POST_STATUS && (int) $revision->post_parent === $postId
+            && (int) $revision->post_author === get_current_user_id()
+            && $revision->post_name === $this->revisionName($postId);
     }
 
     public function authorizePreview(): void
@@ -226,7 +327,7 @@ final class Preview
             ? sanitize_text_field(wp_unslash($_GET['aflpp_token'])) : '';
         if (
             !is_user_logged_in() || !$postId || !get_post($postId) || !current_user_can('edit_post', $postId)
-            || ($revisionId && !$this->ownsRevision($postId, $revisionId))
+            || !$revisionId || !$this->ownsRevision($postId, $revisionId)
             || !wp_verify_nonce($token, $this->stateAction($postId, $revisionId))
         ) {
             wp_die(
@@ -241,7 +342,7 @@ final class Preview
 
         $this->previewPostId = $postId;
         $this->previewToken = $token;
-        $this->source = sanitize_post(get_post($revisionId ?: $postId));
+        $this->source = sanitize_post(get_post($revisionId));
         // Bind core and compatibility reads to the authorized source, not the latest revision.
         remove_filter('the_preview', '_set_preview');
         add_filter('the_preview', [$this, 'readPost']);

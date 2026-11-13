@@ -65,7 +65,7 @@ final class Acf
         }
         $payload['acf'] = $input['acf'];
         $payload['_acf_nonce'] = $input['_acf_nonce'];
-        $payload['_acf_changed'] = '1'; // Keep ACF-only autosaves alive.
+        $payload['_acf_changed'] = '1'; // Preserve ACF's classic-preview save context.
         if (isset($input['_acf_fields'])) {
             $payload['_acf_fields'] = $input['_acf_fields'];
         }
@@ -110,7 +110,7 @@ final class Acf
         $this->savedId = (int) $postId;
     }
 
-    /** The coordinator still owns and verifies the exact autosave revision. */
+    /** The coordinator still owns and verifies the exact preview revision. */
     public function verifySave(int $revisionId): ?WP_Error
     {
         if (!$this->saving) {
