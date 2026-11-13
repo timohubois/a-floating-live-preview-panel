@@ -1,0 +1,88 @@
+// Read the native To selection. Never capture editor fields, write revisions, or acquire editor locks.
+export function initRevisionsPreview(config, model, createPreviewPanel, createPreviewScroll, createPreviewFrame) {
+    const { strings } = config;
+    let selected = model.get('to');
+    let generation = 0;
+    let timer;
+    const view = createPreviewPanel(strings, {
+        postTitle: label(selected),
+        onOpen() { view.setVisible(true); refresh(); },
+        onClose: close,
+        onRefresh: refresh,
+        onRetry: refresh,
+        beforeMove() { generation++; frames.clear(); },
+        afterMove() { if (view.visible) refresh(); },
+    });
+    const frames = createPreviewFrame(view, createPreviewScroll(), strings, report);
+
+    function label(revision) {
+        if (!revision) return '';
+        const date = revision.get('dateShort') || revision.get('date') || '';
+        const author = revision.get('author')?.name || '';
+        const detail = strings.revisionLabel.replace('%1$s', () => date).replace('%2$s', () => author);
+        return revision.id === config.postId ? `${strings.currentVersion} — ${detail}` : detail;
+    }
+
+    function report(text, state = 'loading', options = {}) {
+        // Retain the previous revision's identity until its replacement has actually loaded.
+        if (state === 'ready' || !frames.hasPreview) view.setTitle(label(selected));
+        view.report(text, state, {
+            hasPreview: frames.hasPreview, previewUrl: frames.address,
+            canRefresh: view.visible && ['ready', 'error'].includes(state),
+            ...options,
+        });
+    }
+
+    async function refresh() {
+        clearTimeout(timer);
+        frames.cancel();
+        const version = ++generation;
+        if (!view.visible) return;
+        const url = selected?.id === config.postId
+            ? config.currentPreviewUrl : selected?.get('aflppPreviewUrl');
+        if (typeof url !== 'string' || !url) {
+            // An unavailable selection must not leave another revision presented as its preview.
+            frames.clear();
+            report(strings.unavailable, 'error', { canRetry: false, canRefresh: false, reason: 'unavailable' });
+            return;
+        }
+        try {
+            await frames.load(url, () => view.visible && version === generation, () => view.followChanges);
+        } catch (error) {
+            if (view.visible && version === generation) {
+                const browser = error.message === strings.browser;
+                report(browser ? strings.browser : strings.failed, 'error', {
+                    canRetry: !browser, canRefresh: !browser, reason: browser ? 'browser' : '',
+                });
+            }
+        }
+    }
+
+    function changed() {
+        const next = model.get('to');
+        if (next?.id === selected?.id) return;
+        selected = next;
+        generation++;
+        frames.cancel();
+        clearTimeout(timer);
+        if (!view.visible) return;
+        report(strings.stale, 'stale');
+        timer = setTimeout(refresh, 250);
+    }
+
+    function close() {
+        generation++;
+        clearTimeout(timer);
+        view.setVisible(false);
+        frames.clear();
+        view.returnToEditor();
+    }
+
+    model.on('update:revisions', changed);
+    window.addEventListener('pagehide', (event) => {
+        if (event.persisted) return;
+        model.off('update:revisions', changed);
+        close();
+    });
+    if (view.visible) refresh();
+}
