@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { runChromiumTests } from './helpers/chromium.mjs';
 
-// Exercise our PiP-only CSS in another document; WordPress owns the menu's actual rendering and positioning.
+// Exercise panel CSS and the native overlay layers; WordPress owns actual menu rendering and positioning.
 function browserTests(css) {
     const results = [];
     for (const pip of [false, true]) for (const height of [120, 180, 440]) {
@@ -43,6 +43,25 @@ function browserTests(css) {
     const style = document.createElement('style');
     style.textContent = css;
     document.head.append(style);
+    const layeringName = 'in-page menu overlays the admin bar without raising the panel';
+    const adminBar = document.createElement('div');
+    adminBar.style.cssText = 'position:fixed;inset:0 0 auto;height:32px;z-index:99999;background:black';
+    const shell = document.createElement('section');
+    shell.className = 'aflpp-panel';
+    shell.style.cssText = 'left:0;top:80px;width:360px;height:240px';
+    const menu = document.createElement('div');
+    menu.className = 'components-popover aflpp-menu-popover';
+    // WordPress gives its native popovers z-index 1000000.
+    menu.style.cssText = 'position:fixed;left:100px;top:8px;width:200px;height:120px;z-index:1000000;background:white';
+    document.body.append(adminBar, shell, menu);
+    try {
+        if (Number(getComputedStyle(shell).zIndex) >= Number(getComputedStyle(adminBar).zIndex)) throw new Error('Keep the panel below native admin overlays.');
+        if (document.elementFromPoint(110, 20) !== menu) throw new Error('The menu must remain visible and clickable over the admin bar.');
+        shell.append(menu);
+        if (document.elementFromPoint(110, 20) !== adminBar) throw new Error('The fixture must reproduce the clipping when the menu is trapped inside the panel.');
+        results.push({ name: layeringName });
+    } catch (error) { results.push({ name: layeringName, error: error.message }); }
+    finally { menu.remove(); shell.remove(); adminBar.remove(); }
     const panel = document.createElement('section');
     panel.className = 'aflpp-panel';
     panel.style.cssText = 'left:0;top:0;width:360px;height:240px';
@@ -110,7 +129,7 @@ function browserTests(css) {
     return results;
 }
 
-test('PiP menu bounds, preview shortcut and geometry controls in Chromium', async (t) => {
+test('menu layering, PiP bounds, preview shortcut and geometry controls in Chromium', async (t) => {
     const css = await readFile(new URL('../build/classic-editor.css', import.meta.url), 'utf8');
-    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify(css)})`, count: 14 });
+    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify(css)})`, count: 15 });
 });

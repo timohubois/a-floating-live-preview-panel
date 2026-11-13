@@ -133,8 +133,8 @@ export function createPreviewControls(panel, strings, callbacks) {
                     ...(notice.close ? [{ label: strings.close, onClick: callbacks.close }] : []),
                 ],
             }, h('p', null, h('strong', null, notice.heading)), notice.description && h('p', null, notice.description)), feedbackContainer),
-            // Keep every popover inside the panel's fullscreen/PiP document, not the editor body.
-            h(Popover.Slot),
+            // Escape the panel's stacking context in-page; fullscreen/PiP must stay inside the panel.
+            inPage ? createPortal(h(Popover.Slot), panel.ownerDocument.body) : h(Popover.Slot),
         );
     }
 

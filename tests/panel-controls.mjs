@@ -29,7 +29,8 @@ function fixture() {
     const querySelector = (selector) => selector === '.aflpp-controls' ? container : {
         selector, focus() { calls.push({ name: 'focus', args: [selector] }); },
     };
-    const panel = { querySelector, ownerDocument: { querySelector } };
+    const body = {};
+    const panel = { querySelector, ownerDocument: { querySelector, body } };
     const imports = {
         '@wordpress/element': element,
         '@wordpress/components': components,
@@ -54,7 +55,7 @@ function fixture() {
         walk(mounts.at(-1).tree);
         return result;
     }
-    return { controls, state, mounts, calls, nodes, icons };
+    return { controls, state, mounts, calls, nodes, icons, body };
 }
 
 test('PiP uses the official window icon and shared label, not a fake shortcut', () => {
@@ -82,6 +83,19 @@ test('position choices and preferences use native radio and checkbox components'
     assert.equal(toggles[0].props.isSelected, true);
     assert.equal(toggles[1].props.isSelected, false);
     assert.equal(h.nodes('Popover.Slot').length, 1);
+});
+
+test('in-page popovers escape the panel stacking context while fullscreen and PiP retain their slot', () => {
+    const h = fixture();
+    const slotPortal = () => h.nodes('Portal').find(({ children }) => children[0]?.type === 'Popover.Slot');
+    assert.equal(slotPortal().props.target, h.body, 'use the native body overlay layer above the admin bar');
+    for (const inPip of [false, true]) {
+        h.controls.update({ ...h.state, inPage: false, inPip });
+        assert.equal(slotPortal(), undefined, 'fullscreen and PiP popovers must not escape the panel');
+        assert.equal(h.nodes('Popover.Slot').length, 1);
+    }
+    h.controls.update(h.state);
+    assert.equal(slotPortal().props.target, h.body, 'return to the body overlay after leaving fullscreen or PiP');
 });
 
 test('size presets offer native single-choice controls without dragging and stay out of PiP/fullscreen', () => {
