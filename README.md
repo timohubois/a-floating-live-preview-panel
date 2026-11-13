@@ -28,11 +28,15 @@ Use a disposable local or staging WordPress installation while this is in develo
 ## Usage
 
 Move the window by its plain titlebar or drag the closed **Live preview** launcher;
-they share one position. Resize from usable borders and corners; docked edges that
-cannot move keep their anchor. The small move grip, launcher and single keyboard
-resize control at the boundary support arrow keys, with Shift for larger steps.
+they share a preferred corner. Each fits independently within the current viewport,
+so the launcher can reach the top and sides without reserving space for its hidden
+panel. Docked side and bottom spacing follows the editor's responsive outer gutter.
+Resize from usable borders and corners; docked edges that cannot move keep their
+anchor. The small move grip, launcher and single keyboard resize control at the
+boundary support arrow keys, with Shift for larger steps.
 Closing the window stops live updates without discarding editor fields and focuses
-the launcher; opening it moves focus to **Preview actions**, without trapping focus.
+the launcher. Keyboard opening moves focus to **Preview actions**, without trapping
+focus; pointer opening does not automatically focus a panel action.
 WordPress's native **Preview** button keeps the panel and its last frame visible,
 waits for outstanding live writes, and normally resumes live updates afterward.
 It retains WordPress's normal behavior, including saving changes to your own drafts.

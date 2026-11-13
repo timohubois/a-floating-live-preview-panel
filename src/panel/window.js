@@ -37,10 +37,30 @@ export function createPreviewPanel(strings, {
     const status = panel.querySelector('[role="status"]');
     const responsiveViewport = createPreviewViewport(viewport, stage, dimensions, preferences.get(scope, 'viewport'));
 
+    const editorWrap = mainDocument.querySelector('#wpbody-content > .wrap');
+    const adminBar = mainDocument.getElementById('wpadminbar');
+    function area(free = false) {
+        // Fixed coordinates use the layout viewport, excluding any scrollbar. Read the editor's
+        // outer gutter rather than duplicating WordPress's responsive LTR/RTL spacing rules.
+        const width = Math.max(1, mainDocument.documentElement.clientWidth);
+        const height = Math.max(1, mainDocument.documentElement.clientHeight);
+        // RTL scrollbars can shift the fixed-position viewport's physical origin.
+        const origin = mainDocument.documentElement.getBoundingClientRect().left + mainWindow.scrollX;
+        const wrap = !free && editorWrap?.getBoundingClientRect();
+        const gutter = wrap ? Math.max(0, mainWindow.getComputedStyle(editorWrap).direction === 'rtl'
+            ? wrap.left - origin : origin + width - wrap.right) : 20;
+        const gap = free ? 0 : gutter;
+        const left = Math.min(gap, (width - 1) / 2);
+        const top = Math.min(Math.max(0, adminBar?.getBoundingClientRect().bottom || 0) + gap, height - 1);
+        const right = width - left;
+        const bottom = height - Math.min(gap, height - top - 1);
+        return { left, top, right, bottom, width: right - left, height: bottom - top };
+    }
+
     let visible = showOnLoad;
     let pipWindow;
-    const geometry = createPanelGeometry(preferences.get(scope, 'layout'), mainWindow);
-    const { area, compactRect, usableEdge } = geometry;
+    const geometry = createPanelGeometry(preferences.get(scope, 'layout'), area);
+    const { compactRect, usableEdge } = geometry;
     let controls;
     let takeOverAction = false;
     let windowNotice = '';
@@ -177,17 +197,31 @@ export function createPreviewPanel(strings, {
         preferenceActions.set(scope, 'layout', geometry.layout);
     }
 
+    function launcherRect() {
+        // Initial markup and a just-closed panel still hide the launcher. Measure its real label
+        // and CSS size synchronously before revealing it at the fitted position.
+        const hidden = launcher.hidden;
+        launcher.hidden = false;
+        launcher.style.maxWidth = `${area(!geometry.dock).width}px`;
+        const size = { width: launcher.offsetWidth, height: launcher.offsetHeight };
+        launcher.hidden = hidden;
+        return geometry.launcherRect(size);
+    }
+
     function draw() {
         if (pipWindow) return;
+        if (!visible) {
+            const rect = launcherRect();
+            const factor = geometry.anchorFactor;
+            Object.assign(launcher.style, {
+                left: `${rect.x + rect.width * factor}px`, top: `${rect.y + rect.height}px`,
+                transform: `translate(${-100 * factor}%, -100%)`,
+            });
+        }
         let rect = compactRect();
-        const factor = geometry.anchorFactor;
-        Object.assign(launcher.style, {
-            left: `${rect.x + rect.width * factor}px`, top: `${rect.y + rect.height}px`,
-            transform: `translate(${-100 * factor}%, -100%)`,
-        });
         panel.dataset.anchor = geometry.anchor;
         if (geometry.expanded) {
-            const available = area(12, 44);
+            const available = area();
             rect = { x: available.left, y: available.top, width: available.width, height: available.height };
         }
         Object.assign(panel.style, {
@@ -281,13 +315,19 @@ export function createPreviewPanel(strings, {
             || (resizing && !usableEdge(resizeEdge()));
         let drag;
         let animation;
-        const startRect = () => ({ ...compactRect(), preferredBounds: geometry.layout.bounds });
+        const startRect = () => ({ ...(isLauncher ? launcherRect() : compactRect()), preferredBounds: geometry.layout.bounds });
         function paint() {
             animation = null;
             if (!drag) return;
             if (!resizing && !isLauncher) {
                 const rect = compactRect();
-                panel.style.transform = `translate3d(${rect.x - drag.x}px, ${rect.y - drag.y}px, 0)`;
+                // Scroll/resize redraws can replace the layout position during this drag.
+                const dx = rect.x - parseFloat(panel.style.left);
+                const dy = rect.y - parseFloat(panel.style.top);
+                // Undocking can change temporary fitting. Paint the size that release will commit.
+                Object.assign(panel.style, {
+                    width: `${rect.width}px`, height: `${rect.height}px`, transform: `translate3d(${dx}px, ${dy}px, 0)`,
+                });
             } else draw();
         }
         function finish() {
@@ -331,7 +371,7 @@ export function createPreviewPanel(strings, {
             );
             mainDocument.documentElement.classList.add('aflpp-window-dragging');
             if (resizing) geometry.resize(drag, resizeEdge(), dx, dy);
-            else geometry.move(drag, dx, dy);
+            else geometry.move(drag, dx, dy, isLauncher);
             if (!animation) animation = mainWindow.requestAnimationFrame(paint);
         });
         for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) control.addEventListener(event, finish);
@@ -345,7 +385,7 @@ export function createPreviewPanel(strings, {
             const start = startRect();
             const step = event.shiftKey ? 40 : 10;
             if (resizing) geometry.resize(start, resizeEdge(), delta[0] * step, delta[1] * step);
-            else geometry.move(start, delta[0] * step, delta[1] * step);
+            else geometry.move(start, delta[0] * step, delta[1] * step, isLauncher);
             draw();
             rememberLayout();
             syncControls();
@@ -365,6 +405,8 @@ export function createPreviewPanel(strings, {
     for (const edge of resizeEdges) geometryControl(edge, true, edge.dataset.resizeEdge);
     // Viewport corrections are temporary, not new saved layout preferences.
     mainWindow.addEventListener('resize', draw);
+    // On small screens the admin bar scrolls with the page instead of remaining fixed.
+    mainWindow.addEventListener('scroll', draw, { passive: true });
 
     async function popOut() {
         if (pipWindow || mainDocument.fullscreenElement === panel || !supportsPip()) return;
@@ -449,7 +491,7 @@ export function createPreviewPanel(strings, {
         launcherDragClick = false;
         rememberPanelVisibility(true);
         onOpen();
-        if (visible) controls.focus('actions');
+        if (visible && event.detail === 0) controls.focus('actions');
     });
     controls = createPreviewControls(panel, strings, {
         refresh: () => { if (current.canRefresh) onRefresh(); },
@@ -472,8 +514,9 @@ export function createPreviewPanel(strings, {
             syncControls();
         },
     });
-    draw();
     report(strings.loading, 'loading', { canRetry: false });
+    // Controls render the launcher's icon; include it in the initial size measurement.
+    draw();
     // Reveal only after binding controls and positioning the server-rendered panel.
     panel.hidden = !visible;
     launcher.hidden = visible;
@@ -492,7 +535,7 @@ export function createPreviewPanel(strings, {
                 responsiveViewport.layout();
             }
             visible = value;
-            if (visible) draw();
+            draw();
             panel.hidden = !visible;
             launcher.hidden = visible;
             launcher.setAttribute('aria-expanded', String(visible));

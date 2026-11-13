@@ -1,5 +1,5 @@
 // Preferred window geometry only. Viewport fitting is temporary and never rewrites saved dimensions.
-export function createPanelGeometry(saved, mainWindow) {
+export function createPanelGeometry(saved, area) {
     const validLayout = saved && !Array.isArray(saved) && saved.bounds
         && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(saved.bounds[key]))
         && saved.bounds.width > 0 && saved.bounds.height > 0
@@ -13,35 +13,36 @@ export function createPanelGeometry(saved, mainWindow) {
     let anchor = dock || (validLayout && saved.anchor) || 'right';
     const anchorFactor = () => anchor === 'left' ? 0 : anchor === 'center' ? 0.5 : 1;
 
-    // Collapse the margins too on very small windows; never use an off-screen minimum.
-    function area(gap = 16, top = 48) {
-        const width = Math.max(1, mainWindow.innerWidth);
-        const height = Math.max(1, mainWindow.innerHeight);
-        const left = Math.min(gap, (width - 1) / 2);
-        top = Math.min(top, height - 1);
-        const right = width - left;
-        const bottom = height - Math.min(gap, height - top - 1);
-        return { left, top, right, bottom, width: right - left, height: bottom - top };
-    }
-
-    function fit(next) {
-        const available = area();
-        next.width = Math.min(available.width, Math.max(Math.min(320, available.width), next.width));
-        next.height = Math.min(available.height, Math.max(Math.min(220, available.height), next.height));
+    function fit(next, available = area(!dock), minimumWidth = 320, minimumHeight = 220) {
+        next.width = Math.min(available.width, Math.max(Math.min(minimumWidth, available.width), next.width));
+        next.height = Math.min(available.height, Math.max(Math.min(minimumHeight, available.height), next.height));
         next.x = Math.max(available.left, Math.min(available.right - next.width, next.x));
         next.y = Math.max(available.top, Math.min(available.bottom - next.height, next.y));
         return next;
     }
 
-    function compactRect() {
-        const rect = fit({ ...bounds });
+    function dockedRect(rect) {
         if (dock) {
             const available = area();
             rect.x = dock === 'left' ? available.left
-                : dock === 'center' ? (mainWindow.innerWidth - rect.width) / 2 : available.right - rect.width;
+                : dock === 'center' ? available.left + (available.width - rect.width) / 2 : available.right - rect.width;
             rect.y = available.bottom - rect.height;
         }
         return rect;
+    }
+
+    function compactRect() {
+        return dockedRect(fit({ ...bounds }));
+    }
+
+    function launcherRect(size) {
+        // Fit the visible launcher, not its hidden panel. Keep their preferred corner shared even
+        // when opening the larger panel temporarily fits it away from that corner.
+        return dockedRect(fit({
+            ...size,
+            x: bounds.x + (bounds.width - size.width) * anchorFactor(),
+            y: bounds.y + bounds.height - size.height,
+        }, area(!dock), 1, 1));
     }
 
     function dockTo(side = 'right', resetSize = false) {
@@ -69,7 +70,7 @@ export function createPanelGeometry(saved, mainWindow) {
 
     // Physical edges are independent of text direction. Center anchoring grows symmetrically.
     function resizeBounds(start, edge, dx, dy) {
-        const available = area();
+        const available = area(!dock);
         const horizontal = edge.includes('e') || edge.includes('w');
         const vertical = edge.includes('n') || edge.includes('s');
         const factor = anchor === 'center' ? 0.5 : edge.includes('w') ? 1 : 0;
@@ -93,17 +94,18 @@ export function createPanelGeometry(saved, mainWindow) {
         };
     }
 
-    function moveBounds(start, dx, dy) {
-        const rect = fit({ ...start, x: start.x + dx, y: start.y + dy });
+    function moveBounds(start, dx, dy, launcher = false) {
+        const rect = fit({ ...start, x: start.x + dx, y: start.y + dy }, area(true), launcher ? 1 : 320, launcher ? 1 : 220);
         // Moving never turns temporary viewport fitting into a new preferred size.
-        bounds.x = rect.x;
-        bounds.y = rect.y;
+        bounds.x = rect.x + (launcher ? (rect.width - bounds.width) * anchorFactor() : 0);
+        bounds.y = rect.y + (launcher ? rect.height - bounds.height : 0);
         dock = null;
     }
 
     return {
         area,
         compactRect,
+        launcherRect,
         usableEdge,
         get anchor() { return anchor; },
         get anchorFactor() { return anchorFactor(); },
