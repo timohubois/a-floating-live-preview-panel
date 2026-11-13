@@ -7,7 +7,7 @@ import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
 
-async function browserTests(initPreview, initAcf, bootstrapSource) {
+async function browserTests(editorSource, initAcf, nativeSource) {
     const realJQuery = window.jQuery;
     const results = [];
     const equal = (actual, expected) => {
@@ -86,32 +86,20 @@ async function browserTests(initPreview, initAcf, bootstrapSource) {
             clearPreview() {},
             returnToEditor() {},
         };
-        const config = { available: true, endpoint: '/preview', base: 'base', strings: {} };
+        const config = { available: true, acfEnabled: withAcf, endpoint: '/preview', base: 'base', strings: {} };
         const createPanel = (strings, callbacks) => { options = callbacks; return view; };
         const createScroll = () => ({ remember() {} });
+        const initPreview = new Function('imports', `${editorSource}\nreturn initLivePreview;`)({
+            '../compatibility/acf.js': { initAcf },
+            '../panel/window.js': { createPreviewPanel: createPanel },
+            '../preview/scroll.js': { createPreviewScroll: createScroll },
+        });
         if (withWordPress) {
-            window.aFloatingLivePreviewPanel = {
-                ...config, editorModule: 'editor', scrollModule: 'scroll', acfModule: withAcf ? 'acf' : null,
-            };
-            const modules = {
-                editor: { initPreview(config, acf, native, panel, scroll) {
-                    native.idle = nativeEditor.idle;
-                    nativeEditor = native;
-                    initPreview(config, acf, native, panel, scroll);
-                } },
-                panel: { createPreviewPanel: createPanel }, viewport: { createPreviewViewport() {} },
-                controls: { createPreviewControls() {} },
-                scroll: { createPreviewScroll: createScroll }, acf: { initAcf },
-            };
-            // Run the actual bootstrap, replacing only module loading and UI dependencies.
-            new Function('imports', 'importModule', bootstrapSource.replaceAll('import(', 'importModule('))({
-                './preview-panel/index.js': modules.panel,
-                './preview-panel/viewport.js': modules.viewport,
-                './preview-panel/controls.js': modules.controls,
-                './preview-frame.js': { createPreviewFrame() {} },
-            }, async (name) => modules[name]);
-            for (let i = 0; i < 30; i++) await Promise.resolve();
-        } else initPreview(config, withAcf ? initAcf : null, nativeEditor, createPanel, createScroll);
+            const idle = nativeEditor.idle;
+            nativeEditor = new Function(`${nativeSource}\nreturn createNativeEditor;`)()(config, form);
+            nativeEditor.idle = idle;
+        }
+        initPreview(config, nativeEditor);
         equal(reports.at(-1).state, 'loading');
         return {
             form, titles, timers, actions, editorEvents, trigger, nativeEditor,
@@ -129,6 +117,7 @@ async function browserTests(initPreview, initAcf, bootstrapSource) {
             },
             cleanup() {
                 options.onClose();
+                nativeEditor.destroy?.();
                 if (window.jQuery) {
                     window.jQuery(document).off('.aflpp');
                     window.jQuery(form).off('.aflpp .aflppAcf');
@@ -313,14 +302,10 @@ async function browserTests(initPreview, initAcf, bootstrapSource) {
 test('native editor events and ACF compatibility boundaries in Chromium', async (t) => {
     const directory = await mkdtemp(join(tmpdir(), 'aflpp-events-'));
     try {
-        const moduleUrls = await Promise.all(['editor-preview.js', 'compatibility/acf.js'].map(async (path) => {
-            const url = new URL(`../assets/${path}`, import.meta.url);
-            const source = path === 'editor-preview.js'
-                ? `${await previewSourceForVm(url)}\nconst init = (...args) => initPreview(...args, createPreviewFrame); export { init as initPreview };`
-                : await readFile(url, 'utf8');
-            return `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-        }));
-        const bootstrapSource = await sourceForVm(new URL('../assets/editor-bootstrap.js', import.meta.url));
+        const editorSource = await previewSourceForVm(new URL('../src/classic-editor/live-preview.js', import.meta.url));
+        const nativeSource = await sourceForVm(new URL('../src/classic-editor/native-editor.js', import.meta.url));
+        const acfSource = await readFile(new URL('../src/compatibility/acf.js', import.meta.url), 'utf8');
+        const acfUrl = `data:text/javascript;base64,${Buffer.from(acfSource).toString('base64')}`;
         const wordpressScripts = process.env.WORDPRESS_ROOT ? await Promise.all([
             'wp-includes/js/jquery/jquery.js', 'wp-includes/js/quicktags.js',
         ].map(async (path) => {
@@ -329,9 +314,8 @@ test('native editor events and ACF compatibility boundaries in Chromium', async 
         })) : [];
         const page = join(directory, 'test.html');
         await writeFile(page, `<!doctype html><html><head><script>window.quicktagsL10n = new Proxy({}, { get: (target, key) => key });</script>${wordpressScripts.join('')}</head><body><script id="results" type="application/json">null</script><script type="module">
-            import { initPreview } from ${JSON.stringify(moduleUrls[0])};
-            import { initAcf } from ${JSON.stringify(moduleUrls[1])};
-            document.getElementById('results').textContent = JSON.stringify(await (${browserTests.toString().replace(/<\/script/gi, '<\\/script')})(initPreview, initAcf, ${JSON.stringify(bootstrapSource)}));
+            import { initAcf } from ${JSON.stringify(acfUrl)};
+            document.getElementById('results').textContent = JSON.stringify(await (${browserTests.toString().replace(/<\/script/gi, '<\\/script')})(${JSON.stringify(editorSource)}, initAcf, ${JSON.stringify(nativeSource)}));
         </script></body></html>`);
         const result = spawnSync(process.env.CHROMIUM_BIN || 'chromium', [
             '--headless', '--disable-gpu', '--no-first-run', '--disable-background-networking',

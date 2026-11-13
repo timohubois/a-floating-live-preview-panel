@@ -112,14 +112,16 @@ composer check-platform-reqs
 composer php:lint
 ```
 
-The editor and revision entries (`assets/editor-bootstrap.js`, `assets/revisions-bootstrap.js`), shared iframe loader (`assets/preview-frame.js`) and panel modules (`assets/preview-panel/*.js`) are built with WordPress's standard tooling. They import public APIs from `@wordpress/components`, `@wordpress/element`, `@wordpress/data` and `@wordpress/preferences`; selected official icons are imported in `src/icons.js`. WordPress supplies the installed runtime instead of bundling another copy of React or its components:
+All authored JavaScript and panel CSS live in `src/`. WordPress's standard tooling builds three entries: `src/classic-editor.js`, `src/revisions.js` and `src/preview-navigation.js`. The admin entries import public APIs from `@wordpress/components`, `@wordpress/element`, `@wordpress/data` and `@wordpress/preferences`; selected official icons live in `src/panel/icons.js`. WordPress supplies the installed runtime instead of bundling another copy of React or its components:
 
 ```sh
 npm ci
 npm run build
 ```
 
-Rebuild after changing either entry, the iframe loader, panel JavaScript or icon imports. Ship both bundles in `assets/build/` and their generated `.asset.php` dependency/version metadata with the plugin; do not edit them by hand. Editor and revision coordination (`assets/editor-preview.js`, `assets/revisions-preview.js`), preview scrolling and the optional ACF adapter remain separately loaded native modules. Docking, geometry and cross-document PiP integration remain custom.
+Rebuild after changing anything in `src/`; `npm start` watches those inputs during development. All plugin browser code is bundled, including editor/revision coordination, scrolling and the ACF adapter. ACF is initialized only when available. There are no runtime imports from `src/` or PHP-configured module URLs.
+
+`build/` contains only generated assets. Keep it committed so a checkout can be installed directly, and ship the complete directory, including CSS and generated `.asset.php` dependency/version metadata. Never edit generated files by hand. The admin bundles intentionally contain the same shared panel source; they load on different screens and need no separate shared runtime. Distribution excludes `src/` and development dependencies.
 
 Native component CSS is still enqueued separately and copied into PiP, including WordPress's combined admin stylesheets. Package imports do not replace this stylesheet handling.
 
@@ -151,12 +153,18 @@ blocking live-editor or unrelated writes:
 wp eval-file /path/to/a-floating-live-preview-panel/tests/revisions.php
 ```
 
-Code ownership stays explicit: `Compatibility/Editor.php` and
-`Compatibility/Revisions.php` connect their native admin screens;
-`Features/Panel.php` owns shared presentation; `Features/Preview.php` owns source
-authorization, writes and frontend reads. The revision controller follows core's
-`wp.revisions.view.frame.model`; guard and verify this integration when changing
-the supported WordPress versions.
+### Structure and ownership
+
+- `a-floating-live-preview-panel.php` explicitly loads the PHP classes; `classes/Plugin.php` connects the owners. No Composer autoloader is required at runtime.
+- `classes/Admin/ClassicEditor.php` and `RevisionBrowser.php` connect their respective native screens. `Admin/Panel.php` owns shared assets, labels and the PHP view in `views/panel.php`.
+- `classes/Preview/LivePreview.php` owns internal preview revision writes, fingerprints, native-save coordination and cleanup. `Preview/FrontendPreview.php` authorizes reads and overlays only the selected source on frontend output. Live-source ownership and token verification stay together in `LivePreview`.
+- `classes/Compatibility/Acf.php` owns the optional ACF save/read contracts; `src/compatibility/acf.js` bridges its browser events. Small Timber read handling stays beside frontend content reads rather than becoming another integration class.
+- `src/classic-editor/live-preview.js` owns field capture, live writes, Web Locks and save sequencing. `classic-editor/native-editor.js` observes native Preview, heartbeat and validation. The entry initializes them synchronously, with native observers first.
+- `src/revisions/preview.js` owns read-only revision selection. It never acquires editor locks or writes previews. It follows core's `wp.revisions.view.frame.model`; guard and verify that integration when changing supported WordPress versions.
+- `src/panel/window.js` owns window presentation, focus, preferences, fullscreen and PiP. `panel/geometry.js` owns preferred bounds, docking, resizing and temporary viewport fitting; pointer/keyboard event binding stays with the window. `controls.js` renders public WordPress components and `viewport.js` sizes the preview viewport.
+- `src/preview/frame.js` owns iframe replacement and cancellation; `scroll.js` enhances only recognized preview HTML. These are shared by the separate editor and revision lifecycles.
+
+Keep PHP class names and filenames in PascalCase and browser filenames in kebab-case. Group source by responsibility, not separate generic JavaScript/CSS buckets. Preserve runtime identifiers such as preference keys, REST paths and the `aflpp-` CSS namespace when reorganizing internals. Extract concrete shared behavior, not generic controller or module frameworks.
 
 Verify both screen-to-preview workflows on a disposable WordPress site with the
 theme and optional ACF fields you intend to use.

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { sourceForVm } from './helpers/modules.mjs';
+import { createPanelGeometry } from '../src/panel/geometry.js';
 import test from 'node:test';
 import vm from 'node:vm';
 
-const source = await sourceForVm(new URL('../assets/preview-panel/index.js', import.meta.url));
+const source = await sourceForVm(new URL('../src/panel/window.js', import.meta.url));
 
 // Exercise the view's lifecycle and launcher label without starting requests or changing native controls.
 function fixture(open = false, {
@@ -96,15 +97,18 @@ function fixture(open = false, {
     const imports = {
         '@wordpress/data': window.wp.data,
         '@wordpress/preferences': { store: { name: 'core/preferences' } },
+        './geometry.js': { createPanelGeometry },
+        './controls.js': { createPreviewControls: createControls },
+        './viewport.js': { createPreviewViewport: () => ({
+            device: 'desktop', layout() {}, beforeMove() {}, afterMove() {},
+        }) },
     };
     delete window.wp;
     const createPreviewPanel = vm.runInNewContext(`${source}\ncreatePreviewPanel`, { window, document, imports });
     const view = createPreviewPanel(strings, {
         nativeSaving, beforeMove() {}, afterMove() {},
         onOpen() { view.setVisible(true); }, onClose() { view.setVisible(false); }, onRetry(takeOver) { retryCalls.push(takeOver); },
-    }, () => ({
-        device: 'desktop', layout() {}, beforeMove() {}, afterMove() {},
-    }), createControls);
+    });
     const panel = node('aflpp-panel');
     return {
         view, launcher, panel, node, actions, window, document, preferences, writes, detached, copiedStyles,
@@ -120,7 +124,7 @@ for (const combined of [false, true]) {
             ? { rel: 'stylesheet', href: '/wp-admin/load-styles.php?load%5Bchunk_0%5D=common,forms,wp-components' }
             : { id: 'wp-components-css', rel: 'stylesheet', href: '/wp-includes/css/dist/components/style.min.css' };
         const inline = { id: 'wp-components-inline-css' };
-        const panel = { id: 'a-floating-live-preview-panel-css', rel: 'stylesheet', href: '/assets/preview-panel/style.css' };
+        const panel = { id: 'a-floating-live-preview-panel-css', rel: 'stylesheet', href: '/build/classic-editor.css' };
         const panelInline = { id: 'a-floating-live-preview-panel-inline-css' };
         const h = fixture(true, { pip: true, stylesheets: [
             core, inline, { id: 'unrelated-css', rel: 'stylesheet', href: '/unrelated.css' }, panel, panelInline,

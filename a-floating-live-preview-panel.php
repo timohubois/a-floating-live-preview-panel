@@ -18,10 +18,11 @@ namespace AFloatingLivePreviewPanel;
 defined('ABSPATH') || exit;
 
 require_once __DIR__ . '/classes/Compatibility/Acf.php';
-require_once __DIR__ . '/classes/Features/Preview.php';
-require_once __DIR__ . '/classes/Features/Panel.php';
-require_once __DIR__ . '/classes/Compatibility/Editor.php';
-require_once __DIR__ . '/classes/Compatibility/Revisions.php';
+require_once __DIR__ . '/classes/Preview/LivePreview.php';
+require_once __DIR__ . '/classes/Preview/FrontendPreview.php';
+require_once __DIR__ . '/classes/Admin/Panel.php';
+require_once __DIR__ . '/classes/Admin/ClassicEditor.php';
+require_once __DIR__ . '/classes/Admin/RevisionBrowser.php';
 require_once __DIR__ . '/classes/Plugin.php';
 
 new Plugin(__FILE__);

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { icons } from '../src/icons.js';
+import { icons } from '../src/panel/icons.js';
 import { moreVertical } from '@wordpress/icons';
 import { sourceForVm } from './helpers/modules.mjs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-const source = await sourceForVm(new URL('../assets/preview-panel/controls.js', import.meta.url));
+const source = await sourceForVm(new URL('../src/panel/controls.js', import.meta.url));
 
 // Verify our native-component contract without duplicating WordPress's React or menu implementation.
 function fixture() {
@@ -33,7 +33,7 @@ function fixture() {
     const imports = {
         '@wordpress/element': element,
         '@wordpress/components': components,
-        '../../src/icons.js': { icons },
+        './icons.js': { icons },
     };
     const createPreviewControls = vm.runInNewContext(`${source}\ncreatePreviewControls`, { imports });
     const controls = createPreviewControls(panel, strings, callbacks);

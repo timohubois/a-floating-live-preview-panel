@@ -3,9 +3,10 @@
 /** Run with `wp eval-file tests/revisions.php` on a disposable single-site installation with this plugin active. */
 
 use AFloatingLivePreviewPanel\Compatibility\Acf;
-use AFloatingLivePreviewPanel\Features\Preview;
+use AFloatingLivePreviewPanel\Preview\FrontendPreview;
+use AFloatingLivePreviewPanel\Preview\LivePreview;
 
-if (!defined('WP_CLI') || !WP_CLI || !class_exists(Preview::class)) {
+if (!defined('WP_CLI') || !WP_CLI || !class_exists(FrontendPreview::class)) {
     throw new RuntimeException('Run this through WP-CLI with A Floating Live Preview Panel active.');
 }
 
@@ -26,7 +27,8 @@ $originalGet = $_GET;
 $posts = [];
 $users = [];
 $acf = new Acf();
-$preview = new Preview(dirname(__DIR__) . '/a-floating-live-preview-panel.php', $acf);
+$livePreview = new LivePreview($acf);
+$preview = new FrontendPreview(dirname(__DIR__) . '/a-floating-live-preview-panel.php', $livePreview, $acf);
 $dieHandler = static fn () => static function ($message, $title, $args): void {
     throw new RuntimeException('aflpp_denied_' . (int) ($args['response'] ?? 0));
 };
@@ -205,14 +207,14 @@ try {
         $denied($savedQuery);
     }
     wp_set_current_user($admin);
-    $stateAction = new ReflectionMethod(Preview::class, 'stateAction');
+    $stateAction = new ReflectionMethod(LivePreview::class, 'stateAction');
     $internalQuery = [
         'aflpp_post' => (string) $postId, 'aflpp_revision' => (string) $foreignInternalId,
-        'aflpp_token' => wp_create_nonce($stateAction->invoke($preview, $postId, $foreignInternalId)),
+        'aflpp_token' => wp_create_nonce($stateAction->invoke($livePreview, $postId, $foreignInternalId)),
     ];
     $denied($internalQuery);
     $internalQuery['aflpp_revision'] = (string) $internalId;
-    $internalQuery['aflpp_token'] = wp_create_nonce($stateAction->invoke($preview, $postId, $internalId));
+    $internalQuery['aflpp_token'] = wp_create_nonce($stateAction->invoke($livePreview, $postId, $internalId));
     $_GET = $internalQuery;
     $preview->authorizePreview();
     $check($preview->readPost(clone $post)->post_title === 'Internal live preview', 'Live preview regressed.');

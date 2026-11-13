@@ -1,5 +1,10 @@
+import { initAcf } from '../compatibility/acf.js';
+import { createPreviewPanel } from '../panel/window.js';
+import { createPreviewFrame } from '../preview/frame.js';
+import { createPreviewScroll } from '../preview/scroll.js';
+
 // One lifecycle owns field capture, refreshes, Web Locks, takeover and native-save sequencing.
-export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, createPreviewScroll, createPreviewFrame) {
+export function initLivePreview(config, nativeEditor) {
     const form = document.getElementById('post');
     if (!config || !form) return;
 
@@ -123,7 +128,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         changed();
     }
     nativeEditor.onSaveCancelled = cancelNativeSave;
-    const acf = initAcf?.(form, changed, watchEditor, cancelNativeSave);
+    const acf = config.acfEnabled ? initAcf(form, changed, watchEditor, cancelNativeSave) : null;
     nativeEditor.isValidating = () => acf?.isValidating?.();
     function onFieldChange(event) {
         if (event.target.name === 'post_title') view.setTitle(event.target.value);

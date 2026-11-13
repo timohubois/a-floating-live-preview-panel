@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
 
-async function browserFixture(initPreview, bootstrapSource) {
+async function browserFixture(editorSource, nativeSource) {
     const realJQuery = window.jQuery;
     window.BroadcastChannel = undefined;
     Object.defineProperty(navigator, 'locks', { value: { request: (name, options, run) => run({}) } });
@@ -45,23 +45,14 @@ async function browserFixture(initPreview, bootstrapSource) {
             visible: true, report: (text, state) => reports.push(state), setTitle() {},
             setVisible(value) { this.visible = value; }, clearPreview() {}, returnToEditor() {},
         };
-        window.aFloatingLivePreviewPanel = {
-            available: true, endpoint: '/preview', base: 'base', strings: {},
-            editorModule: 'editor', scrollModule: 'scroll',
-        };
-        const modules = {
-            editor: { initPreview(config, acf, editor, panel, scroll) {
-                native = editor;
-                initPreview(config, acf, editor, panel, scroll);
-            } },
-            scroll: { createPreviewScroll: () => ({ remember() {} }) },
-        };
-        new Function('imports', 'importModule', bootstrapSource.replaceAll('import(', 'importModule('))({
-            './preview-panel/index.js': { createPreviewPanel: (strings, callbacks) => { options = callbacks; return view; } },
-            './preview-panel/viewport.js': { createPreviewViewport() {} },
-            './preview-panel/controls.js': { createPreviewControls() {} },
-            './preview-frame.js': { createPreviewFrame() {} },
-        }, async (name) => modules[name]);
+        const config = { available: true, endpoint: '/preview', base: 'base', strings: {} };
+        native = new Function(`${nativeSource}\nreturn createNativeEditor;`)()(config, form);
+        const initPreview = new Function('imports', `${editorSource}\nreturn initLivePreview;`)({
+            '../compatibility/acf.js': { initAcf() { throw new Error('ACF is disabled.'); } },
+            '../panel/window.js': { createPreviewPanel: (strings, callbacks) => { options = callbacks; return view; } },
+            '../preview/scroll.js': { createPreviewScroll: () => ({ remember() {} }) },
+        });
+        initPreview(config, native);
         for (let i = 0; i < 40; i++) await Promise.resolve();
         native.isValidating = () => validating;
         const type = cancel.endsWith('click') ? 'click' : 'submit';
@@ -91,6 +82,7 @@ async function browserFixture(initPreview, bootstrapSource) {
         };
         cleanup = () => {
             options.onClose();
+            native.destroy();
             window.jQuery(document).off('.aflpp');
             window.jQuery(form).off('.aflpp .validation');
             window.jQuery(target).off('.validation');
@@ -111,12 +103,11 @@ test('native save cancellation with trusted Chromium input', { timeout: 30000 },
     const abort = () => { rejectPending(t.signal.reason); chrome?.kill(); };
     t.signal.addEventListener('abort', abort, { once: true });
     try {
-        const editorSource = await previewSourceForVm(new URL('../assets/editor-preview.js', import.meta.url));
-        const bootstrap = await sourceForVm(new URL('../assets/editor-bootstrap.js', import.meta.url));
+        const editorSource = await previewSourceForVm(new URL('../src/classic-editor/live-preview.js', import.meta.url));
+        const nativeSource = await sourceForVm(new URL('../src/classic-editor/native-editor.js', import.meta.url));
         const jquery = process.env.WORDPRESS_ROOT
             ? await readFile(join(process.env.WORDPRESS_ROOT, 'wp-includes/js/jquery/jquery.js'), 'utf8') : '';
-        const script = `const initPreview = new Function(${JSON.stringify(`${editorSource}; return (...args) => initPreview(...args, createPreviewFrame);`)})();
-            (${browserFixture.toString()})(initPreview, ${JSON.stringify(bootstrap)});`;
+        const script = `(${browserFixture.toString()})(${JSON.stringify(editorSource)}, ${JSON.stringify(nativeSource)});`;
         const page = join(directory, 'test.html');
         await writeFile(page, `<!doctype html><script src="data:text/javascript;base64,${Buffer.from(jquery).toString('base64')}"></script><body><script>${script.replace(/<\/script/gi, '<\\/script')}</script></body>`);
         // dump-dom and element.click() cannot reproduce microtask checkpoints between trusted listeners.
@@ -215,6 +206,7 @@ test('native save cancellation with trusted Chromium input', { timeout: 30000 },
         if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {
             await new Promise((resolve) => { chrome.once('exit', resolve); chrome.kill(); });
         }
-        await rm(directory, { recursive: true, force: true });
+        // Chromium's subprocesses can still be releasing profile files after the main process exits.
+        await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
 });

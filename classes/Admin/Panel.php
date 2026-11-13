@@ -1,6 +1,6 @@
 <?php
 
-namespace AFloatingLivePreviewPanel\Features;
+namespace AFloatingLivePreviewPanel\Admin;
 
 /** Own the shared admin window's assets, presentation and common labels. */
 final class Panel
@@ -11,24 +11,19 @@ final class Panel
 
     public function enqueue(string $entry, array $config, array $dependencies = []): void
     {
+        $asset = require dirname($this->file) . '/build/' . $entry . '.asset.php';
         wp_enqueue_style(
             'a-floating-live-preview-panel',
-            plugins_url('assets/preview-panel/style.css', $this->file),
+            plugins_url('build/' . $entry . '.css', $this->file),
             ['wp-components'],
-            (string) filemtime(dirname($this->file) . '/assets/preview-panel/style.css')
+            $asset['version']
         );
-        $asset = require dirname($this->file) . '/assets/build/' . $entry . '.asset.php';
         wp_enqueue_script(
             'a-floating-live-preview-panel',
-            plugins_url('assets/build/' . $entry . '.js', $this->file),
+            plugins_url('build/' . $entry . '.js', $this->file),
             array_merge($dependencies, $asset['dependencies']),
             $asset['version'],
             true
-        );
-        $config['scrollModule'] = add_query_arg(
-            'ver',
-            (string) filemtime(dirname($this->file) . '/assets/preview-scroll.js'),
-            plugins_url('assets/preview-scroll.js', $this->file)
         );
         $config['strings'] = array_merge($this->strings(), $config['strings'] ?? []);
         wp_add_inline_script(
@@ -44,7 +39,7 @@ final class Panel
     public function render(?string $title = null): void
     {
         $title ??= __('Live preview', 'a-floating-live-preview-panel');
-        require dirname($this->file) . '/assets/preview-panel/markup.php';
+        require dirname($this->file) . '/views/panel.php';
     }
 
     private function strings(): array

@@ -1,17 +1,16 @@
 <?php
 
-namespace AFloatingLivePreviewPanel\Compatibility;
+namespace AFloatingLivePreviewPanel\Admin;
 
-use AFloatingLivePreviewPanel\Features\Panel;
-use AFloatingLivePreviewPanel\Features\Preview;
+use AFloatingLivePreviewPanel\Compatibility\Acf;
+use AFloatingLivePreviewPanel\Preview\LivePreview;
 use WP_Post;
 
 /** Connect the classic editor to the shared panel and preview features. */
-final class Editor
+final class ClassicEditor
 {
     public function __construct(
-        private readonly string $file,
-        private readonly Preview $preview,
+        private readonly LivePreview $preview,
         private readonly Acf $acf,
         private readonly Panel $panel
     ) {
@@ -42,13 +41,8 @@ final class Editor
             return;
         }
 
-        $this->panel->enqueue('editor-bootstrap', [
-            'editorModule' => add_query_arg(
-                'ver',
-                $this->assetVersion('editor-preview.js'),
-                plugins_url('assets/editor-preview.js', $this->file)
-            ),
-            'acfModule' => $this->acf->editorModule($this->file),
+        $this->panel->enqueue('classic-editor', [
+            'acfEnabled' => $this->acf->isAvailable(),
             'endpoint' => rest_url('a-floating-live-preview-panel/v1/posts/' . $post->ID . '/preview'),
             'postId' => $post->ID,
             'postTitle' => $post->post_title,
@@ -129,10 +123,5 @@ final class Editor
         }
 
         $this->panel->render();
-    }
-
-    private function assetVersion(string $asset): string
-    {
-        return (string) filemtime(dirname($this->file) . '/assets/' . $asset);
     }
 }

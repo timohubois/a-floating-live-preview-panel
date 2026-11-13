@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-const source = (await sourceForVm(new URL('../assets/editor-bootstrap.js', import.meta.url)))
-    .replaceAll('import(', 'importModule(');
+const source = await sourceForVm(new URL('../src/classic-editor/native-editor.js', import.meta.url));
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 const deferred = () => {
     let resolve, reject;
@@ -15,7 +13,7 @@ const deferred = () => {
 };
 
 // Model core's click continuation; real native POST, cookie and panel behavior is covered by WordPress browser QA.
-async function fixture(pending, startupControl) {
+async function fixture(pending) {
     const listeners = [];
     const heartbeat = new Map();
     const fields = [];
@@ -52,7 +50,6 @@ async function fixture(pending, startupControl) {
     const config = {
         base: 'a'.repeat(64), adminCookiePath: '/',
         strings: { nativePreviewFailed: 'Check the native Preview tab.' },
-        editorModule: 'editor', scrollModule: 'scroll',
     };
     const preview = { target: 'wp-preview-42', classList: { contains: () => false }, click: () => click() };
     const click = (disabled = false) => {
@@ -81,27 +78,12 @@ async function fixture(pending, startupControl) {
                 off() {},
             }),
         },
-        imports: {
-            './preview-panel/index.js': { createPreviewPanel() {} },
-            './preview-panel/viewport.js': { createPreviewViewport() {} },
-            './preview-panel/controls.js': { createPreviewControls() {} },
-            './preview-frame.js': { createPreviewFrame() {} },
-        },
-        importModule: async (name) => ({
-            editor: { initPreview: (config, acf, native) => {
-                nativeEditor = native;
-                native.beforePreview = () => pending;
-                native.onPreview = (error) => outcomes.push(error);
-            } },
-            scroll: { createPreviewScroll() {} },
-        })[name],
+
     };
-    vm.runInNewContext(source, context);
-    if (startupControl) {
-        const event = { type: 'click', target: { closest: (selector) => selector.includes('#publish') ? startupControl : null } };
-        for (const { type, callback } of listeners) if (type === 'click') callback(event);
-    }
-    await flush();
+    const createNativeEditor = vm.runInNewContext(`${source}\ncreateNativeEditor`, context);
+    nativeEditor = createNativeEditor(config, form);
+    nativeEditor.beforePreview = () => pending;
+    nativeEditor.onPreview = (error) => outcomes.push(error);
     return {
         config, nativeEditor, fields, cookies, cookieWrites, outcomes, click,
         get posts() { return posts; }, get popups() { return popups; },
@@ -223,12 +205,16 @@ test('disabled native Preview is left to WordPress without pausing the panel', a
     assert.equal(h.posts, 0);
 });
 
-for (const [disabled, disabledClass] of [[false, true], [true, false], [false, false]]) {
-    test(`startup Save with disabled=${disabled}, disabledClass=${disabledClass} respects native control state`, async () => {
-        const h = await fixture(undefined, { disabled, classList: { contains: () => disabledClass } });
-        assert.equal(h.nativeEditor.saving, !disabled && !disabledClass);
-    });
-}
+test('native observers can be removed without leaving Preview or validation interception behind', async () => {
+    const h = await fixture();
+    h.nativeEditor.destroy();
+    h.click();
+    assert.equal(h.posts, 1);
+    assert.equal(h.fields.length, 0);
+    h.nativeEditor.saving = true;
+    h.invalid();
+    assert.equal(h.nativeEditor.saving, true);
+});
 
 test('cancelled native submission resumes unless ACF is still validating', async () => {
     const h = await fixture();
@@ -275,7 +261,7 @@ test('browser constraint validation resumes a rejected native Save', async () =>
     assert.equal(h.nativeEditor.saving, false);
 });
 
-const editorSource = await previewSourceForVm(new URL('../assets/editor-preview.js', import.meta.url));
+const editorSource = await previewSourceForVm(new URL('../src/classic-editor/live-preview.js', import.meta.url));
 
 for (const [saved, structural, blocked] of [[true, true, true], [false, true, false], [true, false, false]]) {
     test(`saved=${saved}, structural ACF changes=${structural}: ${blocked ? 'retain reload protection on reopen' : 'allow live preview'}`, async () => {
@@ -293,12 +279,15 @@ for (const [saved, structural, blocked] of [[true, true, true], [false, true, fa
             window: { isSecureContext: true, jQuery: () => ({ on() {} }) },
             navigator: { locks: { request: () => { requests++; return new Promise(() => {}); } } },
         };
-        const initPreview = vm.runInNewContext(
-            `${editorSource}\n(...args) => initPreview(...args, createPreviewFrame)`, context
-        );
-        initPreview({ available: true, strings: { nativePreviewAcf: 'Copy later edits and reload.' } },
-            () => ({ hasStructuralPaginationChanges: () => structural }), native,
-            (strings, options) => { callbacks = options; return view; }, () => ({ remember() {} }));
+        context.imports = {
+            '../compatibility/acf.js': { initAcf: () => ({ hasStructuralPaginationChanges: () => structural }) },
+            '../panel/window.js': { createPreviewPanel: (strings, options) => { callbacks = options; return view; } },
+            '../preview/scroll.js': { createPreviewScroll: () => ({ remember() {} }) },
+        };
+        const initPreview = vm.runInNewContext(`${editorSource}\ninitLivePreview`, context);
+        initPreview({
+            available: true, acfEnabled: true, strings: { nativePreviewAcf: 'Copy later edits and reload.' },
+        }, native);
         native.onPreview(undefined, saved);
         callbacks.onOpen();
         await flush();

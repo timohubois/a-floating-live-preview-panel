@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
-import { icons } from '../src/icons.js';
+import { icons } from '../src/panel/icons.js';
 
-const bundle = await readFile(new URL('../assets/build/editor-bootstrap.js', import.meta.url), 'utf8');
-const asset = await readFile(new URL('../assets/build/editor-bootstrap.asset.php', import.meta.url), 'utf8');
+const bundle = await readFile(new URL('../build/classic-editor.js', import.meta.url), 'utf8');
+const asset = await readFile(new URL('../build/classic-editor.asset.php', import.meta.url), 'utf8');
 
 function shape({ props }) {
     const children = Array.isArray(props.children) ? props.children : [props.children];
@@ -16,7 +16,7 @@ function shape({ props }) {
 }
 
 test('panel markup separates plain title, pointer-only edges and one accessible boundary resize control', async () => {
-    const markup = await readFile(new URL('../assets/preview-panel/markup.php', import.meta.url), 'utf8');
+    const markup = await readFile(new URL('../views/panel.php', import.meta.url), 'utf8');
     assert.equal([...markup.matchAll(/<button[^>]*class="aflpp-resize"/g)].length, 1);
     assert.doesNotMatch(markup, /data-edge=|resizeLabels/);
     assert.match(markup, /aria-describedby="aflpp-resize-help"/);
@@ -31,9 +31,9 @@ test('panel markup separates plain title, pointer-only edges and one accessible 
 });
 
 test('the panel keeps an accessible status region without a redundant visual status dot', async () => {
-    const [markup, css, source] = await Promise.all(['markup.php', 'style.css', 'index.js'].map((file) =>
-        readFile(new URL(`../assets/preview-panel/${file}`, import.meta.url), 'utf8')
-    ));
+    const [markup, css, source] = await Promise.all([
+        '../views/panel.php', '../src/panel/panel.css', '../src/panel/window.js',
+    ].map((path) => readFile(new URL(path, import.meta.url), 'utf8')));
     for (const content of [markup, css, source]) assert.doesNotMatch(content, /aflpp-dot|aflpp-pulse|dataset\.retryable/);
     assert.match(markup, /class="aflpp-sr-only" role="status"/);
 });
@@ -46,16 +46,16 @@ test('the editor build declares its public WordPress runtime dependencies', () =
     ]);
     assert.match(asset, /'version'\s*=>\s*'[a-f0-9]+'/);
     assert.doesNotMatch(bundle, /__experimental|__unstable|Cannot find module/);
-    assert.match(bundle, /import\(/, 'retain native loading for the separate preview coordination modules');
+    assert.doesNotMatch(bundle, /import\(/, 'all editor coordination is bundled, not loaded from source URLs');
 });
 
 test('the revision build uses the same public runtime without editor save coordination', async () => {
-    const revisionBundle = await readFile(new URL('../assets/build/revisions-bootstrap.js', import.meta.url), 'utf8');
-    const revisionAsset = await readFile(new URL('../assets/build/revisions-bootstrap.asset.php', import.meta.url), 'utf8');
+    const revisionBundle = await readFile(new URL('../build/revisions.js', import.meta.url), 'utf8');
+    const revisionAsset = await readFile(new URL('../build/revisions.asset.php', import.meta.url), 'utf8');
     const dependencies = (source) => source.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1];
     assert.equal(dependencies(revisionAsset), dependencies(asset));
     assert.doesNotMatch(revisionBundle, /__experimental|__unstable|before-autosave|heartbeat-send|deferredSaves/);
-    assert.match(revisionBundle, /import\(/, 'retain native loading for revision coordination and scrolling');
+    assert.doesNotMatch(revisionBundle, /import\(/, 'revision coordination and scrolling are bundled');
 });
 
 test('the shipped editor bundle uses WordPress runtime globals and bundles exactly the selected official icons', () => {
@@ -74,4 +74,49 @@ test('the shipped editor bundle uses WordPress runtime globals and bundles exact
     assert.equal(bundledIcons.length, Object.keys(icons).length);
     assert.deepEqual(bundledIcons.map(shape).sort(), Object.values(icons).map(shape).sort());
     assert.equal(window.aFloatingLivePreviewPanelIcons, undefined, 'icons are module-local, not a plugin global');
+});
+
+test('both admin entries emit the same panel stylesheet without a separate shared runtime', async () => {
+    const [editor, revisions] = await Promise.all(['classic-editor', 'revisions'].map((entry) =>
+        readFile(new URL(`../build/${entry}.css`, import.meta.url), 'utf8')
+    ));
+    assert.equal(editor, revisions);
+    assert.match(editor, /\.aflpp-panel/);
+    assert.match(editor, /\.aflpp-pip-document/);
+});
+
+test('the standalone frontend build preserves hash navigation but blocks links and form submissions', async () => {
+    const source = await readFile(new URL('../build/preview-navigation.js', import.meta.url), 'utf8');
+    const asset = await readFile(new URL('../build/preview-navigation.asset.php', import.meta.url), 'utf8');
+    assert.match(asset, /'dependencies'\s*=>\s*array\(\s*\)/);
+    const handlers = new Map();
+    const href = 'https://site.test/post/?preview=true&aflpp_token=token';
+    vm.runInNewContext(source, {
+        URL, window: { location: { href } },
+        document: { addEventListener: (type, callback) => handlers.set(type, callback) },
+    });
+    const event = (link) => ({
+        target: { closest: () => link },
+        preventDefault() { this.prevented = true; },
+        stopImmediatePropagation() { this.stopped = true; },
+    });
+    const hash = event({ href: `${href}#details`, hasAttribute: () => false });
+    handlers.get('click')(hash);
+    assert.equal(hash.prevented, undefined);
+    for (const address of ['https://elsewhere.test/', 'https://site.test/another/', `${href}&other=1`]) {
+        const click = event({ href: address, hasAttribute: () => false });
+        handlers.get('click')(click);
+        assert.equal(click.prevented, true);
+        assert.equal(click.stopped, true);
+    }
+    const unrelated = event(null);
+    handlers.get('click')(unrelated);
+    assert.equal(unrelated.prevented, undefined);
+    const download = event({ href: `${href}#details`, hasAttribute: () => true });
+    handlers.get('click')(download);
+    assert.equal(download.prevented, true);
+    const submit = event(null);
+    handlers.get('submit')(submit);
+    assert.equal(submit.prevented, true);
+    assert.equal(submit.stopped, true);
 });

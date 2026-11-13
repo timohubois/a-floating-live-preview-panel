@@ -8,12 +8,14 @@ export async function sourceForVm(url) {
             const bindings = names.replace(/\b(\w+)\s+as\s+(\w+)\b/g, '$1: $2');
             return `const { ${bindings} } = imports[${JSON.stringify(path)}];`;
         })
+        .replace(/^import ['"][^'"]+\.css['"];$/gm, '')
         .replace(/^export (function|const) /gm, '$1 ');
 }
 
 // Execute the same shared iframe implementation in VM and data-URL browser fixtures.
 export async function previewSourceForVm(url) {
-    const frame = await readFile(new URL('../../assets/preview-frame.js', import.meta.url), 'utf8');
-    const source = await readFile(url, 'utf8');
-    return `${frame}\n${source}`.replace(/^export (function|const) /gm, '$1 ');
+    const frame = await sourceForVm(new URL('../../src/preview/frame.js', import.meta.url));
+    const source = (await sourceForVm(url))
+        .replace(/^const \{\s*createPreviewFrame\s*\} = imports\["\.\.\/preview\/frame\.js"\];$/m, '');
+    return `${frame}\n${source}`;
 }

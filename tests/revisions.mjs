@@ -3,7 +3,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { previewSourceForVm } from './helpers/modules.mjs';
 
-const source = await previewSourceForVm(new URL('../assets/revisions-preview.js', import.meta.url));
+const source = await previewSourceForVm(new URL('../src/revisions/preview.js', import.meta.url));
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 const url = (id) => `http://site.local/?preview=true&aflpp_saved=1&aflpp_revision=${id}&aflpp_token=token-${id}`;
 const revision = (id, address = url(id)) => ({
@@ -55,14 +55,18 @@ function fixture({ visible = true, selected = revision(11) } = {}) {
         updating: 'Updating', current: 'Loaded', stale: 'Pending', unavailable: 'Unavailable',
         failed: 'Failed', browser: 'Same-origin required',
     };
-    const init = vm.runInNewContext(`${source}\n(...args) => initRevisionsPreview(...args, createPreviewFrame)`, context);
-    init({ postId: 1, currentPreviewUrl: url(1), strings }, model, (strings, callbacks) => {
-        options = callbacks; title = callbacks.postTitle; return view;
-    }, () => ({
-        remember: (doc) => scrolls.push(['remember', doc]),
-        findTarget: (previous, next) => { scrolls.push(['find', previous, next]); return 'target'; },
-        restore: (doc, target) => scrolls.push(['restore', doc, target]),
-    }));
+    context.imports = {
+        '../panel/window.js': { createPreviewPanel: (strings, callbacks) => {
+            options = callbacks; title = callbacks.postTitle; return view;
+        } },
+        '../preview/scroll.js': { createPreviewScroll: () => ({
+            remember: (doc) => scrolls.push(['remember', doc]),
+            findTarget: (previous, next) => { scrolls.push(['find', previous, next]); return 'target'; },
+            restore: (doc, target) => scrolls.push(['restore', doc, target]),
+        }) },
+    };
+    const init = vm.runInNewContext(`${source}\ninitRevisionPreview`, context);
+    init({ postId: 1, currentPreviewUrl: url(1), strings }, model);
     return {
         view, options, reports, children, allFrames, timers, scrolls, listeners,
         get title() { return title; }, get clears() { return clears; }, get returned() { return returned; },

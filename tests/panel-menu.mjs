@@ -117,7 +117,7 @@ function browserTests(css) {
 test('PiP menu bounds, preview shortcut and geometry controls in Chromium', async (t) => {
     const directory = await mkdtemp(join(tmpdir(), 'aflpp-menu-'));
     try {
-        const css = await readFile(new URL('../assets/preview-panel/style.css', import.meta.url), 'utf8');
+        const css = await readFile(new URL('../build/classic-editor.css', import.meta.url), 'utf8');
         const page = join(directory, 'test.html');
         await writeFile(page, `<!doctype html><html><body><script id="results" type="application/json">null</script><script>
             document.getElementById('results').textContent = JSON.stringify((${browserTests.toString()})(${JSON.stringify(css)}));

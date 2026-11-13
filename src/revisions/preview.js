@@ -1,5 +1,9 @@
+import { createPreviewPanel } from '../panel/window.js';
+import { createPreviewFrame } from '../preview/frame.js';
+import { createPreviewScroll } from '../preview/scroll.js';
+
 // Read the native To selection. Never capture editor fields, write revisions, or acquire editor locks.
-export function initRevisionsPreview(config, model, createPreviewPanel, createPreviewScroll, createPreviewFrame) {
+export function initRevisionPreview(config, model) {
     const { strings } = config;
     let selected = model.get('to');
     let generation = 0;

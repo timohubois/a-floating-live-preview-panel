@@ -1,17 +1,15 @@
 <?php
 
-namespace AFloatingLivePreviewPanel\Compatibility;
+namespace AFloatingLivePreviewPanel\Admin;
 
-use AFloatingLivePreviewPanel\Features\Panel;
-use AFloatingLivePreviewPanel\Features\Preview;
+use AFloatingLivePreviewPanel\Preview\FrontendPreview;
 use WP_Post;
 
 /** Connect WordPress's revision browser without changing its comparison or restore behavior. */
-final class Revisions
+final class RevisionBrowser
 {
     public function __construct(
-        private readonly string $file,
-        private readonly Preview $preview,
+        private readonly FrontendPreview $preview,
         private readonly Panel $panel
     ) {
         add_action('admin_enqueue_scripts', [$this, 'enqueueRevisions']);
@@ -47,12 +45,7 @@ final class Revisions
         if (!$post) {
             return;
         }
-        $this->panel->enqueue('revisions-bootstrap', [
-            'revisionsModule' => add_query_arg(
-                'ver',
-                (string) filemtime(dirname($this->file) . '/assets/revisions-preview.js'),
-                plugins_url('assets/revisions-preview.js', $this->file)
-            ),
+        $this->panel->enqueue('revisions', [
             'postId' => $post->ID,
             // Core's synthetic current-post entry does not always pass through revisionData().
             'currentPreviewUrl' => $this->preview->savedPreviewUrl($post, $post->ID),

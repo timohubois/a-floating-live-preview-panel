@@ -3,7 +3,7 @@ import {
     Button, DropdownMenu, MenuGroup, MenuItem, MenuItemsChoice, Notice, Placeholder,
     Popover, SlotFillProvider, Spinner, Toolbar, ToolbarButton,
 } from '@wordpress/components';
-import { icons } from '../../src/icons.js';
+import { icons } from './icons.js';
 
 // Public WordPress UI only. The shell owns geometry, recovery decisions and preview state.
 export function createPreviewControls(panel, strings, callbacks) {

@@ -2,11 +2,12 @@
 
 namespace AFloatingLivePreviewPanel;
 
+use AFloatingLivePreviewPanel\Admin\ClassicEditor;
+use AFloatingLivePreviewPanel\Admin\Panel;
+use AFloatingLivePreviewPanel\Admin\RevisionBrowser;
 use AFloatingLivePreviewPanel\Compatibility\Acf;
-use AFloatingLivePreviewPanel\Compatibility\Editor;
-use AFloatingLivePreviewPanel\Compatibility\Revisions;
-use AFloatingLivePreviewPanel\Features\Panel;
-use AFloatingLivePreviewPanel\Features\Preview;
+use AFloatingLivePreviewPanel\Preview\FrontendPreview;
+use AFloatingLivePreviewPanel\Preview\LivePreview;
 
 /** Connect the feature owners without registering their hooks or implementing their behavior. */
 final class Plugin
@@ -14,9 +15,10 @@ final class Plugin
     public function __construct(string $file)
     {
         $acf = new Acf();
-        $preview = new Preview($file, $acf);
+        $livePreview = new LivePreview($acf);
+        $frontendPreview = new FrontendPreview($file, $livePreview, $acf);
         $panel = new Panel($file);
-        new Editor($file, $preview, $acf, $panel);
-        new Revisions($file, $preview, $panel);
+        new ClassicEditor($livePreview, $acf, $panel);
+        new RevisionBrowser($frontendPreview, $panel);
     }
 }

@@ -4,7 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { previewSourceForVm } from './helpers/modules.mjs';
 
-const source = await previewSourceForVm(new URL('../assets/editor-preview.js', import.meta.url));
+const source = await previewSourceForVm(new URL('../src/classic-editor/live-preview.js', import.meta.url));
 const flush = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
 
 async function fixture({ visible = true, pending = true } = {}) {
@@ -30,10 +30,13 @@ async function fixture({ visible = true, pending = true } = {}) {
         FormData: class { *[Symbol.iterator]() { yield ['post_title', 'Unsaved title']; } },
         fetch: () => { requests++; return new Promise((resolve) => { finishRequest = resolve; }); },
     };
-    const initPreview = vm.runInNewContext(`${source}\n(...args) => initPreview(...args, createPreviewFrame)`, context);
-    initPreview({ available: true, base: 'base', endpoint: '/preview', strings: {} }, null,
-        nativeEditor, (strings, callbacks) => { options = callbacks; return view; },
-        () => ({ remember() {} }));
+    context.imports = {
+        '../compatibility/acf.js': { initAcf() { throw new Error('ACF is disabled.'); } },
+        '../panel/window.js': { createPreviewPanel: (strings, callbacks) => { options = callbacks; return view; } },
+        '../preview/scroll.js': { createPreviewScroll: () => ({ remember() {} }) },
+    };
+    const initPreview = vm.runInNewContext(`${source}\ninitLivePreview`, context);
+    initPreview({ available: true, base: 'base', endpoint: '/preview', strings: {} }, nativeEditor);
     const finish = async () => {
         finishRequest({ ok: false, json: async () => ({ code: 'aflpp_preview_failed', message: 'Transient failure' }) });
         await flush();
@@ -161,7 +164,7 @@ test('a cancelled drain never replays its obsolete native Save', async () => {
 });
 
 test('ACF validation rejection is scoped to this form and reads the native validation state', async () => {
-    const source = (await readFile(new URL('../assets/compatibility/acf.js', import.meta.url), 'utf8'))
+    const source = (await readFile(new URL('../src/compatibility/acf.js', import.meta.url), 'utf8'))
         .replace('export function initAcf', 'function initAcf');
     const actions = new Map();
     let cancelled = 0, validating = true;

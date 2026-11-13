@@ -16,20 +16,12 @@ final class Acf
     /** Load ACF's classic JavaScript API before the admin entry point. */
     public function editorDependencies(): array
     {
-        return function_exists('acf') ? ['acf-input'] : [];
+        return $this->isAvailable() ? ['acf-input'] : [];
     }
 
-    /** Import the optional module only when ACF is available, with its own cache version. */
-    public function editorModule(string $file): ?string
+    public function isAvailable(): bool
     {
-        if (!function_exists('acf')) {
-            return null;
-        }
-        return add_query_arg(
-            'ver',
-            (string) filemtime(dirname($file) . '/assets/compatibility/acf.js'),
-            plugins_url('assets/compatibility/acf.js', $file)
-        );
+        return function_exists('acf');
     }
 
     /** Extend an authorized, unslashed REST payload using ACF's normal form context. */

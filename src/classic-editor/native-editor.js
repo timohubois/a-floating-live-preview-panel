@@ -1,17 +1,5 @@
-import { createPreviewPanel as createPanelView } from './preview-panel/index.js';
-import { createPreviewViewport } from './preview-panel/viewport.js';
-import { createPreviewControls } from './preview-panel/controls.js';
-import { createPreviewFrame } from './preview-frame.js';
-
-(() => {
-    'use strict';
-
-    // WordPress orders the built panel's dependencies; coordination modules stay separately loaded.
-    const config = window.aFloatingLivePreviewPanel;
-    const form = document.getElementById('post');
-    if (!config || !form) return;
-
-    // Observe native saves before asynchronous module loading can yield to heartbeat or form events.
+// Observe WordPress's native Preview, autosave and validation without replacing their behavior.
+export function createNativeEditor(config, form) {
     const nativeEditor = {
         idle: Promise.resolve(), saving: false, previewing: false, deferredSaves: new WeakSet(),
     };
@@ -61,7 +49,7 @@ import { createPreviewFrame } from './preview-frame.js';
         timer = setTimeout(check, 100);
     }
 
-    form.addEventListener('click', (event) => {
+    const previewClick = (event) => {
         const control = event.target.closest('#post-preview');
         if (!control || control.classList.contains('disabled') || replayingPreview || !window.crypto?.getRandomValues) return;
         if (nativeEditor.previewing) {
@@ -82,7 +70,8 @@ import { createPreviewFrame } from './preview-frame.js';
             try { control.click(); } finally { replayingPreview = false; }
         };
         pending.then(proceed, proceed);
-    }, true);
+    };
+    form.addEventListener('click', previewClick, true);
     window.jQuery(document).on('heartbeat-send.aflpp', (event, data) => {
         nativePreview?.check();
         data.aflpp_base = config.base;
@@ -111,6 +100,7 @@ import { createPreviewFrame } from './preview-frame.js';
     };
     form.addEventListener('invalid', cancelSave, true);
     let submission = 0;
+    let destroyed = false;
     function watchSaveCancellation(event) {
         if (event.type === 'click') {
             const control = event.target.closest('#publish, #save-post');
@@ -118,10 +108,9 @@ import { createPreviewFrame } from './preview-frame.js';
         } else if (form.querySelector('#wp-preview')?.value === 'dopreview') return;
         const attempt = ++submission;
         // Trusted dispatch can flush microtasks between listeners; inspect cancellation in the next task.
-        setTimeout(async () => {
-            await ready;
+        setTimeout(() => {
             const cancelled = event.defaultPrevented || event.isDefaultPrevented?.();
-            if (attempt === submission && cancelled && !nativeEditor.deferredSaves.has(event)
+            if (!destroyed && attempt === submission && cancelled && !nativeEditor.deferredSaves.has(event)
                 && !nativeEditor.isValidating?.()) cancelSave();
         }, 0);
     }
@@ -131,57 +120,20 @@ import { createPreviewFrame } from './preview-frame.js';
     window.jQuery(form).on('submit.aflpp', (event) => {
         if (!event.originalEvent) watchSaveCancellation(event);
     });
-    const saving = (event) => {
-        const control = event.target.closest('#publish, #save-post');
-        if (control && (control.disabled || control.classList.contains('disabled'))) return;
-        if ((event.type === 'submit' && form.querySelector('#wp-preview')?.value !== 'dopreview')
-            || control) nativeEditor.saving = true;
-    };
-    form.addEventListener('click', saving, true);
-    form.addEventListener('submit', saving, true);
-    const stopWatchingStartupSave = () => {
-        form.removeEventListener('click', saving, true);
-        form.removeEventListener('submit', saving, true);
-    };
-
-    const ready = Promise.all([
-        import(/* webpackIgnore: true */ config.editorModule),
-        import(/* webpackIgnore: true */ config.scrollModule),
-        config.acfModule ? import(/* webpackIgnore: true */ config.acfModule) : null,
-    ]).then(([editor, scroll, acf]) => {
-        if (typeof createPanelView !== 'function') throw new Error('Preview panel module has no initializer.');
-        if (typeof createPreviewViewport !== 'function') throw new Error('Preview viewport module has no initializer.');
-        if (typeof scroll.createPreviewScroll !== 'function') throw new Error('Preview scroll module has no initializer.');
-        if (acf && typeof acf.initAcf !== 'function') throw new Error('ACF preview module has no initializer.');
-        if (typeof createPreviewControls !== 'function') throw new Error('Preview controls module has no initializer.');
-        stopWatchingStartupSave();
-        const createPreviewPanel = (strings, options) => createPanelView(
-            strings, options, createPreviewViewport, createPreviewControls
-        );
-        editor.initPreview(config, acf?.initAcf, nativeEditor, createPreviewPanel,
-            scroll.createPreviewScroll, createPreviewFrame);
-    }).catch((error) => {
-        stopWatchingStartupSave();
+    nativeEditor.destroy = () => {
+        destroyed = true;
         nativeEditor.beforePreview = null;
         nativeEditor.onPreview = null;
         nativeEditor.onAutosave = null;
         nativeEditor.onFieldChange = null;
         nativeEditor.onSaveCancelled = null;
         nativeEditor.isValidating = null;
+        form.removeEventListener('click', previewClick, true);
         form.removeEventListener('invalid', cancelSave, true);
         form.removeEventListener('click', watchSaveCancellation, true);
         form.removeEventListener('submit', watchSaveCancellation, true);
         window.jQuery(document).off('.aflpp');
         window.jQuery(form).off('.aflpp');
-        document.getElementById('aflpp-panel')?.remove();
-        document.getElementById('aflpp-toggle')?.remove();
-        const notice = document.createElement('div');
-        notice.className = 'notice notice-error';
-        notice.setAttribute('role', 'alert');
-        const message = document.createElement('p');
-        message.textContent = config.strings.bootFailed;
-        notice.append(message);
-        (document.getElementById('wpbody-content') || document.body).prepend(notice);
-        console.error('A Floating Live Preview Panel could not start.', error);
-    });
-})();
+    };
+    return nativeEditor;
+}

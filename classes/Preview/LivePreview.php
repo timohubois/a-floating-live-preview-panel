@@ -1,6 +1,6 @@
 <?php
 
-namespace AFloatingLivePreviewPanel\Features;
+namespace AFloatingLivePreviewPanel\Preview;
 
 use AFloatingLivePreviewPanel\Compatibility\Acf;
 use WP_Error;
@@ -9,21 +9,17 @@ use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
 
-/** Own isolated preview writes, integrity checks and authorized revision reads. */
-final class Preview
+/** Own isolated live-preview revisions, integrity checks and native-save coordination. */
+final class LivePreview
 {
     private const POST_STATUS = 'aflpp-preview';
 
-    private ?WP_Post $source = null;
-    private int $previewPostId = 0;
-    private string $previewToken = '';
     private int $autosavePostId = 0;
 
-    public function __construct(private readonly string $file, private readonly Acf $acf)
+    public function __construct(private readonly Acf $acf)
     {
         add_action('rest_api_init', [$this, 'registerRoutes']);
         add_action('init', [$this, 'registerStatus']);
-        add_action('init', [$this, 'authorizePreview'], 20);
         add_action('post_updated', [$this, 'deletePreviews']);
         add_action('load-post.php', [$this, 'trackNativePreview']);
         // Core's heartbeat_autosave runs at priority 500.
@@ -73,11 +69,6 @@ final class Preview
             );
         }
         return true;
-    }
-
-    private function assetVersion(string $asset): string
-    {
-        return (string) filemtime(dirname($this->file) . '/assets/' . $asset);
     }
 
     /** Core and metadata only; heartbeat/editor bookkeeping does not invalidate a preview. */
@@ -349,160 +340,17 @@ final class Preview
             && $revision->post_name === $this->revisionName($postId);
     }
 
-    /** Saved history is read-only and may belong to any author the current user can read. */
-    private function savedSource(int $postId, int $sourceId): ?WP_Post
+    /** Keep mutable live-source ownership and state-token validation together. */
+    public function authorizedSource(int $postId, int $revisionId, string $token): ?WP_Post
     {
-        $post = get_post($postId);
-        $source = get_post($sourceId);
-        $status = $post ? get_post_status_object($post->post_status) : null;
         if (
-            !is_user_logged_in() || !$post || !$source || !is_post_type_viewable($post->post_type)
-            // Match the public, protected and private statuses core can render in an authenticated preview.
-            || !$status || !($status->public || $status->protected || $status->private)
-            || !current_user_can('edit_post', $postId) || !current_user_can('read_post', $sourceId)
+            !is_user_logged_in() || !$postId || !get_post($postId)
+            || !current_user_can('edit_post', $postId) || !$revisionId
+            || !$this->ownsRevision($postId, $revisionId)
+            || !wp_verify_nonce($token, $this->stateAction($postId, $revisionId))
         ) {
             return null;
         }
-        if ($sourceId === $postId) {
-            return $source;
-        }
-        return $source->post_type === 'revision' && $source->post_status === 'inherit'
-            && (int) $source->post_parent === $postId ? $source : null;
-    }
-
-    private function savedAction(int $postId, int $sourceId): string
-    {
-        // A separate namespace must never authorize the mutable internal live-preview revision.
-        return 'aflpp_saved_' . $postId . '_' . $sourceId;
-    }
-
-    public function savedPreviewUrl(WP_Post $post, int $sourceId): ?string
-    {
-        if (!$this->savedSource($post->ID, $sourceId)) {
-            return null;
-        }
-        return get_preview_post_link($post, [
-            'aflpp_post' => $post->ID,
-            'aflpp_revision' => $sourceId,
-            'aflpp_saved' => '1',
-            'aflpp_token' => wp_create_nonce($this->savedAction($post->ID, $sourceId)),
-        ]);
-    }
-
-    public function authorizePreview(): void
-    {
-        if (!isset($_GET['aflpp_post'])) {
-            return;
-        }
-        if (!defined('DONOTCACHEPAGE')) {
-            define('DONOTCACHEPAGE', true);
-        }
-        nocache_headers();
-        $postId = isset($_GET['aflpp_post']) && is_scalar($_GET['aflpp_post']) ? absint($_GET['aflpp_post']) : 0;
-        $revisionId = isset($_GET['aflpp_revision']) && is_scalar($_GET['aflpp_revision'])
-            ? absint($_GET['aflpp_revision']) : 0;
-        $token = isset($_GET['aflpp_token']) && is_string($_GET['aflpp_token'])
-            ? sanitize_text_field(wp_unslash($_GET['aflpp_token'])) : '';
-        $saved = isset($_GET['aflpp_saved']);
-        $source = null;
-        if ($saved) {
-            if ($_GET['aflpp_saved'] === '1' && $postId && $revisionId) {
-                $source = $this->savedSource($postId, $revisionId);
-            }
-            $authorized = $source && wp_verify_nonce($token, $this->savedAction($postId, $revisionId));
-        } else {
-            $authorized = is_user_logged_in() && $postId && get_post($postId)
-                && current_user_can('edit_post', $postId) && $revisionId
-                && $this->ownsRevision($postId, $revisionId)
-                && wp_verify_nonce($token, $this->stateAction($postId, $revisionId));
-            if ($authorized) {
-                $source = get_post($revisionId);
-            }
-        }
-        if (!$authorized) {
-            wp_die(
-                esc_html__(
-                    'This preview expired or is unavailable. Reload the editor or revision browser.',
-                    'a-floating-live-preview-panel'
-                ),
-                '',
-                ['response' => 403]
-            );
-        }
-
-        $this->previewPostId = $postId;
-        $this->previewToken = $token;
-        $this->source = sanitize_post($source);
-        // Bind core and compatibility reads to the authorized source, not the latest revision.
-        remove_filter('the_preview', '_set_preview');
-        add_filter('the_preview', [$this, 'readPost']);
-        // Timber can reload the parent by ID instead of using WordPress's filtered preview object.
-        add_filter('timber/post/import_data', [$this, 'readTimberPost'], PHP_INT_MAX, 2);
-        $this->acf->bindPreview($postId, $this->source->ID, $saved);
-        if ($saved) {
-            add_filter('get_post_metadata', [$this, 'readRevisionMeta'], 10, 4);
-        }
-        add_action('template_redirect', [$this, 'checkPreviewTarget'], -1);
-    }
-
-    /** Only explicitly revisioned metadata comes from history; unrelated metadata stays current. */
-    public function readRevisionMeta($value, int $postId, string $key, bool $single)
-    {
-        if (
-            $value !== null || $postId !== $this->previewPostId || !$this->source
-            || $this->source->ID === $postId
-            || !in_array($key, wp_post_revision_meta_keys(get_post_type($postId)), true)
-        ) {
-            return $value;
-        }
-        // Core unwraps the first item for single reads. Keep array-valued meta intact and
-        // return a falsey scalar for absent keys (also used by metadata_exists()).
-        $values = get_post_meta($this->source->ID, $key, false);
-        return $single && !$values ? '' : $values;
-    }
-
-    public function readPost(WP_Post $post): WP_Post
-    {
-        if ($post->ID === $this->previewPostId && $this->source) {
-            foreach (['post_title', 'post_content', 'post_excerpt'] as $field) {
-                $post->$field = $this->source->$field;
-            }
-        }
-        return $post;
-    }
-
-    public function readTimberPost(array $data, object $post): array
-    {
-        if ((int) $post->ID === $this->previewPostId && $this->source) {
-            foreach (['post_title', 'post_content', 'post_excerpt'] as $field) {
-                $data[$field] = $this->source->$field;
-            }
-        }
-        return $data;
-    }
-
-    public function checkPreviewTarget(): void
-    {
-        if (!is_preview() || !is_singular() || get_queried_object_id() !== $this->previewPostId) {
-            // Native routing owns other destinations, including archives, redirects and error pages.
-            // The authorized source remains bound only to its original post; do not label other output verified.
-            return;
-        }
-        // Core canonical redirects drop preview=true without native autosave parameters, losing our core-field overlay.
-        remove_action('template_redirect', 'redirect_canonical');
-        // Enhance only the original authorized singular HTML; never require it as the routing result.
-        add_filter('show_admin_bar', '__return_false', PHP_INT_MAX);
-        add_action('wp_head', function (): void {
-            echo '<meta name="a-floating-live-preview-panel" content="' . esc_attr($this->previewToken) . '">';
-        });
-        add_action('wp_enqueue_scripts', function (): void {
-            wp_enqueue_script(
-                'a-floating-live-preview-panel-navigation',
-                plugins_url('assets/preview-navigation.js', $this->file),
-                [],
-                $this->assetVersion('preview-navigation.js'),
-                false
-            );
-        });
+        return get_post($revisionId);
     }
 }
