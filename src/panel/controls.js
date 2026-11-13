@@ -34,7 +34,8 @@ export function createPreviewControls(panel, strings, callbacks) {
             createPortal(!inPip && h(Button, {
                 className: 'aflpp-icon', icon: busy ? h(Spinner) : icons.refresh,
                 label: strings.refresh, showTooltip: true,
-                disabled: !canRefresh, onClick: callbacks.refresh, 'data-action': 'refresh',
+                // Loading must not move focus from Refresh to the panel's fallback action.
+                accessibleWhenDisabled: true, disabled: !canRefresh, onClick: callbacks.refresh, 'data-action': 'refresh',
             }), refreshContainer),
             createPortal(canPip && hasPreview && h(Button, {
                 className: 'aflpp-pip-button', icon: icons.pip, label: strings.popOut, 'aria-label': strings.popOut,

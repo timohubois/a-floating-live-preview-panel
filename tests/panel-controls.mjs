@@ -119,16 +119,19 @@ test('viewport choices use native Toolbar buttons and pressed-state behavior', (
     assert.deepEqual(h.calls.at(-1), { name: 'device', args: ['mobile'] });
 });
 
-test('the refresh button communicates background activity and restores its icon when ready', () => {
+test('refresh stays focusable while disabled so loading does not redirect focus to Preview actions', () => {
     const h = fixture();
     const refresh = () => h.nodes('Button').find(({ props }) => props['data-action'] === 'refresh');
+    assert.equal(refresh().props.accessibleWhenDisabled, true);
     h.controls.update({ ...h.state, busy: true, canRefresh: false });
     assert.equal(refresh().props.icon.type, 'Spinner');
     assert.equal(refresh().props.label, 'refresh');
     assert.equal(refresh().props.disabled, true);
+    assert.equal(refresh().props.accessibleWhenDisabled, true, 'Use native aria-disabled behavior without disabling DOM focus.');
     h.controls.update({ ...h.state, busy: false });
     assert.equal(refresh().props.icon, h.icons.refresh);
     assert.equal(refresh().props.disabled, false);
+    assert.equal(refresh().props.accessibleWhenDisabled, true);
 });
 
 test('placeholder actions and loading use public components with no custom spinner or fake title button', () => {
