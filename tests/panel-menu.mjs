@@ -1,10 +1,6 @@
-import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { pathToFileURL } from 'node:url';
+import { runChromiumTests } from './helpers/chromium.mjs';
 
 // Exercise our PiP-only CSS in another document; WordPress owns the menu's actual rendering and positioning.
 function browserTests(css) {
@@ -115,24 +111,6 @@ function browserTests(css) {
 }
 
 test('PiP menu bounds, preview shortcut and geometry controls in Chromium', async (t) => {
-    const directory = await mkdtemp(join(tmpdir(), 'aflpp-menu-'));
-    try {
-        const css = await readFile(new URL('../build/classic-editor.css', import.meta.url), 'utf8');
-        const page = join(directory, 'test.html');
-        await writeFile(page, `<!doctype html><html><body><script id="results" type="application/json">null</script><script>
-            document.getElementById('results').textContent = JSON.stringify((${browserTests.toString()})(${JSON.stringify(css)}));
-        </script></body></html>`);
-        const result = spawnSync(process.env.CHROMIUM_BIN || 'chromium', [
-            '--headless', '--disable-gpu', '--no-first-run', '--disable-background-networking',
-            `--user-data-dir=${join(directory, 'profile')}`, '--virtual-time-budget=10000',
-            '--dump-dom', pathToFileURL(page).href,
-        ], { encoding: 'utf8', timeout: 30000, maxBuffer: 2 * 1024 * 1024 });
-        assert.ifError(result.error);
-        assert.equal(result.status, 0, result.stderr);
-        const output = result.stdout.match(/<script id="results" type="application\/json">([\s\S]*?)<\/script>/)?.[1];
-        assert.ok(output && output !== 'null', `Browser tests did not finish.\n${result.stderr}\n${result.stdout}`);
-        const results = JSON.parse(output);
-        assert.equal(results.length, 14);
-        for (const result of results) await t.test(result.name, () => assert.equal(result.error, undefined, result.error));
-    } finally { await rm(directory, { recursive: true, force: true }); }
+    const css = await readFile(new URL('../build/classic-editor.css', import.meta.url), 'utf8');
+    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify(css)})`, count: 14 });
 });

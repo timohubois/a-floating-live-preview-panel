@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import vm from 'node:vm';
-
-const source = (await readFile(new URL('../src/panel/viewport.js', import.meta.url), 'utf8'))
-    .replace('export function createPreviewViewport', 'function createPreviewViewport');
+import { createPreviewViewport } from '../src/panel/viewport.js';
 
 test('viewport resize observers detach before adoption and rebind to the new window on each move', () => {
     const observers = [];
@@ -23,7 +19,6 @@ test('viewport resize observers detach before adoption and rebind to the new win
     const container = { ownerDocument: { defaultView: mainWindow }, clientWidth: 640, clientHeight: 400 };
     const stage = { style: {} };
     const dimensions = {};
-    const createPreviewViewport = vm.runInNewContext(`${source}\ncreatePreviewViewport`);
     const viewport = createPreviewViewport(container, stage, dimensions, 'tablet');
     assert.equal(observers[0].connected, true);
     viewport.beforeMove();

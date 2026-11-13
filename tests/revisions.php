@@ -2,6 +2,7 @@
 
 /** Run with `wp eval-file tests/revisions.php` on a disposable single-site installation with this plugin active. */
 
+use AFloatingLivePreviewPanel\Admin\Panel;
 use AFloatingLivePreviewPanel\Compatibility\Acf;
 use AFloatingLivePreviewPanel\Preview\FrontendPreview;
 use AFloatingLivePreviewPanel\Preview\LivePreview;
@@ -49,6 +50,52 @@ $query = static function (string $url): array {
 };
 
 try {
+    // Inspect the real rendered view, not PHP source formatting or obsolete CSS class names.
+    ob_start();
+    (new Panel(dirname(__DIR__) . '/a-floating-live-preview-panel.php'))->render();
+    $document = new DOMDocument();
+    $document->loadHTML(ob_get_clean(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($document);
+    $byClass = static fn (string $name): DOMNodeList => $xpath->query(
+        '//*[contains(concat(" ", normalize-space(@class), " "), " ' . $name . ' ")]'
+    );
+    foreach (['aflpp-move-control', 'aflpp-caption', 'aflpp-resize'] as $class) {
+        $check($byClass($class)->length === 1, 'The rendered panel needs one ' . $class . ' binding.');
+    }
+    $header = $byClass('aflpp-header')->item(0);
+    $check(
+        $header && $xpath->query('.//button | .//*[@tabindex >= 0]', $header)->length === 0,
+        'The initial titlebar must not contain keyboard resize controls or interactive title buttons.'
+    );
+    $buttons = $xpath->query('//section//button');
+    $check($buttons->length === 1, 'The shell must have exactly one keyboard resize control.');
+    $resize = $buttons->item(0);
+    $check(trim($resize->getAttribute('aria-label')) !== '', 'Keyboard resizing needs an accessible label.');
+    $help = $document->getElementById($resize->getAttribute('aria-describedby'));
+    $check($help && trim($help->textContent) !== '', 'Keyboard resizing needs linked instructions.');
+    $edges = $xpath->query('//*[@data-resize-edge]');
+    $directions = [];
+    foreach ($edges as $edge) {
+        $directions[] = $edge->getAttribute('data-resize-edge');
+        $check(
+            $edge->tagName !== 'button'
+            && (!$edge->hasAttribute('tabindex') || (int) $edge->getAttribute('tabindex') < 0)
+            && $edge->getAttribute('aria-hidden') === 'true',
+            'Pointer resize edges must stay out of the keyboard and accessibility navigation.'
+        );
+    }
+    sort($directions);
+    $check(
+        $directions === ['e', 'n', 'ne', 'nw', 's', 'se', 'sw', 'w'],
+        'Every pointer resize edge must be rendered once.'
+    );
+    $statuses = $xpath->query('//*[@role="status"]');
+    $check(
+        $statuses->length === 1 && $statuses->item(0)->getAttribute('aria-hidden') !== 'true'
+        && !$statuses->item(0)->hasAttribute('hidden'),
+        'The shell needs one accessible status region.'
+    );
+
     $suffix = wp_generate_password(12, false, false);
     foreach (['administrator', 'subscriber'] as $role) {
         $id = wp_insert_user([
@@ -333,7 +380,7 @@ try {
     }
     $check($before === $snapshot(), 'Reading revision previews changed saved posts or metadata.');
     WP_CLI::success(
-        'Revision authorization, core/Timber fields, metadata, optional ACF and read-only behavior passed.'
+        'Panel markup, revision permissions, core/Timber fields, metadata, optional ACF and read-only behavior passed.'
     );
 } finally {
     $_GET = $originalGet;

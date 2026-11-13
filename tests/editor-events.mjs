@@ -1,10 +1,7 @@
-import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
-import { pathToFileURL } from 'node:url';
+import { runChromiumTests } from './helpers/chromium.mjs';
 import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
 
 async function browserTests(editorSource, initAcf, nativeSource) {
@@ -300,34 +297,19 @@ async function browserTests(editorSource, initAcf, nativeSource) {
 }
 
 test('native editor events and ACF compatibility boundaries in Chromium', async (t) => {
-    const directory = await mkdtemp(join(tmpdir(), 'aflpp-events-'));
-    try {
-        const editorSource = await previewSourceForVm(new URL('../src/classic-editor/live-preview.js', import.meta.url));
-        const nativeSource = await sourceForVm(new URL('../src/classic-editor/native-editor.js', import.meta.url));
-        const acfSource = await readFile(new URL('../src/compatibility/acf.js', import.meta.url), 'utf8');
-        const acfUrl = `data:text/javascript;base64,${Buffer.from(acfSource).toString('base64')}`;
-        const wordpressScripts = process.env.WORDPRESS_ROOT ? await Promise.all([
-            'wp-includes/js/jquery/jquery.js', 'wp-includes/js/quicktags.js',
-        ].map(async (path) => {
-            const source = await readFile(join(process.env.WORDPRESS_ROOT, path), 'utf8');
-            return `<script src="data:text/javascript;base64,${Buffer.from(source).toString('base64')}"></script>`;
-        })) : [];
-        const page = join(directory, 'test.html');
-        await writeFile(page, `<!doctype html><html><head><script>window.quicktagsL10n = new Proxy({}, { get: (target, key) => key });</script>${wordpressScripts.join('')}</head><body><script id="results" type="application/json">null</script><script type="module">
-            import { initAcf } from ${JSON.stringify(acfUrl)};
-            document.getElementById('results').textContent = JSON.stringify(await (${browserTests.toString().replace(/<\/script/gi, '<\\/script')})(${JSON.stringify(editorSource)}, initAcf, ${JSON.stringify(nativeSource)}));
-        </script></body></html>`);
-        const result = spawnSync(process.env.CHROMIUM_BIN || 'chromium', [
-            '--headless', '--disable-gpu', '--no-first-run', '--disable-background-networking',
-            `--user-data-dir=${join(directory, 'profile')}`, '--virtual-time-budget=10000',
-            '--dump-dom', pathToFileURL(page).href,
-        ], { encoding: 'utf8', timeout: 30000, maxBuffer: 2 * 1024 * 1024 });
-        assert.ifError(result.error);
-        assert.equal(result.status, 0, result.stderr);
-        const output = result.stdout.match(/<script id="results" type="application\/json">([\s\S]*?)<\/script>/)?.[1];
-        assert.ok(output && output !== 'null', `Browser tests did not finish.\n${result.stderr}\n${result.stdout}`);
-        const results = JSON.parse(output);
-        assert.equal(results.length, process.env.WORDPRESS_ROOT ? 19 : 16);
-        for (const result of results) await t.test(result.name, () => assert.equal(result.error, undefined, result.error));
-    } finally { await rm(directory, { recursive: true, force: true }); }
+    const editorSource = await previewSourceForVm(new URL('../src/classic-editor/live-preview.js', import.meta.url));
+    const nativeSource = await sourceForVm(new URL('../src/classic-editor/native-editor.js', import.meta.url));
+    const acfSource = await readFile(new URL('../src/compatibility/acf.js', import.meta.url), 'utf8');
+    const acfUrl = `data:text/javascript;base64,${Buffer.from(acfSource).toString('base64')}`;
+    const wordpressScripts = process.env.WORDPRESS_ROOT ? await Promise.all([
+        'wp-includes/js/jquery/jquery.js', 'wp-includes/js/quicktags.js',
+    ].map(async (path) => {
+        const source = await readFile(join(process.env.WORDPRESS_ROOT, path), 'utf8');
+        return `<script src="data:text/javascript;base64,${Buffer.from(source).toString('base64')}"></script>`;
+    })) : [];
+    await runChromiumTests(t, {
+        head: `<script>window.quicktagsL10n = new Proxy({}, { get: (target, key) => key });</script>${wordpressScripts.join('')}`,
+        script: `(${browserTests.toString()})(${JSON.stringify(editorSource)}, (await import(${JSON.stringify(acfUrl)})).initAcf, ${JSON.stringify(nativeSource)})`,
+        count: process.env.WORDPRESS_ROOT ? 19 : 16,
+    });
 });

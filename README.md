@@ -145,9 +145,10 @@ point `WORDPRESS_ROOT` at a local WordPress core directory:
 WORDPRESS_ROOT=/path/to/wordpress node --test tests/editor-events.mjs
 ```
 
-The PHP integration check requires a disposable single-site WordPress installation
-with this plugin active; it refuses multisite before creating fixtures. It creates
-and removes its own users, posts and revisions, verifies source permissions, custom
+The PHP integration check requires PHP's DOM extension and a disposable single-site
+WordPress installation with this plugin active; it refuses multisite before creating
+fixtures. It checks the rendered panel's accessibility, creates and removes its own
+users, posts and revisions, verifies source permissions, custom
 post statuses and nonce separation, and checks that preview reads leave saved posts,
 recovery autosaves and metadata unchanged. With ACF active, it also checks historical
 fields and rejects attempted ACF updates/deletions of the saved source without

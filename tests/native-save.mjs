@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
-import { previewSourceForVm } from './helpers/modules.mjs';
+import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
 
 const source = await previewSourceForVm(new URL('../src/classic-editor/live-preview.js', import.meta.url));
 const flush = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
@@ -164,8 +163,7 @@ test('a cancelled drain never replays its obsolete native Save', async () => {
 });
 
 test('ACF validation rejection is scoped to this form and reads the native validation state', async () => {
-    const source = (await readFile(new URL('../src/compatibility/acf.js', import.meta.url), 'utf8'))
-        .replace('export function initAcf', 'function initAcf');
+    const source = await sourceForVm(new URL('../src/compatibility/acf.js', import.meta.url));
     const actions = new Map();
     let cancelled = 0, validating = true;
     const form = { classList: { contains: (name) => name === 'is-validating' && validating } };

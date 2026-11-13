@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { withChromiumPage } from './helpers/chromium.mjs';
 import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
 
 async function browserFixture(editorSource, nativeSource) {
@@ -92,8 +91,14 @@ async function browserFixture(editorSource, nativeSource) {
     };
 }
 
-test('native save cancellation with trusted Chromium input', { timeout: 30000 }, async (t) => {
-    const directory = await mkdtemp(join(tmpdir(), 'aflpp-save-cancellation-'));
+const editorSource = await previewSourceForVm(new URL('../src/classic-editor/live-preview.js', import.meta.url));
+const nativeSource = await sourceForVm(new URL('../src/classic-editor/native-editor.js', import.meta.url));
+const jquery = process.env.WORDPRESS_ROOT
+    ? await readFile(join(process.env.WORDPRESS_ROOT, 'wp-includes/js/jquery/jquery.js'), 'utf8') : '';
+const script = `(${browserFixture.toString()})(${JSON.stringify(editorSource)}, ${JSON.stringify(nativeSource)});`;
+const html = `<!doctype html><script src="data:text/javascript;base64,${Buffer.from(jquery).toString('base64')}"></script><body><script>${script.replace(/<\/script/gi, '<\\/script')}</script></body>`;
+
+test('native save cancellation with trusted Chromium input', { timeout: 30000 }, async (t) => withChromiumPage(html, async ({ args, url }) => {
     const pending = new Map();
     let chrome, sessionId, nextId = 0, buffer = '', stderr = '';
     const rejectPending = (error) => {
@@ -103,19 +108,10 @@ test('native save cancellation with trusted Chromium input', { timeout: 30000 },
     const abort = () => { rejectPending(t.signal.reason); chrome?.kill(); };
     t.signal.addEventListener('abort', abort, { once: true });
     try {
-        const editorSource = await previewSourceForVm(new URL('../src/classic-editor/live-preview.js', import.meta.url));
-        const nativeSource = await sourceForVm(new URL('../src/classic-editor/native-editor.js', import.meta.url));
-        const jquery = process.env.WORDPRESS_ROOT
-            ? await readFile(join(process.env.WORDPRESS_ROOT, 'wp-includes/js/jquery/jquery.js'), 'utf8') : '';
-        const script = `(${browserFixture.toString()})(${JSON.stringify(editorSource)}, ${JSON.stringify(nativeSource)});`;
-        const page = join(directory, 'test.html');
-        await writeFile(page, `<!doctype html><script src="data:text/javascript;base64,${Buffer.from(jquery).toString('base64')}"></script><body><script>${script.replace(/<\/script/gi, '<\\/script')}</script></body>`);
         // dump-dom and element.click() cannot reproduce microtask checkpoints between trusted listeners.
         // A local DevTools pipe supplies actual input without another browser dependency or server.
-        chrome = spawn(process.env.CHROMIUM_BIN || 'chromium', [
-            '--headless', '--disable-gpu', '--no-first-run', '--disable-background-networking',
-            '--remote-debugging-pipe', `--user-data-dir=${join(directory, 'profile')}`,
-        ], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
+        chrome = spawn(process.env.CHROMIUM_BIN || 'chromium', [...args, '--remote-debugging-pipe'],
+            { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
         chrome.stderr.on('data', (data) => { stderr += data; });
         chrome.on('error', rejectPending);
         chrome.on('exit', (code) => rejectPending(new Error(`Chromium exited (${code}).\n${stderr}`)));
@@ -139,7 +135,7 @@ test('native save cancellation with trusted Chromium input', { timeout: 30000 },
             pending.set(id, { resolve, reject });
             chrome.stdio[3].write(`${JSON.stringify({ id, method, params, sessionId: targetSession })}\0`);
         });
-        const { targetId } = await send('Target.createTarget', { url: pathToFileURL(page).href });
+        const { targetId } = await send('Target.createTarget', { url });
         ({ sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }));
         const evaluate = async (expression) => {
             const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
@@ -206,7 +202,5 @@ test('native save cancellation with trusted Chromium input', { timeout: 30000 },
         if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {
             await new Promise((resolve) => { chrome.once('exit', resolve); chrome.kill(); });
         }
-        // Chromium's subprocesses can still be releasing profile files after the main process exits.
-        await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
-});
+}));

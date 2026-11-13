@@ -15,29 +15,6 @@ function shape({ props }) {
     });
 }
 
-test('panel markup separates plain title, pointer-only edges and one accessible boundary resize control', async () => {
-    const markup = await readFile(new URL('../views/panel.php', import.meta.url), 'utf8');
-    assert.equal([...markup.matchAll(/<button[^>]*class="aflpp-resize"/g)].length, 1);
-    assert.doesNotMatch(markup, /data-edge=|resizeLabels/);
-    assert.match(markup, /aria-describedby="aflpp-resize-help"/);
-    assert.match(markup, /Resize preview/);
-    assert.match(markup, /Use arrow keys to resize; Shift for larger steps\./);
-    const header = markup.slice(markup.indexOf('<div class="aflpp-header">'), markup.indexOf('<div class="aflpp-feedback"'));
-    assert.doesNotMatch(header, /aflpp-resize|<button|tabindex/);
-    assert.match(header, /aflpp-move-control/);
-    assert.match(header, /<span class="aflpp-caption"><\/span>/);
-    assert.match(markup, /data-resize-edge=/);
-    assert.doesNotMatch(markup, /aflpp-status-tooltip|aflpp-resize-icon|aflpp-feedback-action/);
-});
-
-test('the panel keeps an accessible status region without a redundant visual status dot', async () => {
-    const [markup, css, source] = await Promise.all([
-        '../views/panel.php', '../src/panel/panel.css', '../src/panel/window.js',
-    ].map((path) => readFile(new URL(path, import.meta.url), 'utf8')));
-    for (const content of [markup, css, source]) assert.doesNotMatch(content, /aflpp-dot|aflpp-pulse|dataset\.retryable/);
-    assert.match(markup, /class="aflpp-sr-only" role="status"/);
-});
-
 test('the editor build declares its public WordPress runtime dependencies', () => {
     const dependencies = [...asset.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1].matchAll(/'([^']+)'/g)]
         .map((match) => match[1]);
