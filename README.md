@@ -20,7 +20,7 @@ verified. Composer and Node.js are not required to run the plugin.
 
 Use a disposable local or staging WordPress installation while this is in development.
 
-1. Place the plugin in `wp-content/plugins/a-floating-live-preview-panel/` and activate **A Floating Live Preview Panel**.
+1. Install the attached GitHub release ZIP or WordPress.org package in `wp-content/plugins/a-floating-live-preview-panel/` and activate **A Floating Live Preview Panel**. For a Git checkout or GitHub's automatic **Source code** ZIP, run `npm ci && npm run build` in the plugin directory first; generated assets are not included in source archives.
 2. Open a saved post, page or frontend-viewable custom post type in its classic editing screen. Save a new post as a draft first; the plugin does not enable revisions for you.
 3. Use the compact preview window or **Live preview** launcher. Edit supported fields and the preview refreshes after a short pause.
 4. Use WordPress's normal save, update or publish controls to save your changes to the post.
@@ -125,7 +125,7 @@ npm run build
 
 Rebuild after changing anything in `src/`; `npm start` watches those inputs during development. All plugin browser code is bundled, including editor/revision coordination, scrolling and the ACF adapter. ACF is initialized only when available. There are no runtime imports from `src/` or PHP-configured module URLs.
 
-`build/` contains only generated assets. Keep it committed so a checkout can be installed directly, and ship the complete directory, including CSS and generated `.asset.php` dependency/version metadata. Never edit generated files by hand. The admin bundles intentionally contain the same shared panel source; they load on different screens and need no separate shared runtime. Distribution excludes `src/` and development dependencies.
+`build/` contains only generated assets and is ignored by Git. Build it locally before using a checkout or running the JavaScript tests, and rebuild after pulling source changes. Never edit generated files by hand. The complete directory, including CSS and generated `.asset.php` dependency/version metadata, must still ship in installable packages. The admin bundles intentionally contain the same shared panel source; they load on different screens and need no separate shared runtime. Distribution excludes `src/` and development dependencies; `.distignore` deliberately does not exclude `build/`.
 
 Native component CSS is still enqueued separately and copied into PiP, including WordPress's combined admin stylesheets. Package imports do not replace this stylesheet handling.
 
@@ -157,6 +157,35 @@ blocking live-editor or unrelated writes:
 ```sh
 wp eval-file /path/to/a-floating-live-preview-panel/tests/revisions.php
 ```
+
+### GitHub Actions and releases
+
+The workflows use the same 10up WordPress.org deployment and GitHub release actions
+as the other plugins, with an explicit asset build before packaging:
+
+- **Commit Checks** runs on branch pushes and pull requests and is reused for release
+  tags. It uses Node.js 24 and PHP 8.3, builds the assets, runs PHP lint and JavaScript
+  tests (using the runner's Chrome), and runs the PHP fixtures in a disposable
+  single-site WordPress installation. A separate job checks the built distribution
+  with WordPress Plugin Check. Optional ACF and Timber coverage still requires the
+  corresponding dependencies on a test site.
+- **Deploy and Release Plugin** runs on numeric tags such as `1.0.0`, without a `v`
+  prefix. The tag, plugin header version and `readme.txt` stable tag must match;
+  development placeholders must be updated before releasing. It waits for the
+  checks, builds again in the deploy job, deploys via
+  `10up/action-wordpress-plugin-deploy`, and attaches that action's ZIP to the GitHub
+  release. Jobs do not share local generated files. Packaging uses `.distignore`,
+  so the ignored local `build/` directory is included, while development files are
+  excluded. The archive is checked for matching versions and built assets.
+- **Publish listing assets and readme** is a manual workflow restricted to `main`;
+  it updates the WordPress.org listing without a plugin release.
+
+Configure the repository secrets `SVN_USERNAME` and `SVN_PASSWORD` before publishing
+and ensure the WordPress.org slug is available to that account. GitHub's normal
+workflow token is used for GitHub releases. Install the attached release ZIP or the
+WordPress.org package, not GitHub's automatic source ZIP. These workflows do not
+replace authenticated editor-to-frontend browser testing or verify the general
+compatibility claims above.
 
 ### Structure and ownership
 

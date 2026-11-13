@@ -1,0 +1,103 @@
+name: Commit Checks
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint and integration tests
+    runs-on: ubuntu-24.04
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: wordpress
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -proot"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.3'
+          extensions: dom, mysqli
+          tools: composer:v2, wp-cli
+          coverage: none
+      - name: Cache Composer dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: vendor
+          key: ${{ runner.os }}-php-8.3-composer-${{ hashFiles('composer.lock') }}
+      - name: Check PHP
+        run: |
+          composer validate --strict
+          composer install --no-interaction --prefer-dist
+          composer check-platform-reqs
+          composer php:lint
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Build assets
+        run: |
+          npm ci
+          npm run build
+      - name: Install disposable WordPress
+        run: |
+          wp core download --path="$RUNNER_TEMP/site"
+          wp config create --path="$RUNNER_TEMP/site" --dbname=wordpress --dbuser=root --dbpass=root --dbhost=127.0.0.1
+          wp core install --path="$RUNNER_TEMP/site" --url=http://aflpp.test --title=Tests --admin_user=test --admin_password=test-only-password --admin_email=test@example.test --skip-email
+          ln -s "$GITHUB_WORKSPACE" "$RUNNER_TEMP/site/wp-content/plugins/a-floating-live-preview-panel"
+          wp plugin activate a-floating-live-preview-panel --path="$RUNNER_TEMP/site"
+      - name: Run JavaScript and browser tests
+        env:
+          CHROMIUM_BIN: google-chrome
+          WORDPRESS_ROOT: ${{ runner.temp }}/site
+        run: npm test
+      - name: Run WordPress integration tests
+        run: |
+          for fixture in tests/*.php; do
+            wp --path="$RUNNER_TEMP/site" eval-file "$GITHUB_WORKSPACE/$fixture"
+          done
+
+  plugin-check:
+    name: Check release package
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Build assets
+        run: |
+          npm ci
+          npm run build
+      - name: Build release directory
+        run: |
+          mkdir -p "$RUNNER_TEMP/a-floating-live-preview-panel"
+          rsync -a --exclude-from=.distignore ./ "$RUNNER_TEMP/a-floating-live-preview-panel/"
+      - name: WordPress Plugin Check
+        uses: wordpress/plugin-check-action@10857da14b6c2246d15402b3e69f777edcf8c12e # v1.1.9
+        with:
+          build-dir: ${{ runner.temp }}/a-floating-live-preview-panel
+          slug: a-floating-live-preview-panel
+          strict: true
