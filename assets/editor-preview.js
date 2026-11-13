@@ -5,11 +5,9 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
 
     const strings = config.strings;
     const mainWindow = window;
-    const $ = mainWindow.jQuery;
     const scrolling = createPreviewScroll();
     const view = createPreviewPanel(strings, {
         postTitle: document.getElementById('title')?.value ?? config.postTitle,
-        nativeSaving: nativeEditor.saving,
         onOpen: () => startPreview(),
         onClose: () => stopPreview(),
         onRefresh: refreshPreview,
@@ -58,7 +56,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     function report(text, state = 'loading', { canRetry = true, reason = '' } = {}) {
         view.report(text, state, {
             canTakeOver: !!channel, hasPreview: !!activeFrame, previewUrl: previewAddress, canRetry, reason,
-            canRefresh: previewActive && ['ready', 'stale', 'error'].includes(state) && (state !== 'error' || canRetry),
+            canRefresh: previewActive && !nativeEditor.saving && ['ready', 'error'].includes(state) && (state !== 'error' || canRetry),
         });
     }
 
@@ -87,8 +85,9 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         generation += 1;
         followPending = true;
         cancelFrame?.();
-        report(strings.stale, 'stale');
         clearTimeout(refreshTimer);
+        if (nativeEditor.saving) return;
+        report(strings.stale, 'stale');
         if (!nativeEditor.previewing) refreshTimer = setTimeout(update, 1000);
     }
 
@@ -120,11 +119,22 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         mainWindow.tinymce.editors.forEach(watchEditor);
         mainWindow.tinymce.on('AddEditor', (event) => watchEditor(event.editor));
     }
-    const acf = initAcf?.(form, changed, watchEditor);
-    $(form).on('input.aflpp change.aflpp', (event) => {
+    function cancelNativeSave() {
+        if (!nativeEditor.saving) return;
+        nativeEditor.saving = false;
+        changed();
+    }
+    nativeEditor.onSaveCancelled = cancelNativeSave;
+    const acf = initAcf?.(form, changed, watchEditor, cancelNativeSave);
+    nativeEditor.isValidating = () => acf?.isValidating?.();
+    function onFieldChange(event) {
         if (event.target.name === 'post_title') view.setTitle(event.target.value);
-        if (['post_title', 'content', 'excerpt'].includes(event.target.name)) changed();
-    });
+        if (['post_title', 'content', 'excerpt'].includes(event.target.name) || acf?.isField(event.target)) changed();
+    }
+    nativeEditor.onFieldChange = onFieldChange;
+    form.addEventListener('input', onFieldChange);
+    // Quicktags emits non-bubbling native change events after toolbar and media insertions.
+    form.addEventListener('change', onFieldChange, true);
 
     function capture() {
         capturing = true;
@@ -223,14 +233,14 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     }
 
     function update() {
-        if (!previewActive || refreshTask || nativeEditor.previewing) return;
+        if (!previewActive || refreshTask || nativeEditor.previewing || nativeEditor.saving) return;
         clearTimeout(refreshTimer);
         const version = generation;
         report(strings.updating);
         refreshTask = (async () => {
             try {
                 await nativeEditor.idle;
-                if (!previewActive) return;
+                if (!previewActive || nativeEditor.saving) return;
                 const base = config.base;
                 const response = await fetch(config.endpoint, {
                     method: 'POST', credentials: 'same-origin',
@@ -239,16 +249,16 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
                 const result = await response.json();
                 // An overlapping native draft autosave can invalidate this request and its revision.
                 await nativeEditor.idle;
-                if (!previewActive || base !== config.base) return;
+                if (!previewActive || nativeEditor.saving || base !== config.base) return;
                 if (!response.ok || typeof result.url !== 'string') {
                     throw Object.assign(new Error(result.message || strings.failed), { code: result.code });
                 }
                 if (previewActive && version === generation) await loadFrame(result.url, version);
             } catch (error) {
-                if (previewActive) reportFailure(error);
+                if (previewActive && !nativeEditor.saving) reportFailure(error);
             } finally {
                 refreshTask = null;
-                if (previewActive && !nativeEditor.previewing && version !== generation) {
+                if (previewActive && !nativeEditor.previewing && !nativeEditor.saving && version !== generation) {
                     clearTimeout(refreshTimer);
                     refreshTimer = setTimeout(update, 1000);
                 }
@@ -307,7 +317,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
         if (controller) {
             report(strings.waiting, 'handover');
             takeoverTimer = setTimeout(() => { timedOut = true; controller.abort(); }, 15000);
-        } else report(strings.updating);
+        } else report(nativeEditor.saving ? strings.saving : strings.updating);
         try {
             // Queue cooperatively. Never steal: the current owner must finish its PHP write first.
             const options = controller ? { signal: controller.signal } : { ifAvailable: true };
@@ -323,7 +333,7 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
                     });
                     return;
                 }
-                report(strings.updating);
+                report(nativeEditor.saving ? strings.saving : strings.updating);
                 try {
                     await new Promise((resolve) => {
                         requestStop = resolve;
@@ -361,34 +371,52 @@ export function initPreview(config, initAcf, nativeEditor, createPreviewPanel, c
     }
 
     function refreshPreview() {
+        if (nativeEditor.saving) return;
         if (!previewActive) { startPreview(); return; }
         generation += 1;
         cancelFrame?.();
         update();
     }
 
-    let resumingNativeSave = false;
-    function continueAfterPreview(event, resume) {
-        if (resumingNativeSave || (!previewActive && !refreshTask && !ownershipTask)) return;
-        const pending = ownershipTask || refreshTask;
-        stopPreview();
+    let drainingNativeSave = false;
+    function continueNativeSave(event, resume) {
+        if (event.defaultPrevented) return;
+        if (drainingNativeSave) {
+            nativeEditor.deferredSaves?.add(event);
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
+        if (nativeEditor.saving) return;
+        // Saving is not closing: retain the frame, window and ownership until navigation or cancellation.
+        nativeEditor.saving = true;
+        generation += 1;
+        clearTimeout(refreshTimer);
+        cancelFrame?.();
+        if (previewActive) report(strings.saving);
+        const pending = refreshTask || (nativeEditor.previewing ? nativeEditor.idle : null);
         if (!pending) return;
+        // Our own interception waits for a write; it is not a validation rejection.
+        nativeEditor.deferredSaves?.add(event);
         event.preventDefault();
         event.stopImmediatePropagation();
-        report(strings.saving);
+        drainingNativeSave = true;
         const proceed = () => {
-            resumingNativeSave = true;
-            try { resume(); } finally { resumingNativeSave = false; }
+            drainingNativeSave = false;
+            if (nativeEditor.saving) resume();
         };
         pending.then(proceed, proceed);
     }
     form.addEventListener('click', (event) => {
         const control = event.target.closest('#publish, #save-post');
-        if (control) continueAfterPreview(event, () => control.click());
+        // Core ignores disabled controls; do not close the panel or queue a save for that click.
+        if (control && !control.disabled && !control.classList.contains('disabled')) {
+            continueNativeSave(event, () => control.click());
+        }
     }, true);
     form.addEventListener('submit', (event) => {
         if (form.querySelector('#wp-preview')?.value === 'dopreview') return;
-        continueAfterPreview(event, () => form.requestSubmit(event.submitter || undefined));
+        continueNativeSave(event, () => form.requestSubmit(event.submitter || undefined));
     }, true);
 
     if (view.visible) startPreview();

@@ -8,4 +8,6 @@ phpcs.xml
 README.md
 vendor/
 node_modules/
+package.json
+package-lock.json
 tests/

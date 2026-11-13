@@ -27,8 +27,7 @@
 .aflpp-panel [hidden],
 .aflpp-launcher[hidden] { display: none !important; }
 
-.aflpp-panel button,
-.aflpp-panel summary {
+.aflpp-panel button:not(.components-button) {
     appearance: none;
     box-sizing: border-box;
     margin: 0;
@@ -42,6 +41,7 @@
 }
 
 .aflpp-header {
+    position: relative;
     box-sizing: border-box;
     display: flex;
     flex-shrink: 0;
@@ -71,9 +71,10 @@
 }
 .aflpp-caption { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aflpp-panel .aflpp-mode { margin-left: 6px; }
+.aflpp-status-tooltip { visibility: hidden; position: absolute; z-index: 3; top: 100%; left: 12px; box-sizing: border-box; width: max-content; max-width: calc(100% - 24px); padding: 6px 8px; border: 1px solid var(--aflpp-border); border-radius: 2px; background: var(--aflpp-bg); color: var(--aflpp-text); box-shadow: 0 2px 8px #0002; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.aflpp-move:focus-visible:not(.aflpp-status-dismissed) + .aflpp-status-tooltip { visibility: visible; }
 
 .aflpp-dot {
-    position: relative;
     flex-shrink: 0;
     width: 6px;
     height: 6px;
@@ -82,20 +83,6 @@
 }
 .aflpp-panel[data-state="ready"] .aflpp-dot { background: #008a20; }
 .aflpp-panel[data-state="loading"] .aflpp-dot { background: var(--aflpp-accent); }
-.aflpp-panel[data-state="loading"] .aflpp-dot::before {
-    content: "";
-    position: absolute;
-    box-sizing: border-box;
-    left: 50%;
-    top: 50%;
-    width: 14px;
-    height: 14px;
-    border: 1.5px solid var(--aflpp-accent);
-    border-right-color: transparent;
-    border-radius: 50%;
-    transform: translate(-50%, -50%) rotate(-35deg);
-    pointer-events: none;
-}
 .aflpp-panel[data-state="stale"] .aflpp-dot,
 .aflpp-panel[data-state="conflict"] .aflpp-dot { background: #996800; }
 .aflpp-panel[data-state="handover"] .aflpp-dot { background: var(--aflpp-accent); }
@@ -107,6 +94,7 @@
     align-items: center;
     justify-content: center;
     width: 28px;
+    min-width: 28px;
     height: 28px;
     padding: 2px;
     color: var(--aflpp-muted);
@@ -114,20 +102,31 @@
 }
 .aflpp-icon svg,
 .aflpp-launcher svg { display: block; width: 24px; height: 24px; flex-shrink: 0; }
-.aflpp-panel summary::-webkit-details-marker { display: none; }
-.aflpp-panel button:not(.aflpp-move, .aflpp-resize):hover,
-.aflpp-panel summary:hover,
-.aflpp-panel .aflpp-open-preview:hover,
-.aflpp-panel details[open] > summary { background: #dcdcde; color: var(--wp-admin-theme-color-darker-10, var(--aflpp-accent)); }
+.aflpp-panel button:not(.components-button, .aflpp-move, .aflpp-resize):hover,
+.aflpp-panel .aflpp-open-preview:hover { background: #dcdcde; color: var(--wp-admin-theme-color-darker-10, var(--aflpp-accent)); }
 .aflpp-panel .aflpp-icon[aria-pressed="true"] { background: var(--aflpp-accent); color: #fff; }
-.aflpp-panel button:disabled { color: #a7aaad; cursor: not-allowed; }
-.aflpp-panel button:focus-visible,
-.aflpp-panel summary:focus-visible,
+.aflpp-panel button:not(.components-button):disabled { color: #a7aaad; cursor: not-allowed; }
+.aflpp-panel button:not(.components-button):focus-visible,
 .aflpp-panel .aflpp-open-preview:focus-visible,
 .aflpp-feedback-copy:focus-visible,
 .aflpp-launcher:focus-visible { outline: var(--wp-admin-border-width-focus, 2px) solid var(--aflpp-accent); outline-offset: 1px; }
 
 .aflpp-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #dcdcde; }
+.aflpp-pip-control { position: absolute; z-index: 2; right: 12px; bottom: 12px; }
+.aflpp-pip-button { position: relative; opacity: 0; transition: opacity 160ms ease; }
+/* A small native-button hit target reveals the control without tracking the iframe's pointer events. */
+.aflpp-pip-button::before { content: ""; position: absolute; inset: -12px; }
+.aflpp-pip-control:hover .aflpp-pip-button,
+.aflpp-pip-control:focus-within .aflpp-pip-button { opacity: 1; }
+.aflpp-pip-control:focus-within .aflpp-pip-button { transition: none; }
+.aflpp-panel .aflpp-pip-button.components-button { width: 36px; min-width: 36px; height: 36px; padding: 6px; border: 1px solid #fff3; border-radius: 4px; background: #1d2327e8; color: #fff; }
+.aflpp-panel .aflpp-pip-button.components-button:hover { background: #1d2327; color: #fff; }
+@media (hover: none) {
+    .aflpp-pip-button { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .aflpp-pip-button { transition: none; }
+}
 .aflpp-stage { position: absolute; top: 0; transform-origin: top left; }
 .aflpp-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
 .aflpp-loading { opacity: 0; pointer-events: none; }
@@ -147,35 +146,14 @@
 .aflpp-spinner { display: block; width: 16px; height: 16px; margin: 0 auto 16px; border: 2px solid #dcdcde; border-top-color: var(--aflpp-accent); border-radius: 50%; }
 .aflpp-devicebar { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 8px; border-top: 1px solid var(--aflpp-border); border-radius: 0 0 5px 5px; background: #f6f7f7; }
 .aflpp-devices { display: flex; gap: 3px; }
-.aflpp-viewport-meta { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; column-gap: 6px; min-width: 0; color: var(--aflpp-muted); font-size: 11px; }
-.aflpp-activity::after { content: " ·"; }
-.aflpp-dimensions { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.aflpp-dimensions { color: var(--aflpp-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-.aflpp-actions { position: relative; flex-shrink: 0; }
-.aflpp-commands {
-    position: absolute;
-    z-index: 3;
-    top: 33px;
-    right: -66px;
-    box-sizing: border-box;
-    width: 248px;
-    max-height: var(--aflpp-menu-height, calc(100dvh - 96px));
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 5px;
-    border: 1px solid var(--aflpp-border);
-    border-radius: 3px;
-    background: var(--aflpp-bg);
-    box-shadow: 0 4px 16px #0003;
-}
-.aflpp-command-group { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #e5e5e5; }
-.aflpp-command-group:last-of-type { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
-.aflpp-command-heading { margin: 0; padding: 3px 9px 2px; color: var(--aflpp-muted); font-size: 10px; line-height: 14px; font-weight: 600; }
-.aflpp-panel .aflpp-command { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 28px; padding: 4px 9px; text-align: left; font-size: 12px; }
-.aflpp-command-hint { flex-shrink: 0; margin-left: auto; color: var(--aflpp-muted); font-size: 10px; }
-.aflpp-command-check { visibility: hidden; flex-shrink: 0; width: 20px; height: 20px; margin-left: auto; color: var(--aflpp-accent); }
-.aflpp-command-check svg { display: block; width: 20px; height: 20px; }
-.aflpp-command[aria-pressed="true"] .aflpp-command-check { visibility: visible; }
+.aflpp-controls,
+.aflpp-refresh-control { display: flex; flex-shrink: 0; align-items: center; gap: 2px; }
+.aflpp-actions { flex-shrink: 0; }
+.aflpp-menu-popover .components-popover__content { width: 272px; max-width: calc(100dvw - 24px); }
+/* Core's cross-window HTMLElement check can skip popover sizing in PiP. Leave room for the header and offset. */
+.aflpp-pip .aflpp-menu-popover .components-popover__content { max-height: calc(100dvh - 48px); overflow-y: auto; }
 .aflpp-feedback { display: flex; flex-shrink: 0; align-items: center; gap: 10px; padding: 8px 10px; border-top: 1px solid var(--aflpp-border); border-radius: 0 0 5px 5px; background: #fcf0f1; color: var(--aflpp-text); font-size: 11px; line-height: 1.45; }
 .aflpp-feedback[data-tone="notice"] { background: #f6f7f7; }
 .aflpp-feedback-copy { display: flex; flex-direction: column; flex: 1; min-width: 0; max-height: 6em; overflow: auto; overflow-wrap: anywhere; }
@@ -233,24 +211,26 @@
 }
 .aflpp-launcher:hover { background: #f6f7f7; color: var(--wp-admin-theme-color-darker-10, var(--aflpp-accent)); }
 .aflpp-panel:fullscreen { width: 100% !important; height: 100% !important; inset: 0 !important; transform: none !important; border: 0; border-radius: 0; }
-.aflpp-panel:fullscreen { --aflpp-menu-height: calc(100dvh - 48px) !important; }
 .aflpp-panel:fullscreen .aflpp-header,
 .aflpp-panel:fullscreen .aflpp-devicebar { border-radius: 0; }
 .aflpp-pip-document { margin: 0; background: #f0f0f1; }
-.aflpp-panel.aflpp-pip { --aflpp-menu-height: calc(100dvh - 48px) !important; inset: 0 !important; width: 100% !important; height: 100% !important; transform: none !important; border: 0; border-radius: 0; box-shadow: none; }
+.aflpp-panel.aflpp-pip { inset: 0 !important; width: 100% !important; height: 100% !important; transform: none !important; border: 0; border-radius: 0; box-shadow: none; }
 .aflpp-pip .aflpp-header,
 .aflpp-pip .aflpp-devicebar { border-radius: 0; }
 .aflpp-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 @media (prefers-reduced-motion: no-preference) {
     .aflpp-icon { transition: background-color 100ms, color 100ms; }
+    .aflpp-panel .aflpp-icon[data-action="refresh"] { transition: background-color 100ms, color 150ms ease, opacity 150ms ease; }
+    .aflpp-dot { transition: background-color 150ms ease; }
+    .aflpp-panel[data-state="loading"] .aflpp-dot,
     .aflpp-panel[data-state="handover"] .aflpp-dot { animation: aflpp-pulse 1s ease-in-out infinite alternate; }
-    .aflpp-panel[data-state="loading"] .aflpp-dot::before { animation: aflpp-status-spin .85s linear infinite; }
     .aflpp-spinner { animation: aflpp-spin 1s linear infinite; }
     @keyframes aflpp-pulse { to { opacity: .35; } }
     @keyframes aflpp-spin { to { transform: rotate(360deg); } }
-    @keyframes aflpp-status-spin {
-        from { transform: translate(-50%, -50%) rotate(-35deg); }
-        to { transform: translate(-50%, -50%) rotate(325deg); }
-    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .aflpp-panel .aflpp-icon[data-action="refresh"],
+    .aflpp-dot { transition: none; }
 }

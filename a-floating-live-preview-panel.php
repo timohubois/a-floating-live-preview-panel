@@ -4,6 +4,7 @@
  * Plugin Name:       A Floating Live Preview Panel
  * Description:       A floating live frontend preview while editing posts and pages.
  * Version:           0.0.0
+ * Requires at least: 6.7
  * Requires PHP:      8.3
  * Author:            Timo Hubois
  * Author URI:        https://pixelsaft.wtf

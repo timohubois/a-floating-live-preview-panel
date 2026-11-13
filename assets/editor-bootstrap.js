@@ -1,13 +1,19 @@
+import { createPreviewPanel as createPanelView } from './preview-panel/index.js';
+import { createPreviewViewport } from './preview-panel/viewport.js';
+import { createPreviewControls } from './preview-panel/controls.js';
+
 (() => {
     'use strict';
 
-    // Keep classic WordPress dependencies ordered; load application code as native modules.
+    // WordPress orders the built panel's dependencies; coordination modules stay separately loaded.
     const config = window.aFloatingLivePreviewPanel;
     const form = document.getElementById('post');
     if (!config || !form) return;
 
     // Observe native saves before asynchronous module loading can yield to heartbeat or form events.
-    const nativeEditor = { idle: Promise.resolve(), saving: false, previewing: false };
+    const nativeEditor = {
+        idle: Promise.resolve(), saving: false, previewing: false, deferredSaves: new WeakSet(),
+    };
     let finishNative;
     let nativePreview;
     let replayingPreview = false;
@@ -92,9 +98,43 @@
         finishNative?.();
         finishNative = null;
     });
+    // Core's Text-mode link dialog emits jQuery-only changes; native events use the form listeners.
+    window.jQuery(form).on('input.aflpp change.aflpp', (event) => {
+        if (!event.originalEvent && ['post_title', 'content', 'excerpt'].includes(event.target.name)) {
+            nativeEditor.onFieldChange?.(event);
+        }
+    });
+    const cancelSave = () => {
+        if (nativeEditor.onSaveCancelled) nativeEditor.onSaveCancelled();
+        else nativeEditor.saving = false;
+    };
+    form.addEventListener('invalid', cancelSave, true);
+    let submission = 0;
+    function watchSaveCancellation(event) {
+        if (event.type === 'click') {
+            const control = event.target.closest('#publish, #save-post');
+            if (!control || control.disabled || control.classList.contains('disabled')) return;
+        } else if (form.querySelector('#wp-preview')?.value === 'dopreview') return;
+        const attempt = ++submission;
+        // Trusted dispatch can flush microtasks between listeners; inspect cancellation in the next task.
+        setTimeout(async () => {
+            await ready;
+            const cancelled = event.defaultPrevented || event.isDefaultPrevented?.();
+            if (attempt === submission && cancelled && !nativeEditor.deferredSaves.has(event)
+                && !nativeEditor.isValidating?.()) cancelSave();
+        }, 0);
+    }
+    // Capture also sees rejected button clicks and validators that stop events from bubbling.
+    form.addEventListener('click', watchSaveCancellation, true);
+    form.addEventListener('submit', watchSaveCancellation, true);
+    window.jQuery(form).on('submit.aflpp', (event) => {
+        if (!event.originalEvent) watchSaveCancellation(event);
+    });
     const saving = (event) => {
+        const control = event.target.closest('#publish, #save-post');
+        if (control && (control.disabled || control.classList.contains('disabled'))) return;
         if ((event.type === 'submit' && form.querySelector('#wp-preview')?.value !== 'dopreview')
-            || event.target.closest('#publish, #save-post')) nativeEditor.saving = true;
+            || control) nativeEditor.saving = true;
     };
     form.addEventListener('click', saving, true);
     form.addEventListener('submit', saving, true);
@@ -103,26 +143,34 @@
         form.removeEventListener('submit', saving, true);
     };
 
-    Promise.all([
-        import(config.editorModule),
-        import(config.panelModule),
-        import(config.viewportModule),
-        import(config.scrollModule),
-        config.acfModule ? import(config.acfModule) : null,
-    ]).then(([editor, view, viewport, scroll, acf]) => {
-        if (typeof view.createPreviewPanel !== 'function') throw new Error('Preview panel module has no initializer.');
-        if (typeof viewport.createPreviewViewport !== 'function') throw new Error('Preview viewport module has no initializer.');
+    const ready = Promise.all([
+        import(/* webpackIgnore: true */ config.editorModule),
+        import(/* webpackIgnore: true */ config.scrollModule),
+        config.acfModule ? import(/* webpackIgnore: true */ config.acfModule) : null,
+    ]).then(([editor, scroll, acf]) => {
+        if (typeof createPanelView !== 'function') throw new Error('Preview panel module has no initializer.');
+        if (typeof createPreviewViewport !== 'function') throw new Error('Preview viewport module has no initializer.');
         if (typeof scroll.createPreviewScroll !== 'function') throw new Error('Preview scroll module has no initializer.');
         if (acf && typeof acf.initAcf !== 'function') throw new Error('ACF preview module has no initializer.');
+        if (typeof createPreviewControls !== 'function') throw new Error('Preview controls module has no initializer.');
         stopWatchingStartupSave();
-        const createPreviewPanel = (strings, options) => view.createPreviewPanel(strings, options, viewport.createPreviewViewport);
+        const createPreviewPanel = (strings, options) => createPanelView(
+            strings, options, createPreviewViewport, createPreviewControls
+        );
         editor.initPreview(config, acf?.initAcf, nativeEditor, createPreviewPanel, scroll.createPreviewScroll);
     }).catch((error) => {
         stopWatchingStartupSave();
         nativeEditor.beforePreview = null;
         nativeEditor.onPreview = null;
         nativeEditor.onAutosave = null;
+        nativeEditor.onFieldChange = null;
+        nativeEditor.onSaveCancelled = null;
+        nativeEditor.isValidating = null;
+        form.removeEventListener('invalid', cancelSave, true);
+        form.removeEventListener('click', watchSaveCancellation, true);
+        form.removeEventListener('submit', watchSaveCancellation, true);
         window.jQuery(document).off('.aflpp');
+        window.jQuery(form).off('.aflpp');
         document.getElementById('aflpp-panel')?.remove();
         document.getElementById('aflpp-toggle')?.remove();
         const notice = document.createElement('div');

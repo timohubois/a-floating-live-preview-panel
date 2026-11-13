@@ -56,7 +56,8 @@ export function createPreviewViewport(container, stage, dimensions, savedDevice)
         };
         current.frame = current.window.requestAnimationFrame(step);
     }
-    new mainWindow.ResizeObserver(layout).observe(container);
+    let observer = new mainWindow.ResizeObserver(layout);
+    observer.observe(container);
     motion.addEventListener('change', layout);
 
     return {
@@ -69,5 +70,14 @@ export function createPreviewViewport(container, stage, dimensions, savedDevice)
             else if (!animation) layout();
         },
         layout,
+        beforeMove() {
+            stopAnimation();
+            observer.disconnect();
+        },
+        afterMove() {
+            observer = new container.ownerDocument.defaultView.ResizeObserver(layout);
+            observer.observe(container);
+            layout();
+        },
     };
 }

@@ -1,6 +1,7 @@
 === A Floating Live Preview Panel ===
 Contributors: timohubois
 Tags: preview, editor
+Requires at least: 6.7
 Requires PHP: 8.3
 Stable tag: trunk
 License: GPLv3 or later
@@ -23,11 +24,11 @@ Live updates write a separate internal preview revision, not the saved parent po
 
 **Before you start**
 
-Requires PHP 8.3+, a saved post in a frontend-viewable post type, revisions enabled for that post, and permission to edit it. The Block Editor and Site Editor are not supported. ACF is optional.
+Requires WordPress 6.7+, PHP 8.3+, a saved post in a frontend-viewable post type, revisions enabled for that post, and permission to edit it. The Block Editor and Site Editor are not supported. ACF is optional.
 
 The admin and frontend must share an origin, authenticated WordPress REST requests must work, and the browser must support ES modules and Web Locks in a secure context. Composer and Node.js are not required to run the plugin.
 
-**Development status:** not a verified release. The full authenticated editor-to-frontend workflow still needs integration testing. A minimum WordPress version and a general browser, theme or ACF compatibility range have not been verified.
+**Development status:** not a verified release. The full authenticated editor-to-frontend workflow still needs integration testing. The public panel API baseline is WordPress 6.7; a general browser, theme or ACF compatibility range has not been verified.
 
 == Installation ==
 
@@ -48,6 +49,10 @@ Title, content, excerpt and supported post-local ACF fields. Other metadata, rel
 = Does this replace saving or publishing? =
 
 No. It writes a separate internal preview revision per user and post, without updating the saved parent post, overwriting recovery autosaves or publishing changes. Preview revisions are reused on refresh and deleted when the parent post is updated or permanently deleted. WordPress's normal server autosave continues independently, including its usual updates to your own drafts. Closing the preview does not discard editor fields.
+
+= What happens when I save, update or publish? =
+
+An open panel keeps its last frame while outstanding live writes finish and WordPress validates and submits the form. Live updates pause during this action and resume if browser, WordPress or ACF validation rejects it. Successful saving uses the normal editor reload and restores remembered panel preferences. A panel you explicitly closed stays closed.
 
 = What happens when I use WordPress's Preview button? =
 

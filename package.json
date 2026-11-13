@@ -1,0 +1,20 @@
+{
+  "name": "a-floating-live-preview-panel",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wp-scripts build assets/editor-bootstrap.js --output-path=assets/build",
+    "start": "wp-scripts start assets/editor-bootstrap.js --output-path=assets/build",
+    "test": "node --test tests/*.mjs"
+  },
+  "dependencies": {
+    "@wordpress/components": "44.0.0",
+    "@wordpress/data": "11.1.0",
+    "@wordpress/element": "10.1.0",
+    "@wordpress/icons": "20.0.0",
+    "@wordpress/preferences": "5.1.0"
+  },
+  "devDependencies": {
+    "@wordpress/scripts": "37.1.0"
+  }
+}

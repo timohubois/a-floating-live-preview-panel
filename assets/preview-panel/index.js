@@ -1,40 +1,30 @@
+import { select, dispatch } from '@wordpress/data';
+import { store as preferencesStore } from '@wordpress/preferences';
+
 // Bind the PHP-rendered panel. Never capture fields, fetch previews, acquire locks or control native saves.
 export function createPreviewPanel(strings, {
-    postTitle = '', nativeSaving, onOpen, onClose, onRefresh, onRetry, beforeMove, afterMove,
-}, createPreviewViewport) {
+    postTitle = '', onOpen, onClose, onRefresh, onRetry, beforeMove, afterMove,
+}, createPreviewViewport, createPreviewControls) {
     const mainWindow = window;
     const mainDocument = document;
     const scope = 'a-floating-live-preview-panel';
-    const preferences = mainWindow.wp.data.select('core/preferences');
-    const preferenceActions = mainWindow.wp.data.dispatch('core/preferences');
+    const preferences = select(preferencesStore);
+    const preferenceActions = dispatch(preferencesStore);
     preferenceActions.setDefaults(scope, {
         rememberVisibility: true, panelOpen: true, scrollToChanges: true, viewport: 'desktop',
     });
     let rememberVisibility = preferences.get(scope, 'rememberVisibility') !== false;
     let followChanges = preferences.get(scope, 'scrollToChanges') !== false;
-    const showOnLoad = (!rememberVisibility || preferences.get(scope, 'panelOpen') !== false) && !nativeSaving;
+    const showOnLoad = !rememberVisibility || preferences.get(scope, 'panelOpen') !== false;
     const launcher = mainDocument.getElementById('aflpp-toggle');
     const panel = mainDocument.getElementById('aflpp-panel');
     if (!launcher || !panel) throw new Error('Preview panel markup is missing.');
 
     const move = panel.querySelector('.aflpp-move');
     const dot = panel.querySelector('.aflpp-dot');
+    const statusTooltip = panel.querySelector('.aflpp-status-tooltip');
     const caption = panel.querySelector('.aflpp-caption');
-    const refresh = panel.querySelector('[data-action="refresh"]');
-    const modeButton = panel.querySelector('.aflpp-mode');
-    const actions = panel.querySelector('.aflpp-actions');
-    const actionsToggle = actions.querySelector('summary');
-    const pip = panel.querySelector('[data-action="pip"]');
-    const fullscreen = panel.querySelector('[data-action="fullscreen"]');
-    const reset = panel.querySelector('[data-action="reset"]');
-    const dockLeft = panel.querySelector('[data-action="dock-left"]');
-    const dockRight = panel.querySelector('[data-action="dock-right"]');
-    const rememberVisibilityOption = panel.querySelector('[data-action="remember-visibility"]');
-    const follow = panel.querySelector('[data-action="follow"]');
     const openPreviews = panel.querySelectorAll('.aflpp-open-preview');
-    const menuPreview = actions.querySelector('.aflpp-open-preview');
-    const displayGroup = panel.querySelector('[data-group="display"]');
-    const layoutGroup = panel.querySelector('[data-group="layout"]');
     const viewport = panel.querySelector('.aflpp-viewport');
     const stage = panel.querySelector('.aflpp-stage');
     const empty = panel.querySelector('.aflpp-empty');
@@ -47,7 +37,6 @@ export function createPreviewPanel(strings, {
     const emptyPreview = empty.querySelector('.aflpp-open-preview');
     const spinner = empty.querySelector('.aflpp-spinner');
     const devicebar = panel.querySelector('.aflpp-devicebar');
-    const activity = panel.querySelector('.aflpp-activity');
     const dimensions = panel.querySelector('.aflpp-dimensions');
     const feedback = panel.querySelector('.aflpp-feedback');
     const feedbackTitle = feedback.querySelector('.aflpp-feedback-title');
@@ -57,53 +46,45 @@ export function createPreviewPanel(strings, {
     const dismissNotice = feedback.querySelector('[data-action="dismiss-notice"]');
     const status = panel.querySelector('[role="status"]');
     const responsiveViewport = createPreviewViewport(viewport, stage, dimensions, preferences.get(scope, 'viewport'));
-    const deviceButtons = panel.querySelectorAll('[data-viewport]');
 
     function label(button, text) {
         button.setAttribute('aria-label', text);
         button.title = text;
     }
 
-    rememberVisibilityOption.setAttribute('aria-pressed', String(rememberVisibility));
-    follow.setAttribute('aria-pressed', String(followChanges));
-    for (const control of deviceButtons) {
-        const name = control.dataset.viewport;
-        control.setAttribute('aria-pressed', String(name === responsiveViewport.device));
-        control.addEventListener('click', () => {
-            if (responsiveViewport.device !== name) preferenceActions.set(scope, 'viewport', name);
-            for (const node of deviceButtons) node.setAttribute('aria-pressed', String(node === control));
-            responsiveViewport.select(name, visible);
-        });
-    }
-    for (const link of openPreviews) {
-        link.addEventListener('click', () => {
-            if (!actions.contains(link)) return;
-            actions.open = false;
-            actionsToggle.focus({ preventScroll: true });
-        });
-    }
+    // Native titles cover hover; expose the same status on keyboard focus, dismissible with Escape.
+    move.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') move.classList.add('aflpp-status-dismissed');
+    });
+    move.addEventListener('blur', () => move.classList.remove('aflpp-status-dismissed'));
 
     let visible = showOnLoad;
     let pipWindow;
-    let expanded = false;
+    const saved = preferences.get(scope, 'layout');
+    const validLayout = saved && !Array.isArray(saved) && saved.bounds
+        && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(saved.bounds[key]))
+        && saved.bounds.width > 0 && saved.bounds.height > 0
+        && [null, 'left', 'center', 'right'].includes(saved.dock) && typeof saved.expanded === 'boolean';
+    let expanded = validLayout ? saved.expanded : false;
+    let controls;
     let takeOverAction = false;
     let windowNotice = '';
     let current = {
         text: strings.loading, state: 'loading', hasPreview: false, canRetry: false, reason: '',
     };
-    const bounds = { x: 0, y: 0, width: 480, height: 340 };
-    let dock = 'right';
+    const bounds = validLayout ? { ...saved.bounds } : { x: 0, y: 0, width: 480, height: 340 };
+    let dock = validLayout ? saved.dock : 'right';
 
     function labelMove() {
         const fixed = pipWindow || expanded || panel.ownerDocument.fullscreenElement === panel;
         move.setAttribute('aria-label', fixed ? caption.textContent : `${caption.textContent} — ${strings.move}`);
+        move.title = `${caption.textContent} — ${current.text}`;
     }
 
     function setTitle(value) {
         // The editor's identity, not an iframe title or a claim that the preview is current/published.
         const title = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
         caption.textContent = title ? `${strings.preview} — ${title}` : strings.title;
-        move.title = caption.textContent;
         if (pipWindow) pipWindow.document.title = caption.textContent;
         labelMove();
     }
@@ -152,8 +133,8 @@ export function createPreviewPanel(strings, {
     function restoreFocus(focused) {
         if (!focused || !panel.contains(focused)) return;
         if (!focused.closest('[hidden]') && !focused.disabled) return;
-        const target = !empty.hidden ? emptyTitle : !refresh.disabled ? refresh : modeButton;
-        target.focus({ preventScroll: true });
+        if (!empty.hidden) emptyTitle.focus({ preventScroll: true });
+        else controls.focus(current.canRefresh ? 'refresh' : 'mode');
     }
 
     function renderFeedback() {
@@ -194,14 +175,14 @@ export function createPreviewPanel(strings, {
         panel.dataset.state = state;
         panel.dataset.hasPreview = String(hasPreview);
         dot.title = text;
-        launcher.title = `${strings.title} — ${text}`;
+        statusTooltip.textContent = text;
+        labelMove();
         // Keep the ordinary new-tab action stable across refresh/blur; only the empty-state fallback is conditional.
         for (const link of openPreviews) {
             link.hidden = !previewUrl;
             if (previewUrl) link.href = previewUrl;
             else link.removeAttribute('href');
         }
-        displayGroup.hidden = menuPreview.hidden && pip.hidden && fullscreen.hidden;
         const takingOver = state === 'handover';
         takeOverAction = canTakeOver && (state === 'conflict' || takingOver);
         const action = takeOverAction ? (takingOver ? strings.takingOver : strings.takeOver) : strings.retry;
@@ -210,7 +191,6 @@ export function createPreviewPanel(strings, {
             button.textContent = action;
             button.disabled = takingOver;
         }
-        refresh.disabled = !canRefresh;
         empty.hidden = hasPreview;
         devicebar.hidden = !hasPreview;
         const { heading, description, note } = presentation();
@@ -222,136 +202,146 @@ export function createPreviewPanel(strings, {
         emptyPreview.hidden = hasPreview || !previewUrl || state !== 'error';
         emptyClose.hidden = hasPreview || state !== 'error' || !emptyRetry.hidden;
         emptyActions.hidden = emptyRetry.hidden && emptyPreview.hidden && emptyClose.hidden;
-        copy(activity, hasPreview && ['loading', 'stale'].includes(state) ? text : '');
         renderFeedback();
         if (resetEmptyScroll) empty.scrollTop = 0;
         status.textContent = [heading, description, note].filter(Boolean).join(' ');
+        syncControls();
         restoreFocus(focused);
     }
 
-    follow.addEventListener('click', () => {
+    function toggleFollow() {
         followChanges = !followChanges;
         preferenceActions.set(scope, 'scrollToChanges', followChanges);
-        follow.setAttribute('aria-pressed', String(followChanges));
-    });
+        syncControls();
+    }
+
     function rememberPanelVisibility(value) {
         if (rememberVisibility && preferences.get(scope, 'panelOpen') !== value) {
             preferenceActions.set(scope, 'panelOpen', value);
         }
     }
-    rememberVisibilityOption.addEventListener('click', () => {
+
+    function toggleRememberVisibility() {
         rememberVisibility = !rememberVisibility;
         preferenceActions.set(scope, 'rememberVisibility', rememberVisibility);
-        // Re-enabling adopts the current panel, rather than restoring an older hidden state next time.
+        // Re-enabling adopts the current panel, rather than an older hidden state.
         if (rememberVisibility) rememberPanelVisibility(visible);
-        rememberVisibilityOption.setAttribute('aria-pressed', String(rememberVisibility));
-    });
+        syncControls();
+    }
 
-    function fit(next = bounds) {
-        const gap = 16;
-        const width = Math.max(1, mainWindow.innerWidth - gap * 2);
-        const height = Math.max(1, mainWindow.innerHeight - 64);
-        next.width = Math.min(width, Math.max(Math.min(320, width), next.width));
-        next.height = Math.min(height, Math.max(Math.min(220, height), next.height));
-        next.x = Math.max(gap, Math.min(mainWindow.innerWidth - next.width - gap, next.x));
-        next.y = Math.max(48, Math.min(mainWindow.innerHeight - next.height - gap, next.y));
+    function rememberLayout() {
+        preferenceActions.set(scope, 'layout', { bounds: { ...bounds }, dock, expanded });
+    }
+
+    // Collapse the margins too on very small windows; never use an off-screen minimum.
+    function area(gap = 16, top = 48) {
+        const width = Math.max(1, mainWindow.innerWidth);
+        const height = Math.max(1, mainWindow.innerHeight);
+        const left = Math.min(gap, (width - 1) / 2);
+        top = Math.min(top, height - 1);
+        const right = width - left;
+        const bottom = height - Math.min(gap, height - top - 1);
+        return { left, top, right, bottom, width: right - left, height: bottom - top };
+    }
+
+    function fit(next) {
+        const available = area();
+        next.width = Math.min(available.width, Math.max(Math.min(320, available.width), next.width));
+        next.height = Math.min(available.height, Math.max(Math.min(220, available.height), next.height));
+        next.x = Math.max(available.left, Math.min(available.right - next.width, next.x));
+        next.y = Math.max(available.top, Math.min(available.bottom - next.height, next.y));
         return next;
+    }
+
+    function compactRect() {
+        const rect = fit({ ...bounds });
+        if (dock) {
+            const available = area();
+            rect.x = dock === 'left' ? available.left
+                : dock === 'center' ? (mainWindow.innerWidth - rect.width) / 2 : available.right - rect.width;
+            rect.y = available.bottom - rect.height;
+        }
+        return rect;
     }
 
     function draw() {
         if (pipWindow) return;
-        const rect = expanded
-            ? { x: 12, y: 44, width: mainWindow.innerWidth - 24, height: mainWindow.innerHeight - 56 }
-            : fit();
+        let rect = compactRect();
+        if (expanded) {
+            const available = area(12, 44);
+            rect = { x: available.left, y: available.top, width: available.width, height: available.height };
+        }
         Object.assign(panel.style, {
             left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px`, transform: '',
         });
-        panel.style.setProperty('--aflpp-menu-height', `${Math.max(1, rect.height - 48)}px`);
     }
 
     function dockWindow(side = 'right', resetSize = false) {
         if (resetSize) Object.assign(bounds, { width: 480, height: 340 });
         expanded = false;
         dock = side;
-        fit();
-        bounds.x = side === 'left' ? 16 : mainWindow.innerWidth - bounds.width - 16;
-        bounds.y = mainWindow.innerHeight - bounds.height - 16;
         draw();
+        rememberLayout();
         syncControls();
+    }
+
+    function supportsPip() {
+        return typeof mainWindow.documentPictureInPicture?.requestWindow === 'function';
     }
 
     function syncControls() {
         const full = panel.ownerDocument.fullscreenElement === panel;
         const inPage = !pipWindow && !full;
-        label(modeButton, pipWindow ? strings.return : full ? strings.exitFullscreen : expanded ? strings.compact : strings.expand);
-        const mode = pipWindow ? 'return' : full || expanded ? 'compact' : 'expand';
-        for (const icon of modeButton.querySelectorAll('[data-icon]')) {
-            icon.toggleAttribute('hidden', icon.dataset.icon !== mode);
-        }
-        pip.hidden = !inPage || !mainWindow.documentPictureInPicture;
-        fullscreen.hidden = !inPage || !mainDocument.fullscreenEnabled;
-        displayGroup.hidden = menuPreview.hidden && pip.hidden && fullscreen.hidden;
-        layoutGroup.hidden = !inPage;
         labelMove();
         panel.classList.toggle('aflpp-expanded', expanded);
+        controls.update({
+            inPage, inPip: !!pipWindow, dock, rememberVisibility, followChanges, device: responsiveViewport.device,
+            canRefresh: current.canRefresh, hasPreview: current.hasPreview, previewUrl: current.previewUrl,
+            canPip: inPage && supportsPip(),
+            canFullscreen: inPage && !!mainDocument.fullscreenEnabled,
+            mode: full || expanded ? 'compact' : 'expand',
+            modeLabel: full ? strings.exitFullscreen : expanded ? strings.compact : strings.expand,
+        });
     }
 
     function toggleMode() {
-        actions.open = false;
+        controls.closeMenu();
         if (pipWindow) { pipWindow.close(); return; }
         if (mainDocument.fullscreenElement === panel) {
             mainDocument.exitFullscreen().then(clearWindowNotice, () => showWindowNotice(strings.fullscreenFailed));
             return;
         }
         expanded = !expanded;
-        dock = null;
         draw();
+        rememberLayout();
         syncControls();
-        modeButton.focus({ preventScroll: true });
+        controls.focus('mode');
     }
 
-    modeButton.addEventListener('click', toggleMode);
     move.addEventListener('dblclick', () => { if (!pipWindow) toggleMode(); });
-    fullscreen.addEventListener('click', async () => {
-        if (fullscreen.hidden) return;
-        actions.open = false;
+    async function enterFullscreen() {
+        if (pipWindow || !mainDocument.fullscreenEnabled) return;
+        controls.closeMenu();
         try {
             await panel.requestFullscreen();
             clearWindowNotice();
-            modeButton.focus({ preventScroll: true });
+            controls.focus('mode');
         } catch {
-            actionsToggle.focus({ preventScroll: true });
+            controls.focus('actions');
             showWindowNotice(strings.fullscreenFailed);
         }
-    });
+    }
     mainDocument.addEventListener('fullscreenchange', syncControls);
-    for (const [control, side, resetSize] of [[reset, 'right', true], [dockLeft, 'left'], [dockRight, 'right']]) {
-        control.addEventListener('click', () => {
-            if (layoutGroup.hidden) return;
-            actions.open = false;
-            dockWindow(side, resetSize);
-            actionsToggle.focus({ preventScroll: true });
-        });
-    }
 
-    function dismissActions(event) {
-        if (event.type === 'keydown' && event.key === 'Escape' && actions.open) {
-            actions.open = false;
-            actionsToggle.focus();
-            event.preventDefault();
-        } else if (event.type === 'pointerdown' && !actions.contains(event.target)) actions.open = false;
-    }
-    mainDocument.addEventListener('pointerdown', dismissActions);
-    mainDocument.addEventListener('keydown', dismissActions);
-
-    // Pointer and keyboard resizing move the same edge, keeping the opposite edge fixed.
+    // Free resizing keeps the opposite edge fixed; docked resizing retains the chosen anchor.
     function resizeBounds(start, edge, dx, dy) {
-        const minWidth = Math.min(320, Math.max(1, mainWindow.innerWidth - 32));
-        const minHeight = Math.min(220, Math.max(1, mainWindow.innerHeight - 64));
-        const left = edge.includes('w') ? Math.max(16, Math.min(start.x + dx, start.x + start.width - minWidth)) : start.x;
-        const top = edge.includes('n') ? Math.max(48, Math.min(start.y + dy, start.y + start.height - minHeight)) : start.y;
-        const right = edge.includes('e') ? Math.min(mainWindow.innerWidth - 16, Math.max(start.x + start.width + dx, left + minWidth)) : start.x + start.width;
-        const bottom = edge.includes('s') ? Math.min(mainWindow.innerHeight - 16, Math.max(start.y + start.height + dy, top + minHeight)) : start.y + start.height;
+        const available = area();
+        const minWidth = Math.min(320, available.width);
+        const minHeight = Math.min(220, available.height);
+        const left = edge.includes('w') ? Math.max(available.left, Math.min(start.x + dx, start.x + start.width - minWidth)) : start.x;
+        const top = edge.includes('n') ? Math.max(available.top, Math.min(start.y + dy, start.y + start.height - minHeight)) : start.y;
+        const right = edge.includes('e') ? Math.min(available.right, Math.max(start.x + start.width + dx, left + minWidth)) : start.x + start.width;
+        const bottom = edge.includes('s') ? Math.min(available.bottom, Math.max(start.y + start.height + dy, top + minHeight)) : start.y + start.height;
         return { x: left, y: top, width: right - left, height: bottom - top };
     }
 
@@ -368,7 +358,7 @@ export function createPreviewPanel(strings, {
         }
         function finish() {
             if (!drag) return;
-            const pointer = drag.pointer;
+            const { pointer, moved } = drag;
             drag = null;
             mainWindow.cancelAnimationFrame(animation);
             if (control.hasPointerCapture(pointer)) control.releasePointerCapture(pointer);
@@ -376,14 +366,18 @@ export function createPreviewPanel(strings, {
             mainDocument.documentElement.classList.remove('aflpp-window-dragging');
             mainDocument.documentElement.style.removeProperty('--aflpp-drag-cursor');
             draw();
+            if (moved) {
+                Object.assign(bounds, compactRect());
+                rememberLayout();
+                syncControls();
+            }
         }
         control.addEventListener('pointerdown', (event) => {
             if (event.button !== 0 || pipWindow || expanded || mainDocument.fullscreenElement === panel) return;
             event.preventDefault();
             control.focus({ preventScroll: true });
-            dock = null;
-            actions.open = false;
-            drag = { ...bounds, pointer: event.pointerId, pointerX: event.clientX, pointerY: event.clientY };
+            controls.closeMenu();
+            drag = { ...compactRect(), pointer: event.pointerId, pointerX: event.clientX, pointerY: event.clientY };
             control.setPointerCapture(event.pointerId);
         });
         control.addEventListener('pointermove', (event) => {
@@ -392,6 +386,7 @@ export function createPreviewPanel(strings, {
             const dy = event.clientY - drag.pointerY;
             if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
             drag.moved = true;
+            if (edge === 'move') dock = null;
             panel.classList.add('aflpp-dragging');
             mainDocument.documentElement.style.setProperty(
                 '--aflpp-drag-cursor', edge === 'move' ? 'grabbing' : mainWindow.getComputedStyle(control).cursor
@@ -412,40 +407,46 @@ export function createPreviewPanel(strings, {
             ) return;
             if (edge !== 'move' && !(delta[0] ? /[ew]/.test(edge) : /[ns]/.test(edge))) return;
             event.preventDefault();
-            dock = null;
+            controls.closeMenu();
+            Object.assign(bounds, compactRect());
+            if (edge === 'move') dock = null;
             const step = event.shiftKey ? 40 : 10;
             if (edge === 'move') {
                 bounds.x += delta[0] * step;
                 bounds.y += delta[1] * step;
             } else Object.assign(bounds, resizeBounds(bounds, edge, delta[0] * step, delta[1] * step));
+            Object.assign(bounds, compactRect());
             draw();
+            rememberLayout();
+            syncControls();
         });
     }
     geometryControl(move, 'move');
     for (const handle of panel.querySelectorAll('[data-edge]')) {
         geometryControl(handle, handle.dataset.edge);
     }
-    mainWindow.addEventListener('resize', () => {
-        if (dock && !expanded) dockWindow(dock);
-        else draw();
-    });
+    // Viewport corrections are temporary, not new saved layout preferences.
+    mainWindow.addEventListener('resize', draw);
 
-    pip.addEventListener('click', async () => {
-        if (pip.hidden) return;
-        actions.open = false;
+    async function popOut() {
+        if (pipWindow || mainDocument.fullscreenElement === panel || !supportsPip()) return;
+        controls.closeMenu();
         let detached;
         const restore = () => {
             if (pipWindow !== detached) return;
             beforeMove();
+            responsiveViewport.beforeMove();
+            controls.beforeMove();
             mainDocument.body.append(panel);
             panel.classList.remove('aflpp-pip');
             pipWindow = null;
+            controls.remount();
             draw();
-            responsiveViewport.layout();
+            responsiveViewport.afterMove();
             syncControls();
             // Moving an iframe between documents can reload it. Refresh from current editor values.
             afterMove();
-            if (visible) modeButton.focus({ preventScroll: true });
+            if (visible) controls.focus('mode');
         };
         try {
             // A rejected request leaves the current document and preview completely untouched.
@@ -456,8 +457,14 @@ export function createPreviewPanel(strings, {
                 const value = theme.getPropertyValue(name);
                 if (value) detached.document.documentElement.style.setProperty(name, value);
             }
-            const stylesheet = mainDocument.getElementById('a-floating-live-preview-panel-css');
-            if (stylesheet) {
+            // Core concatenation removes the individual wp-components stylesheet ID.
+            // Keep the actual admin bundles and relevant standalone/inline styles in source order.
+            const stylesheets = mainDocument.querySelectorAll([
+                'link[rel="stylesheet"][href*="/load-styles.php"]',
+                '#wp-components-css', '#wp-components-inline-css',
+                '#a-floating-live-preview-panel-css', '#a-floating-live-preview-panel-inline-css',
+            ].join(', '));
+            for (const stylesheet of stylesheets) {
                 const copy = stylesheet.cloneNode(true);
                 copy.addEventListener('load', responsiveViewport.layout, { once: true });
                 detached.document.head.append(copy);
@@ -465,52 +472,65 @@ export function createPreviewPanel(strings, {
             detached.document.title = caption.textContent;
             detached.document.body.className = 'aflpp-pip-document';
             detached.addEventListener('resize', responsiveViewport.layout);
-            detached.document.addEventListener('pointerdown', dismissActions);
-            detached.document.addEventListener('keydown', dismissActions);
             detached.addEventListener('pagehide', restore, { once: true });
             pipWindow = detached;
             beforeMove();
+            responsiveViewport.beforeMove();
+            controls.beforeMove();
             panel.classList.add('aflpp-pip');
             detached.document.body.append(panel);
-            responsiveViewport.layout();
+            controls.remount();
+            responsiveViewport.afterMove();
             syncControls();
             clearWindowNotice();
-            modeButton.focus({ preventScroll: true });
+            controls.focus('mode');
             afterMove();
         } catch {
             if (detached) {
                 restore();
                 detached.close();
             }
-            actionsToggle.focus({ preventScroll: true });
+            controls.focus('actions');
             showWindowNotice(strings.pipFailed);
         }
-    });
+    }
 
     // Only explicit user opening/closing changes the preference, never coordinator cleanup or window moves.
+    function closePanel() {
+        controls.closeMenu();
+        rememberPanelVisibility(false);
+        onClose();
+        launcher.focus();
+    }
     for (const button of panel.querySelectorAll('[data-action="close"]')) {
-        button.addEventListener('click', () => {
-            rememberPanelVisibility(false);
-            onClose();
-            launcher.focus();
-        });
+        button.addEventListener('click', closePanel);
     }
     dismissNotice.addEventListener('click', () => {
         clearWindowNotice();
         status.textContent = current.text;
-        actionsToggle.focus({ preventScroll: true });
+        controls.focus('actions');
     });
     launcher.addEventListener('click', () => {
         rememberPanelVisibility(true);
         onOpen();
     });
-    refresh.addEventListener('click', () => { if (!refresh.disabled) onRefresh(); });
     for (const button of [emptyRetry, feedbackRetry]) {
         button.addEventListener('click', () => {
             if (!button.disabled && !button.hidden) onRetry(takeOverAction);
         });
     }
-    dockWindow('right', true);
+    controls = createPreviewControls(panel, strings, {
+        refresh: () => { if (current.canRefresh) onRefresh(); },
+        mode: toggleMode, close: closePanel, popOut, fullscreen: enterFullscreen,
+        dock: (side) => dockWindow(side), reset: () => dockWindow('right', true),
+        follow: toggleFollow, rememberVisibility: toggleRememberVisibility,
+        device(name) {
+            if (responsiveViewport.device !== name) preferenceActions.set(scope, 'viewport', name);
+            responsiveViewport.select(name, visible);
+            syncControls();
+        },
+    });
+    draw();
     report(strings.loading, 'loading', { canRetry: false });
     // Reveal only after binding controls and positioning the server-rendered panel.
     panel.hidden = !visible;
@@ -524,11 +544,13 @@ export function createPreviewPanel(strings, {
         get followChanges() { return followChanges; },
         setVisible(value) {
             if (!value) {
+                controls.closeMenu();
                 windowNotice = '';
                 renderFeedback();
                 responsiveViewport.layout();
             }
             visible = value;
+            if (visible) draw();
             panel.hidden = !visible;
             launcher.hidden = visible;
             launcher.setAttribute('aria-expanded', String(visible));
@@ -544,7 +566,7 @@ export function createPreviewPanel(strings, {
             });
         },
         returnToEditor() {
-            actions.open = false;
+            controls.closeMenu();
             pipWindow?.close();
             if (mainDocument.fullscreenElement === panel) mainDocument.exitFullscreen().catch(() => {});
         },

@@ -8,14 +8,13 @@ editor-to-frontend workflow still needs integration testing.
 
 ## Requirements
 
-- PHP 8.3+.
+- WordPress 6.7+ and PHP 8.3+.
 - Classic post-editing screens, revisions enabled for the edited post, and permission to edit it. The Block Editor and Site Editor are not supported.
 - A same-origin admin and frontend, with working authenticated WordPress REST requests.
 - A browser in a secure context, with ES modules and Web Locks support.
 
-ACF is optional. A minimum WordPress version and a general browser, theme or ACF
-compatibility range have not been verified. Composer and Node.js are not required
-to run the plugin.
+ACF is optional. A general browser, theme or ACF compatibility range has not been
+verified. Composer and Node.js are not required to run the plugin.
 
 ## Installation
 
@@ -34,10 +33,16 @@ Closing the window stops live updates without discarding editor fields.
 WordPress's native **Preview** button keeps the panel and its last frame visible,
 waits for outstanding live writes, and normally resumes live updates afterward.
 It retains WordPress's normal behavior, including saving changes to your own drafts.
+**Save**, **Update** and **Publish** also keep an open panel and its last frame visible
+while live writes drain and WordPress validates and submits the form. Live updates
+pause during this action and resume if browser, WordPress or ACF validation rejects
+it. A successful save uses WordPress's normal editor reload and restores remembered
+panel preferences; an explicitly closed panel stays closed.
 
-- **Preview actions** offers docking, reset size and position, and **Open preview in new tab**. Fullscreen and pop-out Picture-in-Picture appear where supported.
+- **Preview actions** uses native WordPress controls. **Position** remembers bottom-left, bottom-center or bottom-right docking; dragging freely clears the dock selection. Resizing keeps the selected dock. **Reset size and position** restores the default compact, bottom-right panel. **Open preview in new tab**, fullscreen and pop-out **PiP** (Picture-in-Picture) appear where available.
+- **Pop out preview (PiP)** appears only in browsers that support Document Picture-in-Picture, not just video PiP. Its icon-only shortcut sits inside the preview's bottom-right corner, fading in only when the pointer is near the button, or appearing immediately on keyboard focus. It stays visible on devices without hover, and reduced-motion settings disable the fade. The pop-out uses the browser's native **Back to tab** and close controls to return inline. Its **⋮** menu contains **Refresh preview** and **Close live preview**; the latter stops the preview instead of merely closing the pop-out. A normal WordPress page reload closes PiP; use the same **Pop out preview (PiP)** action to open it again. There is no PiP persistence or reload-specific behavior.
 - **Desktop**, **Tablet** and **Mobile** change the preview's viewport width, not its device or user agent.
-- **Remember preview visibility** is on by default. Visibility, viewport and **Scroll to changes** preferences are per user across posts; window size and position reset on a new editor load. Preferences remain after deactivation; uninstalling through WordPress removes the plugin's server-stored preferences.
+- **Remember preview visibility** is on by default. Visibility, viewport and **Scroll to changes** preferences are per user across posts. Compact size and position, docking and expanded/compact mode are also remembered. Restored layouts fit inside the current window; fullscreen and PiP are never reopened automatically. Preferences remain after deactivation; uninstalling through WordPress removes the plugin's server-stored preferences.
 - **Scroll to changes** is on by default. It follows detected content, structure and layout-attribute changes without theme-specific integration. It normally centers shorter changed content and shows taller content from its beginning. Detection and header handling are best-effort; disable it to retain manual positioning.
 
 ## Data and limitations
@@ -80,10 +85,31 @@ composer check-platform-reqs
 composer php:lint
 ```
 
-There is no JavaScript build step. Optional JavaScript regression tests use Node.js:
+The editor entry (`assets/editor-bootstrap.js`) and existing panel modules (`assets/preview-panel/*.js`) are built with WordPress's standard tooling. They import public APIs from `@wordpress/components`, `@wordpress/element`, `@wordpress/data` and `@wordpress/preferences`; selected official icons are imported in `src/icons.js`. WordPress supplies the installed runtime instead of bundling another copy of React or its components:
+
+```sh
+npm ci
+npm run build
+```
+
+Rebuild after changing the editor entry, panel JavaScript or icon imports. Ship `assets/build/editor-bootstrap.js` and its generated `.asset.php` dependency/version metadata with the plugin; do not edit them by hand. Preview coordination (`assets/editor-preview.js`), preview scrolling and the optional ACF adapter remain separately loaded native modules. Docking, geometry and cross-document PiP integration remain custom.
+
+Native component CSS is still enqueued separately and copied into PiP, including WordPress's combined admin stylesheets. Package imports do not replace this stylesheet handling.
+
+The public panel APIs and built asset loading are checked against WordPress 6.7 and 7.1.4 core assets, including in-page, fullscreen and native PiP controls. This is not a full authenticated editor-to-frontend compatibility guarantee.
+
+Node.js is needed only for development, not on the WordPress site. After installing the development dependencies, run the JavaScript regression tests with:
 
 ```sh
 node --test tests/*.mjs
+```
+
+The browser-based tests also require Chromium (`CHROMIUM_BIN` can override its
+path). To exercise the event tests with real WordPress jQuery and Quicktags code,
+point `WORDPRESS_ROOT` at a local WordPress core directory:
+
+```sh
+WORDPRESS_ROOT=/path/to/wordpress node --test tests/editor-events.mjs
 ```
 
 Verify the editor-to-preview workflow on a disposable WordPress site with the theme

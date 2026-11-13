@@ -43,14 +43,15 @@ final class Editor
         wp_enqueue_style(
             'a-floating-live-preview-panel',
             plugins_url('assets/preview-panel/style.css', $this->file),
-            [],
+            ['wp-components'],
             $this->assetVersion('preview-panel/style.css')
         );
+        $asset = require dirname($this->file) . '/assets/build/editor-bootstrap.asset.php';
         wp_enqueue_script(
             'a-floating-live-preview-panel',
-            plugins_url('assets/editor-bootstrap.js', $this->file),
-            array_merge(['jquery', 'autosave', 'wp-preferences'], $this->acf->editorDependencies()),
-            $this->assetVersion('editor-bootstrap.js'),
+            plugins_url('assets/build/editor-bootstrap.js', $this->file),
+            array_merge(['jquery', 'autosave'], $asset['dependencies'], $this->acf->editorDependencies()),
+            $asset['version'],
             true
         );
         wp_add_inline_script('a-floating-live-preview-panel', 'window.aFloatingLivePreviewPanel = ' . wp_json_encode([
@@ -58,16 +59,6 @@ final class Editor
                 'ver',
                 $this->assetVersion('editor-preview.js'),
                 plugins_url('assets/editor-preview.js', $this->file)
-            ),
-            'panelModule' => add_query_arg(
-                'ver',
-                $this->assetVersion('preview-panel/index.js'),
-                plugins_url('assets/preview-panel/index.js', $this->file)
-            ),
-            'viewportModule' => add_query_arg(
-                'ver',
-                $this->assetVersion('preview-panel/viewport.js'),
-                plugins_url('assets/preview-panel/viewport.js', $this->file)
             ),
             'scrollModule' => add_query_arg(
                 'ver',
@@ -106,10 +97,29 @@ final class Editor
                     'a-floating-live-preview-panel'
                 ),
                 'tabEdits' => __('Each tab keeps its own edits.', 'a-floating-live-preview-panel'),
+                'actions' => __('Preview actions', 'a-floating-live-preview-panel'),
+                'refresh' => __('Refresh preview', 'a-floating-live-preview-panel'),
+                'close' => __('Close preview', 'a-floating-live-preview-panel'),
+                'closeLivePreview' => __('Close live preview', 'a-floating-live-preview-panel'),
+                'display' => __('Display', 'a-floating-live-preview-panel'),
+                'openPreview' => __('Open preview in new tab', 'a-floating-live-preview-panel'),
+                'popOut' => __('Pop out preview (PiP)', 'a-floating-live-preview-panel'),
+                'fullscreen' => __('Enter fullscreen', 'a-floating-live-preview-panel'),
+                'position' => __('Position', 'a-floating-live-preview-panel'),
+                'bottomLeft' => __('Bottom left', 'a-floating-live-preview-panel'),
+                'bottomCenter' => __('Bottom center', 'a-floating-live-preview-panel'),
+                'bottomRight' => __('Bottom right', 'a-floating-live-preview-panel'),
+                'preferences' => __('Preferences', 'a-floating-live-preview-panel'),
+                'rememberVisibility' => __('Remember preview visibility', 'a-floating-live-preview-panel'),
+                'follow' => __('Scroll to changes', 'a-floating-live-preview-panel'),
+                'reset' => __('Reset size and position', 'a-floating-live-preview-panel'),
+                'viewport' => __('Preview viewport', 'a-floating-live-preview-panel'),
+                'desktop' => __('Desktop', 'a-floating-live-preview-panel'),
+                'tablet' => __('Tablet', 'a-floating-live-preview-panel'),
+                'mobile' => __('Mobile', 'a-floating-live-preview-panel'),
                 'expand' => __('Expand preview', 'a-floating-live-preview-panel'),
                 'compact' => __('Make preview compact', 'a-floating-live-preview-panel'),
                 'exitFullscreen' => __('Exit fullscreen', 'a-floating-live-preview-panel'),
-                'return' => __('Return to editor', 'a-floating-live-preview-panel'),
                 'pipFailed' => __('The preview couldn’t pop out.', 'a-floating-live-preview-panel'),
                 'fullscreenFailed' => __('Couldn’t change fullscreen mode.', 'a-floating-live-preview-panel'),
                 'windowNoticeHelp' => __('Continue in this panel.', 'a-floating-live-preview-panel'),
@@ -154,7 +164,7 @@ final class Editor
                     'Open a secure, same-origin site in a browser with Web Locks support.',
                     'a-floating-live-preview-panel'
                 ),
-                'saving' => __('Finishing preview before continuing…', 'a-floating-live-preview-panel'),
+                'saving' => __('Saving in WordPress…', 'a-floating-live-preview-panel'),
                 'nativePreview' => __('Preparing WordPress Preview…', 'a-floating-live-preview-panel'),
                 'nativePreviewAcf' => __(
                     'WordPress Preview saved these repeater changes. Copy later edits and reload before saving again.',

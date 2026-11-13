@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { sourceForVm } from './helpers/modules.mjs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-const source = (await readFile(new URL('../assets/editor-bootstrap.js', import.meta.url), 'utf8'))
+const source = (await sourceForVm(new URL('../assets/editor-bootstrap.js', import.meta.url)))
     .replaceAll('import(', 'importModule(');
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 const deferred = () => {
@@ -14,7 +15,7 @@ const deferred = () => {
 };
 
 // Model core's click continuation; real native POST, cookie and panel behavior is covered by WordPress browser QA.
-async function fixture(pending) {
+async function fixture(pending, startupControl) {
     const listeners = [];
     const heartbeat = new Map();
     const fields = [];
@@ -30,6 +31,7 @@ async function fixture(pending) {
             if (index !== -1) listeners.splice(index, 1);
         },
         append: (field) => fields.push(field),
+        querySelector: () => ({ value: '' }),
     };
     const document = {
         getElementById: (id) => id === 'post' ? form : null,
@@ -50,7 +52,7 @@ async function fixture(pending) {
     const config = {
         base: 'a'.repeat(64), adminCookiePath: '/',
         strings: { nativePreviewFailed: 'Check the native Preview tab.' },
-        editorModule: 'editor', panelModule: 'panel', viewportModule: 'viewport', scrollModule: 'scroll',
+        editorModule: 'editor', scrollModule: 'scroll',
     };
     const preview = { target: 'wp-preview-42', classList: { contains: () => false }, click: () => click() };
     const click = (disabled = false) => {
@@ -79,16 +81,25 @@ async function fixture(pending) {
                 off() {},
             }),
         },
+        imports: {
+            './preview-panel/index.js': { createPreviewPanel() {} },
+            './preview-panel/viewport.js': { createPreviewViewport() {} },
+            './preview-panel/controls.js': { createPreviewControls() {} },
+        },
         importModule: async (name) => ({
             editor: { initPreview: (config, acf, native) => {
                 nativeEditor = native;
                 native.beforePreview = () => pending;
                 native.onPreview = (error) => outcomes.push(error);
             } },
-            panel: { createPreviewPanel() {} }, viewport: { createPreviewViewport() {} }, scroll: { createPreviewScroll() {} },
+            scroll: { createPreviewScroll() {} },
         })[name],
     };
     vm.runInNewContext(source, context);
+    if (startupControl) {
+        const event = { type: 'click', target: { closest: (selector) => selector.includes('#publish') ? startupControl : null } };
+        for (const { type, callback } of listeners) if (type === 'click') callback(event);
+    }
     await flush();
     return {
         config, nativeEditor, fields, cookies, cookieWrites, outcomes, click,
@@ -104,6 +115,15 @@ async function fixture(pending) {
             await flush();
         },
         fire: (name, data) => heartbeat.get(name)?.({ type: name }, data),
+        submit(prevented, originalEvent) {
+            if (originalEvent) {
+                originalEvent.type = 'submit';
+                for (const { type, callback } of listeners) if (type === 'submit') callback(originalEvent);
+            }
+            heartbeat.get('submit')({ type: 'submit', isDefaultPrevented: () => prevented, originalEvent });
+            return flush().then(() => this.tick(0));
+        },
+        invalid() { for (const entry of listeners) if (entry.type === 'invalid') entry.callback(); },
     };
 }
 
@@ -200,6 +220,58 @@ test('disabled native Preview is left to WordPress without pausing the panel', a
     assert.equal(h.nativeEditor.previewing, false);
     assert.equal(h.fields.length, 0);
     assert.equal(h.posts, 0);
+});
+
+for (const [disabled, disabledClass] of [[false, true], [true, false], [false, false]]) {
+    test(`startup Save with disabled=${disabled}, disabledClass=${disabledClass} respects native control state`, async () => {
+        const h = await fixture(undefined, { disabled, classList: { contains: () => disabledClass } });
+        assert.equal(h.nativeEditor.saving, !disabled && !disabledClass);
+    });
+}
+
+test('cancelled native submission resumes unless ACF is still validating', async () => {
+    const h = await fixture();
+    h.nativeEditor.saving = true;
+    h.nativeEditor.isValidating = () => true;
+    await h.submit(true);
+    assert.equal(h.nativeEditor.saving, true, 'preventDefault during asynchronous ACF validation is not failure');
+    h.nativeEditor.isValidating = () => false;
+    await h.submit(true);
+    assert.equal(h.nativeEditor.saving, false);
+});
+
+test('later native submit cancellation resumes despite an unchanged jQuery wrapper', async () => {
+    const h = await fixture();
+    h.nativeEditor.saving = true;
+    await h.submit(false, { defaultPrevented: true });
+    assert.equal(h.nativeEditor.saving, false);
+});
+
+test('native submit cancellation still respects ACF validation and newer accepted submissions', async () => {
+    const h = await fixture();
+    h.nativeEditor.saving = true;
+    h.nativeEditor.isValidating = () => true;
+    await h.submit(false, { defaultPrevented: true });
+    assert.equal(h.nativeEditor.saving, true, 'asynchronous validation is not a rejected save');
+    h.nativeEditor.isValidating = () => false;
+    h.submit(false, { defaultPrevented: true });
+    await h.submit(false, { defaultPrevented: false });
+    assert.equal(h.nativeEditor.saving, true, 'a newer accepted submission must keep live writes paused');
+});
+
+test('an accepted resubmission supersedes an earlier cancelled validation submit', async () => {
+    const h = await fixture();
+    h.nativeEditor.saving = true;
+    h.submit(true);
+    await h.submit(false);
+    assert.equal(h.nativeEditor.saving, true, 'do not resume live writes during an accepted native save');
+});
+
+test('browser constraint validation resumes a rejected native Save', async () => {
+    const h = await fixture();
+    h.nativeEditor.saving = true;
+    h.invalid();
+    assert.equal(h.nativeEditor.saving, false);
 });
 
 const editorSource = (await readFile(new URL('../assets/editor-preview.js', import.meta.url), 'utf8'))
