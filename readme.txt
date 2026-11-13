@@ -11,22 +11,23 @@ A floating live frontend preview while editing posts, pages and eligible custom 
 
 == Description ==
 
-A Floating Live Preview Panel adds a movable, resizable frontend preview to classic WordPress editing screens. Your theme and plugins render the output through WordPress's native preview routing, including redirects and browser-native output such as PDFs.
+A Floating Live Preview Panel adds a movable, resizable frontend preview to classic WordPress editing screens and the native revision browser. Your theme and plugins render the output through WordPress's native preview routing, including redirects and browser-native output such as PDFs.
 
 Live updates write a separate internal preview revision, not the saved parent post or WordPress's recovery autosave, and do not publish changes. Preview revisions do not appear in the normal revision history or trigger the newer-autosave notice. Use the normal WordPress save, update or publish controls to save your changes to the post.
 
 **Features**
 
 * Move, resize or dock the preview without leaving the editor. Keyboard movement and resizing are supported.
+* Preview the selected To revision while navigating WordPress's revision browser, without restoring it or changing saved content.
 * Switch between Desktop, Tablet and Mobile viewport widths without reloading the preview.
 * Follow changed content automatically, or turn off Scroll to changes to retain manual positioning.
 * Remember preview visibility and device viewport per user. Fullscreen and pop-out Picture-in-Picture are available where supported.
 
 **Before you start**
 
-Requires WordPress 6.7+, PHP 8.3+, a saved post in a frontend-viewable post type, revisions enabled for that post, and permission to edit it. The Block Editor and Site Editor are not supported. ACF is optional.
+Requires WordPress 6.7+, PHP 8.3+, a saved post in a frontend-viewable post type, and permission to edit it. Live editing requires the classic editor and enabled revisions. ACF is optional.
 
-The admin and frontend must share an origin, authenticated WordPress REST requests must work, and the browser must support ES modules and Web Locks in a secure context. Composer and Node.js are not required to run the plugin.
+The admin and frontend must share an origin and the browser must support ES modules. Live editing additionally requires working authenticated WordPress REST requests and Web Locks in a secure context. Composer and Node.js are not required to run the plugin.
 
 **Development status:** not a verified release. The full authenticated editor-to-frontend workflow still needs integration testing. The public panel API baseline is WordPress 6.7; a general browser, theme or ACF compatibility range has not been verified.
 
@@ -41,6 +42,12 @@ Use a disposable local or staging WordPress installation while this is in develo
 5. Use WordPress's normal save, update or publish controls to save your changes to the post.
 
 == Frequently Asked Questions ==
+
+= Can I preview saved revisions? =
+
+Yes. Open WordPress's native revision browser and use **Revision preview**. The panel follows the right-hand **To** selection when you move the slider or use Previous/Next. Its caption identifies the displayed revision by date and author. Comparison and Restore remain native WordPress controls; browsing the preview does not restore content, write internal revisions or overwrite recovery autosaves. The same panel controls and per-user preferences apply.
+
+Title, content, excerpt, revision-enabled post metadata and stored ACF values come from the selected revision. The current-post entry uses saved parent data. Themes, styles, global settings, related content and unrevisioned metadata remain current; this is not a complete historical site snapshot. Missing historical fields cannot be reconstructed. Reload the revision browser if a source is removed or its preview URL expires.
 
 = Which fields update live? =
 
@@ -62,7 +69,7 @@ If native Preview saves additions, deletions or reordering in a draft's paginate
 
 = Does it work with the Block Editor? =
 
-No. It supports classic post-editing screens, not the Block Editor or Site Editor.
+Live updates support classic post-editing screens, not the Block Editor or Site Editor. Saved post revisions can still be previewed through WordPress's native revision browser.
 
 = What does Scroll to changes do? =
 

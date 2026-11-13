@@ -1,7 +1,7 @@
 # A Floating Live Preview Panel
 
-A floating live frontend preview while editing WordPress posts, pages and eligible
-custom post types in the classic editor.
+A floating frontend preview while editing WordPress posts, pages and eligible
+custom post types in the classic editor, and while browsing their saved revisions.
 
 **Development status:** not a verified release. The full authenticated
 editor-to-frontend workflow still needs integration testing.
@@ -9,9 +9,9 @@ editor-to-frontend workflow still needs integration testing.
 ## Requirements
 
 - WordPress 6.7+ and PHP 8.3+.
-- Classic post-editing screens, revisions enabled for the edited post, and permission to edit it. The Block Editor and Site Editor are not supported.
-- A same-origin admin and frontend, with working authenticated WordPress REST requests.
-- A browser in a secure context, with ES modules and Web Locks support.
+- Permission to edit a frontend-viewable post. Live editing requires the classic editor and enabled revisions; saved previews use WordPress's native revision browser.
+- A same-origin admin and frontend, and a browser with ES modules. Live editing additionally requires working authenticated WordPress REST requests and Web Locks in a secure context.
+- Live updates inside the Block Editor and Site Editor are not supported. Saved post revisions can still be previewed in the native revision browser.
 
 ACF is optional. A general browser, theme or ACF compatibility range has not been
 verified. Composer and Node.js are not required to run the plugin.
@@ -48,6 +48,29 @@ panel preferences; an explicitly closed panel stays closed.
 - Loading and no-frame recovery use a centered native Placeholder. Problems with a retained frame appear in a native Notice below the header, without covering the preview. Unresolved problems remain visible; incidental window-operation notices can be dismissed.
 - **Remember preview visibility** is on by default. Visibility, viewport and **Scroll to changes** preferences are per user across posts. Compact size and position, docking and expanded/compact mode are also remembered. Restored layouts fit inside the current window; fullscreen and PiP are never reopened automatically. Preferences remain after deactivation; uninstalling through WordPress removes the plugin's server-stored preferences.
 - **Scroll to changes** is on by default. It follows detected content, structure and layout-attribute changes without theme-specific integration. It normally centers shorter changed content and shows taller content from its beginning. Detection and header handling are best-effort; disable it to retain manual positioning.
+
+### Revision browser
+
+Open WordPress's native revision browser (`wp-admin/revision.php`) and use the
+**Revision preview** panel or launcher. The same window controls, viewport widths
+and per-user preferences apply here. The panel follows the selected right-hand
+**To** revision when using the slider or Previous/Next buttons. Comparing two
+revisions still shows one frontend preview: the To version, not a visual diff.
+The caption identifies the displayed revision by date and author; it retains the
+previous identity until a replacement loads.
+
+Browsing previews does not restore revisions, update saved content, create internal
+preview revisions or replace recovery autosaves. WordPress's comparison and Restore
+controls remain unchanged. Revision previews do not acquire the editor's live-write
+lock, so they can run alongside an editor preview.
+
+Historical title, content, excerpt, revision-enabled post metadata and stored ACF
+values come from the selected source. The current-post entry uses saved parent data,
+not the latest autosave. Themes, styles, global settings, related content and
+unrevisioned metadata remain current: this is old content rendered by today's site,
+not a historical site snapshot. Fields absent from a revision cannot be reconstructed.
+If a source is deleted, permission changes or its URL expires, reload the revision
+browser. Embedding and theme-specific output limitations below also apply.
 
 ## Data and limitations
 
@@ -89,14 +112,14 @@ composer check-platform-reqs
 composer php:lint
 ```
 
-The editor entry (`assets/editor-bootstrap.js`) and existing panel modules (`assets/preview-panel/*.js`) are built with WordPress's standard tooling. They import public APIs from `@wordpress/components`, `@wordpress/element`, `@wordpress/data` and `@wordpress/preferences`; selected official icons are imported in `src/icons.js`. WordPress supplies the installed runtime instead of bundling another copy of React or its components:
+The editor and revision entries (`assets/editor-bootstrap.js`, `assets/revisions-bootstrap.js`), shared iframe loader (`assets/preview-frame.js`) and panel modules (`assets/preview-panel/*.js`) are built with WordPress's standard tooling. They import public APIs from `@wordpress/components`, `@wordpress/element`, `@wordpress/data` and `@wordpress/preferences`; selected official icons are imported in `src/icons.js`. WordPress supplies the installed runtime instead of bundling another copy of React or its components:
 
 ```sh
 npm ci
 npm run build
 ```
 
-Rebuild after changing the editor entry, panel JavaScript or icon imports. Ship `assets/build/editor-bootstrap.js` and its generated `.asset.php` dependency/version metadata with the plugin; do not edit them by hand. Preview coordination (`assets/editor-preview.js`), preview scrolling and the optional ACF adapter remain separately loaded native modules. Docking, geometry and cross-document PiP integration remain custom.
+Rebuild after changing either entry, the iframe loader, panel JavaScript or icon imports. Ship both bundles in `assets/build/` and their generated `.asset.php` dependency/version metadata with the plugin; do not edit them by hand. Editor and revision coordination (`assets/editor-preview.js`, `assets/revisions-preview.js`), preview scrolling and the optional ACF adapter remain separately loaded native modules. Docking, geometry and cross-document PiP integration remain custom.
 
 Native component CSS is still enqueued separately and copied into PiP, including WordPress's combined admin stylesheets. Package imports do not replace this stylesheet handling.
 
@@ -116,8 +139,27 @@ point `WORDPRESS_ROOT` at a local WordPress core directory:
 WORDPRESS_ROOT=/path/to/wordpress node --test tests/editor-events.mjs
 ```
 
-Verify the editor-to-preview workflow on a disposable WordPress site with the theme
-and optional ACF fields you intend to use.
+The PHP integration check requires a disposable single-site WordPress installation
+with this plugin active; it refuses multisite before creating fixtures. It creates
+and removes its own users, posts and revisions, verifies source permissions, custom
+post statuses and nonce separation, and checks that preview reads leave saved posts,
+recovery autosaves and metadata unchanged. With ACF active, it also checks historical
+fields and rejects attempted ACF updates/deletions of the saved source without
+blocking live-editor or unrelated writes:
+
+```sh
+wp eval-file /path/to/a-floating-live-preview-panel/tests/revisions.php
+```
+
+Code ownership stays explicit: `Compatibility/Editor.php` and
+`Compatibility/Revisions.php` connect their native admin screens;
+`Features/Panel.php` owns shared presentation; `Features/Preview.php` owns source
+authorization, writes and frontend reads. The revision controller follows core's
+`wp.revisions.view.frame.model`; guard and verify this integration when changing
+the supported WordPress versions.
+
+Verify both screen-to-preview workflows on a disposable WordPress site with the
+theme and optional ACF fields you intend to use.
 
 ## License
 
