@@ -1,6 +1,11 @@
 // Optional HTML scrolling. The coordinator supplies only token-verified preview documents.
 export function createPreviewScroll() {
     let position = 0;
+    const snapshots = new WeakMap();
+    function snapshot(doc) {
+        if (!snapshots.has(doc)) snapshots.set(doc, contentSnapshot(doc));
+        return snapshots.get(doc);
+    }
 
     return {
         remember(doc) {
@@ -8,11 +13,13 @@ export function createPreviewScroll() {
             catch { /* Keep the last HTML offset if its document is no longer readable. */ }
         },
         findTarget(previous, next) {
-            try { return changedTarget(contentSnapshot(previous), contentSnapshot(next)); }
+            try { return changedTarget(snapshot(previous), snapshot(next)); }
             catch { return null; } // A changing document may not have a comparable snapshot.
         },
         restore(doc, target) {
             try {
+                // Compare each document at load, before scrolling triggers lazy loading or animation.
+                snapshot(doc);
                 const frameWindow = doc.defaultView;
                 frameWindow.scrollTo({ top: position, left: 0, behavior: 'instant' });
                 if (target) revealChange(target);
