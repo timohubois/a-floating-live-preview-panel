@@ -75,8 +75,15 @@ composer check-platform-reqs
 composer php:lint
 ```
 
-There is no JavaScript build step. Verify the editor-to-preview workflow on a
-disposable WordPress site with the theme and optional ACF fields you intend to use.
+There is no JavaScript build step. Optional scroll-detection regression tests use
+Node.js and Chromium (`CHROMIUM_BIN` can override the browser executable):
+
+```sh
+node --test tests/preview-scroll.mjs
+```
+
+Verify the editor-to-preview workflow on a disposable WordPress site with the theme
+and optional ACF fields you intend to use.
 
 ## License
 
