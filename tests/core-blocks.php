@@ -26,7 +26,10 @@ foreach (['aflpp_preview_source', 'the_preview', 'get_post_metadata', 'shutdown'
 }
 remove_all_actions('aflpp_preview_source');
 $type = WP_Block_Type_Registry::get_instance()->get_registered('core/post-excerpt');
-$check($type && $type->render_callback === 'render_block_core_post_excerpt', 'The native excerpt renderer is required.');
+$check(
+    $type && $type->render_callback === 'render_block_core_post_excerpt',
+    'The native excerpt renderer is required.'
+);
 $originalRenderer = $type->render_callback;
 $core = new CoreBlocks();
 $live = new LivePreview();
@@ -231,7 +234,10 @@ try {
         }
     }
     $sourceId = $bind(" \n\t ", $content);
-    $check(str_contains($excerpt($block($postId)->render()), 'Preview generated'), 'Whitespace must use native generation.');
+    $check(
+        str_contains($excerpt($block($postId)->render()), 'Preview generated'),
+        'Whitespace must use native generation.'
+    );
     $sourceId = $bind('0', $content);
     $check($excerpt($block($postId)->render()) === '0', 'A literal zero must remain an explicit excerpt.');
     $sourceId = $bind('', '');

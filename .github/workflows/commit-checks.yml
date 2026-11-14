@@ -10,20 +10,9 @@ permissions:
   contents: read
 
 jobs:
-  checks:
-    name: Lint and integration tests
+  lint:
+    name: PHP lint
     runs-on: ubuntu-24.04
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: wordpress
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h localhost -proot"
-          --health-interval=10s --health-timeout=5s --health-retries=10
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -47,6 +36,47 @@ jobs:
           composer install --no-interaction --prefer-dist
           composer check-platform-reqs
           composer php:lint
+
+  integration:
+    name: WordPress ${{ matrix.wordpress }} / Timber ${{ matrix.timber }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        wordpress: ['6.7', 'latest']
+        timber: ['none', '^2.0']
+    env:
+      WORDPRESS_VERSION: ${{ matrix.wordpress }}
+      TIMBER_CONSTRAINT: ${{ matrix.timber }}
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: wordpress
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -proot"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.3'
+          extensions: dom, mbstring, mysqli
+          tools: composer:v2, wp-cli
+          coverage: none
+      - name: Install isolated Timber dependency
+        if: matrix.timber != 'none'
+        run: |
+          mkdir -p "$RUNNER_TEMP/timber"
+          composer require --working-dir="$RUNNER_TEMP/timber" "timber/timber:$TIMBER_CONSTRAINT" --no-interaction --prefer-dist
+          composer show --working-dir="$RUNNER_TEMP/timber" timber/timber
       - name: Set up Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -58,20 +88,38 @@ jobs:
           npm run build
       - name: Install disposable WordPress
         run: |
-          wp core download --path="$RUNNER_TEMP/site"
+          wp core download --path="$RUNNER_TEMP/site" --version="$WORDPRESS_VERSION"
           wp config create --path="$RUNNER_TEMP/site" --dbname=wordpress --dbuser=root --dbpass=root --dbhost=127.0.0.1
           wp core install --path="$RUNNER_TEMP/site" --url=http://aflpp.test --title=Tests --admin_user=test --admin_password=test-only-password --admin_email=test@example.test --skip-email
+          if [ "$TIMBER_CONSTRAINT" != 'none' ]; then
+            mkdir -p "$RUNNER_TEMP/site/wp-content/mu-plugins"
+            printf '%s\n' \
+              '<?php' \
+              "require \"$RUNNER_TEMP/timber/vendor/autoload.php\";" \
+              '\Timber\Timber::init();' > "$RUNNER_TEMP/site/wp-content/mu-plugins/timber.php"
+          fi
           ln -s "$GITHUB_WORKSPACE" "$RUNNER_TEMP/site/wp-content/plugins/a-floating-live-preview-panel"
           wp plugin activate a-floating-live-preview-panel --path="$RUNNER_TEMP/site"
+      - name: Verify fixture environment
+        run: |
+          wp core version --path="$RUNNER_TEMP/site"
+          wp --path="$RUNNER_TEMP/site" eval '
+            if ((getenv("TIMBER_CONSTRAINT") !== "none") !== class_exists(\Timber\Timber::class)) {
+                WP_CLI::error("Timber availability does not match the test matrix.");
+            }
+          '
+          echo '::notice::ACF Pro is not installed in this matrix. Its optional fixture is skipped, not verified.'
       - name: Run JavaScript and browser tests
         env:
           CHROMIUM_BIN: google-chrome
           WORDPRESS_ROOT: ${{ runner.temp }}/site
         run: npm test
-      - name: Run WordPress integration tests
+      - name: Run WordPress integration tests (ACF Pro checks skipped)
         run: |
           for fixture in tests/*.php; do
+            echo "::group::$fixture"
             wp --path="$RUNNER_TEMP/site" eval-file "$GITHUB_WORKSPACE/$fixture"
+            echo '::endgroup::'
           done
 
   plugin-check:

@@ -441,7 +441,8 @@ try {
     $_GET = $query($preview->savedPreviewUrl($post, $generatedRevisionId));
     $preview->authorizePreview();
     $check(
-        str_contains($excerptBlock(), 'Historical generated excerpt') && !str_contains($excerptBlock(), 'Saved excerpt'),
+        str_contains($excerptBlock(), 'Historical generated excerpt')
+        && !str_contains($excerptBlock(), 'Saved excerpt'),
         'An empty historical excerpt must generate from the selected historical content.'
     );
     $_GET = $query($currentUrl);

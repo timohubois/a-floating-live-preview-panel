@@ -279,11 +279,15 @@ The workflows use the same 10up WordPress.org deployment and GitHub release acti
 as the other plugins, with an explicit asset build before packaging:
 
 - **Commit Checks** runs on branch pushes and pull requests and is reused for release
-  tags. It uses Node.js 24 and PHP 8.3, builds the assets, runs PHP lint and JavaScript
-  tests (using the runner's Chrome), and runs the PHP fixtures in a disposable
-  single-site WordPress installation. A separate job checks the built distribution
-  with WordPress Plugin Check. Optional ACF and Timber coverage still requires the
-  corresponding dependencies on a test site.
+  tags. PHP lint runs separately. The integration matrix uses PHP 8.3 and Node.js 24
+  on WordPress 6.7 and the latest stable WordPress, each without Timber and with an
+  isolated Timber 2.x dependency. Every matrix job builds the assets, runs JavaScript
+  tests using the runner's Chrome and that WordPress version's jQuery/Quicktags, and
+  runs the PHP fixtures in a disposable single-site installation. Timber jobs verify
+  that the dependency is loaded so its real integration assertions cannot silently
+  skip. ACF Pro is not installed: the workflow explicitly reports its optional fixture
+  as skipped, not verified. ACF checks still require a separate test site with ACF Pro.
+  A separate job checks the built distribution with WordPress Plugin Check.
 - **Deploy and Release Plugin** runs on numeric tags such as `1.0.0`, without a `v`
   prefix. The tag, plugin header version and `readme.txt` stable tag must match;
   development placeholders must be updated before releasing. It waits for the

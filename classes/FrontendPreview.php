@@ -88,7 +88,7 @@ final class FrontendPreview
         if (!$authorized) {
             wp_die(
                 esc_html__(
-                    'This preview has expired or can’t be opened. Open a new preview from the editor or Revisions page.',
+                    'This preview has expired or can’t be opened. Open a new preview from the editor or Revisions page.', // phpcs:ignore Generic.Files.LineLength.TooLong -- Keep the translatable message intact.
                     'a-floating-live-preview-panel'
                 ),
                 '',

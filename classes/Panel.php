@@ -76,7 +76,7 @@ final class Panel
                 ),
                 'tabEdits' => __('Each tab keeps its own edits.', 'a-floating-live-preview-panel'),
                 'bootFailed' => __(
-                    'Couldn’t start live preview. Use WordPress Preview, or copy any changes you want to keep and reload the editor.',
+                    'Couldn’t start live preview. Use WordPress Preview, or copy any changes you want to keep and reload the editor.', // phpcs:ignore Generic.Files.LineLength.TooLong -- Keep the translatable message intact.
                     'a-floating-live-preview-panel'
                 ),
                 'reviewBeforeReload' => __(
@@ -99,12 +99,12 @@ final class Panel
                 ),
                 'unavailableTitle' => __('Live preview isn’t available yet', 'a-floating-live-preview-panel'),
                 'unavailable' => __(
-                    'Save a draft first. If the preview still won’t open, ask your site admin to check that revisions are turned on.',
+                    'Save a draft first. If the preview still won’t open, ask your site admin to check that revisions are turned on.', // phpcs:ignore Generic.Files.LineLength.TooLong -- Keep the translatable message intact.
                     'a-floating-live-preview-panel'
                 ),
                 'browserTitle' => __('Live preview can’t run here', 'a-floating-live-preview-panel'),
                 'browser' => __(
-                    'Try an up-to-date browser. If the preview still won’t open, ask your site admin to check that the editor and preview use the same secure website address.',
+                    'Try an up-to-date browser. If the preview still won’t open, ask your site admin to check that the editor and preview use the same secure website address.', // phpcs:ignore Generic.Files.LineLength.TooLong -- Keep the translatable message intact.
                     'a-floating-live-preview-panel'
                 ),
                 'saving' => __('Saving in WordPress…', 'a-floating-live-preview-panel'),
@@ -114,7 +114,7 @@ final class Panel
                     'a-floating-live-preview-panel'
                 ),
                 'nativePreviewFailed' => __(
-                    'We couldn’t check whether WordPress finished preparing its preview. Check the preview tab before continuing.',
+                    'We couldn’t check whether WordPress finished preparing its preview. Check the preview tab before continuing.', // phpcs:ignore Generic.Files.LineLength.TooLong -- Keep the translatable message intact.
                     'a-floating-live-preview-panel'
                 ),
             ],
