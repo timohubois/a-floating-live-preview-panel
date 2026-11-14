@@ -53,7 +53,7 @@ export function createPreviewControls(panel, strings, callbacks) {
                         onClick: closeMenu, 'data-action': 'open-preview',
                     }, strings.openPreview),
                     canPip && h(MenuItem, {
-                        icon: icons.pip, onClick: command(callbacks.popOut), 'data-action': 'pip', 'aria-label': strings.popOut,
+                        onClick: command(callbacks.popOut), 'data-action': 'pip', 'aria-label': strings.popOut,
                     }, strings.popOut),
                     canFullscreen && h(MenuItem, {
                         onClick: command(callbacks.fullscreen), 'data-action': 'fullscreen',

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { icons } from '../src/panel/icons.js';
 import { moreVertical } from '@wordpress/icons';
 import { sourceForVm } from './helpers/modules.mjs';
@@ -58,10 +59,12 @@ function fixture() {
     return { controls, state, mounts, calls, nodes, icons, body };
 }
 
-test('PiP uses the official window icon and shared label, not a fake shortcut', () => {
+test('PiP uses a text-only menu label without an icon or a fake shortcut', async () => {
+    const panelSource = await readFile(new URL('../classes/Admin/Panel.php', import.meta.url), 'utf8');
+    assert.match(panelSource, /'popOut' => __\('Pop out preview \(PiP\)',/);
     const h = fixture();
     const item = h.nodes('MenuItem').find(({ props }) => props['data-action'] === 'pip');
-    assert.equal(item.props.icon, h.icons.pip);
+    assert.equal(item.props.icon, undefined);
     assert.equal(item.props.suffix, undefined);
     assert.equal(item.props['aria-label'], 'Pop out preview (PiP)');
     assert.equal(item.children[0], 'Pop out preview (PiP)');
@@ -200,7 +203,7 @@ test('controls pass the official bundled icon elements directly to native compon
     assert.equal(h.nodes('Button').find(({ props }) => props['data-action'] === 'move').props.icon, h.icons.move);
     assert.equal(h.nodes('Button').some(({ props }) => props.icon === h.icons.resize), false);
     const icons = [...h.nodes('Button'), ...h.nodes('MenuItem')].map(({ props }) => props.icon).filter(Boolean);
-    assert.ok(icons.length >= 7, 'cover header, viewport and preference icons');
+    assert.ok(icons.length >= 6, 'cover header, PiP shortcut and preference icons');
     for (const icon of icons) {
         assert.ok(Object.values(h.icons).includes(icon), 'do not reconstruct or modify the library icons');
         assert.equal(icon.props.style.fill, 'none', 'official inline paint must override native-button SVG fill');
