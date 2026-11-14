@@ -92,7 +92,7 @@ function browserTests(css) {
         const name = `${direction} ${anchor} boundary resizing stays physical, keyboard-accessible and out of the header`;
         panel.dir = direction;
         panel.dataset.anchor = anchor;
-        panel.innerHTML = `<div class="aflpp-header"><button class="components-button aflpp-move">Move preview</button><span class="aflpp-caption">Title</span></div>
+        panel.innerHTML = `<header class="aflpp-header"><button class="components-button aflpp-move">Move preview</button><h2 class="aflpp-caption">Title</h2></header>
             <span class="aflpp-edge aflpp-edge-n"></span><span class="aflpp-edge aflpp-edge-e"></span><span class="aflpp-edge aflpp-edge-nw"></span>
             <div class="aflpp-resize-control"><button class="aflpp-resize" aria-label="Resize preview"></button></div>`;
         document.body.append(panel);
@@ -143,7 +143,7 @@ function nativeLauncherTests() {
     const results = [];
     const check = (condition, message) => { if (!condition) throw new Error(message); };
     for (const direction of ['ltr', 'rtl']) {
-        const name = `native ${direction} launcher renders a Card and Button with an accessible description`;
+        const name = `native ${direction} launcher renders a secondary Button with an accessible description`;
         const container = document.createElement('div');
         container.dir = direction;
         container.className = 'aflpp-launcher';
@@ -153,7 +153,8 @@ function nativeLauncherTests() {
         document.body.append(container);
         try {
             const button = window.previewControls.createPreviewLauncher(container);
-            check(button instanceof HTMLButtonElement && button.classList.contains('components-button'), 'Render the native Button component.');
+            check(button instanceof HTMLButtonElement && button.classList.contains('components-button') && button.classList.contains('is-secondary'), 'Render the native secondary Button component.');
+            check(container.firstElementChild === button && !container.querySelector('.components-card'), 'Render the button directly without a Card edge competing with its focus ring.');
             check(container.hidden && !button.getClientRects().length && button.getAttribute('aria-expanded') === 'false', 'Hide the entire native surface until it is positioned.');
             check(button.getAttribute('aria-controls') === 'aflpp-panel' && !button.hasAttribute('href'), 'Keep native button semantics.');
             check(button.getAttribute('aria-label') === 'Live preview', 'Keep the action label independent of status messages.');
@@ -162,17 +163,24 @@ function nativeLauncherTests() {
             const arrow = button.querySelector('.components-external-link__icon');
             check(arrow.textContent === (direction === 'rtl' ? '↖' : '↗') && arrow.getAttribute('aria-hidden') === 'true', 'Keep the trailing arrow decorative and directional.');
             container.hidden = false;
-            const card = container.firstElementChild;
-            const reference = card.cloneNode(true);
-            reference.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
+            const reference = button.cloneNode(true);
+            reference.removeAttribute('id');
+            reference.removeAttribute('aria-describedby');
             document.body.append(reference);
             try {
-                const properties = ['backgroundColor', 'border', 'borderRadius', 'boxShadow', 'fontFamily', 'fontSize', 'fontWeight', 'padding', 'color'];
-                const appearance = (element) => properties.map((property) => getComputedStyle(element)[property]);
-                check(JSON.stringify(appearance(card)) === JSON.stringify(appearance(reference)), 'Do not override the native Card appearance.');
-                check(JSON.stringify(appearance(button)) === JSON.stringify(appearance(reference.querySelector('button'))), 'Do not override the native Button appearance.');
-                check(getComputedStyle(card).backgroundColor !== 'rgba(0, 0, 0, 0)', 'The native Card must provide an opaque floating surface.');
-                check([...card.querySelectorAll('div')].some((node) => getComputedStyle(node).boxShadow !== 'none'), 'Let Card supply its native elevation shadow.');
+                const properties = ['backgroundColor', 'border', 'borderRadius', 'boxShadow', 'fontFamily', 'fontSize', 'fontWeight', 'padding', 'color', 'outlineStyle', 'outlineWidth', 'outlineColor', 'outlineOffset'];
+                const appearance = (element) => JSON.stringify(properties.map((property) => getComputedStyle(element)[property]));
+                for (const focused of [false, true]) {
+                    if (focused) button.focus();
+                    const actual = appearance(button);
+                    if (focused) reference.focus();
+                    check(actual === appearance(reference), 'Preserve native secondary Button appearance and focus.');
+                    button.blur();
+                    reference.blur();
+                }
+                check(getComputedStyle(container).backgroundColor === 'rgb(255, 255, 255)', 'Keep the floating surface opaque over editor content.');
+                check(getComputedStyle(container).boxShadow !== 'none', 'Apply the subtle floating shadow to the mount, not the button focus ring.');
+                check(getComputedStyle(container).borderRadius === getComputedStyle(button).borderRadius, 'Align the floating surface with the native button corners.');
             } finally { reference.remove(); }
             button.focus();
             check(document.activeElement === button, 'The native button must receive focus.');
@@ -184,7 +192,7 @@ function nativeLauncherTests() {
             button.querySelector('.aflpp-launcher-label').textContent = 'A long translated live preview label '.repeat(8);
             const box = container.getBoundingClientRect();
             const icon = arrow.getBoundingClientRect();
-            check(box.width <= 120 && button.getBoundingClientRect().width <= box.width, 'Fit the entire Card and Button to the available width.');
+            check(box.width <= 120 && button.getBoundingClientRect().width <= box.width, 'Fit the entire secondary Button to the available width.');
             check(icon.width > 0 && icon.left >= box.left && icon.right <= box.right && button.scrollWidth <= button.clientWidth, 'Keep the native trailing arrow visible while truncating only the label.');
             results.push({ name });
         } catch (error) { results.push({ name, error: error.stack }); }

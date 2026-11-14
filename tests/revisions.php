@@ -62,6 +62,15 @@ try {
     foreach (['aflpp-move-control', 'aflpp-caption', 'aflpp-resize'] as $class) {
         $check($byClass($class)->length === 1, 'The rendered panel needs one ' . $class . ' binding.');
     }
+    $panel = $document->getElementById('aflpp-panel');
+    $caption = $byClass('aflpp-caption')->item(0);
+    $check(
+        $caption->tagName === 'h2' && trim($caption->textContent) !== ''
+        && $caption->getAttribute('id') !== '' && $panel
+        && $panel->getAttribute('aria-labelledby') === $caption->getAttribute('id')
+        && !$panel->hasAttribute('aria-label'),
+        'The panel must be labelled by its visible heading, including before JavaScript initializes.'
+    );
     $header = $byClass('aflpp-header')->item(0);
     $check(
         $header && $xpath->query('.//button | .//*[@tabindex >= 0]', $header)->length === 0,

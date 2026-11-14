@@ -14,22 +14,22 @@ defined('ABSPATH') || exit;
         'a-floating-live-preview-panel'
     ); ?>"></div>
 <section id="aflpp-panel" class="aflpp-panel" data-state="loading" data-has-preview="false" data-has-feedback="false"
-    aria-label="<?php echo esc_attr($title); ?>" hidden>
-    <div class="aflpp-header">
+    aria-labelledby="aflpp-title" hidden>
+    <header class="aflpp-header">
         <div class="aflpp-move-control"></div>
         <div class="aflpp-refresh-control"></div>
         <div class="aflpp-titlebar">
-            <span class="aflpp-caption"></span>
+            <h2 id="aflpp-title" class="aflpp-caption"><?php echo esc_html($title); ?></h2>
         </div>
         <div class="aflpp-controls"></div>
-    </div>
+    </header>
     <div class="aflpp-feedback" hidden></div>
     <div class="aflpp-viewport">
         <div class="aflpp-stage"></div>
         <div class="aflpp-empty"></div>
         <div class="aflpp-pip-control"></div>
     </div>
-    <div class="aflpp-devicebar" hidden>
+    <footer class="aflpp-devicebar" hidden>
         <div class="aflpp-device-controls"></div>
         <span class="aflpp-dimensions"
             title="<?php esc_attr_e(
@@ -37,7 +37,7 @@ defined('ABSPATH') || exit;
                 'a-floating-live-preview-panel'
             ); ?>">
         </span>
-    </div>
+    </footer>
     <?php foreach (['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] as $edge) : ?>
         <span class="aflpp-edge aflpp-edge-<?php echo esc_attr($edge); ?>"
             data-resize-edge="<?php echo esc_attr($edge); ?>" aria-hidden="true"></span>

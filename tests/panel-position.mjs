@@ -8,7 +8,7 @@ import { sourceForVm } from './helpers/modules.mjs';
 function browserTests({ core, css, geometry, source }) {
     const results = [];
     for (const direction of ['ltr', 'rtl']) for (const [width, height] of [[1440, 900], [800, 600], [600, 480], [390, 600], [320, 240]]) {
-        const name = `${direction} ${width}×${height}: startup, native gutters, drag fitting and focus`;
+        const name = `${direction} ${width}×${height}: heading label, startup, native gutters, drag fitting and focus`;
         const frame = document.createElement('iframe');
         frame.style.cssText = `width:${width}px;height:${height}px;border:0;display:block`;
         document.body.append(frame);
@@ -30,12 +30,13 @@ function browserTests({ core, css, geometry, source }) {
                 ${css}
                 </style></head><body><div id="wpadminbar"></div>
                 <div id="wpcontent"><div id="wpbody-content"><div class="wrap">Editor content</div></div></div>
-                <div id="aflpp-toggle" class="aflpp-launcher" hidden><div><button type="button" class="components-button"><span class="aflpp-launcher-label">Revision preview</span><span class="components-external-link__icon wp-exclude-emoji" aria-hidden="true">${direction === 'rtl' ? '↖' : '↗'}</span></button></div></div>
-                <section id="aflpp-panel" class="aflpp-panel" hidden>
-                    <div class="aflpp-header"><div class="aflpp-move-control"><button>Move</button></div>
-                        <div class="aflpp-caption"></div><div class="aflpp-controls"><button data-action="actions">Actions</button></div></div>
+                <div id="aflpp-toggle" class="aflpp-launcher" hidden><button type="button" class="components-button is-secondary"><span class="aflpp-launcher-label">Revision preview</span><span class="components-external-link__icon wp-exclude-emoji" aria-hidden="true">${direction === 'rtl' ? '↖' : '↗'}</span></button></div>
+                <section id="aflpp-panel" class="aflpp-panel" aria-labelledby="aflpp-title" hidden>
+                    <header class="aflpp-header"><div class="aflpp-move-control"><button>Move</button></div>
+                        <div class="aflpp-titlebar"><h2 id="aflpp-title" class="aflpp-caption">Live preview</h2></div>
+                        <div class="aflpp-controls"><button data-action="actions">Actions</button></div></header>
                     <div class="aflpp-feedback" hidden></div><div class="aflpp-viewport"><div class="aflpp-stage"></div><div class="aflpp-empty"></div></div>
-                    <div class="aflpp-devicebar"><span class="aflpp-dimensions"></span></div>
+                    <footer class="aflpp-devicebar"><span class="aflpp-dimensions"></span></footer>
                     <button class="aflpp-resize"></button><span role="status"></span>
                 </section></body></html>`);
             doc.close();
@@ -68,10 +69,23 @@ function browserTests({ core, css, geometry, source }) {
             const createPreviewPanel = win.Function('imports', `${source}\nreturn createPreviewPanel;`)(imports);
             const strings = new Proxy({}, { get: (target, key) => String(key) });
             const view = createPreviewPanel(strings, {
+                postTitle: 'Initial post title',
                 onOpen: () => view.setVisible(true), onClose: () => view.setVisible(false),
             });
             const launcher = doc.querySelector('#aflpp-toggle button');
             const panel = doc.getElementById('aflpp-panel');
+            const caption = panel.querySelector('.aflpp-caption');
+            if (caption.tagName !== 'H2' || caption.tabIndex !== -1
+                || doc.getElementById(panel.getAttribute('aria-labelledby')) !== caption
+                || caption.textContent !== 'preview — Initial post title') {
+                throw new Error('Name the panel through its visible, non-interactive heading.');
+            }
+            view.setTitle('  Updated\n<title>  ');
+            if (caption.textContent !== 'preview — Updated <title>' || caption.childElementCount) {
+                throw new Error('Keep the linked heading current and treat post titles as plain text.');
+            }
+            view.setTitle('');
+            if (caption.textContent !== strings.title) throw new Error('An empty post title must retain the default panel name.');
             const close = (actual, expected, message) => {
                 if (Math.abs(actual - expected) > 1) throw new Error(`${message}: got ${actual}, expected ${expected}`);
             };

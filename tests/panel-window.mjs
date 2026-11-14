@@ -234,17 +234,17 @@ test('an initially closed panel does not claim to load a preview on launcher hov
     assert.equal(launcher.title, 'Live preview');
 });
 
-test('launcher geometry and visibility apply to the whole Card while the native Button owns interactions', () => {
+test('launcher geometry and visibility apply to its floating surface while the native Button owns interactions', () => {
     const h = fixture();
     assert.equal(h.launcherContainer.hidden, false);
     assert.ok(parseFloat(h.launcherContainer.style.left) > 0);
-    assert.equal(h.launcher.style.left, undefined, 'Do not position the Button separately from its Card.');
+    assert.equal(h.launcher.style.left, undefined, 'Do not position the Button separately from its floating surface.');
     for (const event of ['click', 'keydown', 'pointerdown']) {
         assert.equal(getEventListeners(h.launcher, event).length, 1);
         assert.equal(getEventListeners(h.launcherContainer, event).length, 0);
     }
     h.launcher.fire('click', { detail: 0 });
-    assert.equal(h.launcherContainer.hidden, true, 'Do not leave an empty Card behind the open panel.');
+    assert.equal(h.launcherContainer.hidden, true, 'Do not leave an empty floating surface behind the open panel.');
     h.actions.close();
     assert.equal(h.launcherContainer.hidden, false);
     assert.equal(h.document.activeElement, h.launcher);

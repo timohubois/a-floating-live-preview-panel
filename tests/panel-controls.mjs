@@ -69,16 +69,27 @@ test('PHP supplies only the launcher mount and escaped labels, not a hand-writte
     assert.doesNotMatch(launcher, /<button|components-button|components-external-link/);
 });
 
+test('panel scopes its header and footer to a section labelled by its visible heading', async () => {
+    const template = await readFile(new URL('../views/panel.php', import.meta.url), 'utf8');
+    const panel = template.match(/<section\b[\s\S]*?<\/section>/)?.[0];
+    assert.ok(panel, 'Keep the panel as its own section.');
+    const section = panel.match(/^<section\b[^>]*>/)[0];
+    assert.match(section, /aria-labelledby="aflpp-title"/);
+    assert.doesNotMatch(section, /\baria-label=/);
+    assert.ok(panel.includes('<h2 id="aflpp-title" class="aflpp-caption"><?php echo esc_html($title); ?></h2>'));
+    assert.match(panel, /<header class="aflpp-header">[\s\S]*?class="aflpp-controls"[\s\S]*?<\/header>/);
+    assert.match(panel, /<footer class="aflpp-devicebar" hidden>[\s\S]*?class="aflpp-device-controls"[\s\S]*?<\/footer>/);
+});
+
 for (const direction of ['ltr', 'rtl']) {
-    test(`launcher renders a native WordPress Card and Button synchronously in ${direction}`, () => {
-        const Card = Symbol('Native Card');
+    test(`launcher renders a native WordPress secondary Button synchronously in ${direction}`, () => {
         const Button = Symbol('Native Button');
         const button = {};
         const container = { dataset: { title: 'Revision preview', moveHelp: 'Drag or use arrow keys.', direction } };
         let tree;
         let mounts = 0;
         const imports = {
-            '@wordpress/components': { Button, Card },
+            '@wordpress/components': { Button },
             './icons.js': {},
             '@wordpress/element': {
                 createElement: (type, props, ...children) => ({ type, props, children }),
@@ -87,12 +98,8 @@ for (const direction of ['ltr', 'rtl']) {
                     assert.equal(target, container);
                     mounts++;
                     return { render(node) {
-                        assert.equal(node.type, Card);
-                        assert.equal(node.props.elevation, 2, 'Use native elevation instead of custom shadow CSS.');
-                        assert.equal(node.props.size, 'none');
-                        assert.equal(node.props.style, undefined);
-                        assert.equal(node.props.className, undefined, 'Only the outer mount needs plugin layout CSS.');
-                        tree = node.children[0];
+                        assert.equal(node.type, Button, 'Render the button directly, without a Card wrapper.');
+                        tree = node;
                         tree.props.ref(button);
                     } };
                 },
@@ -102,6 +109,7 @@ for (const direction of ['ltr', 'rtl']) {
         assert.equal(createLauncher(container), button, 'Bind interactions to the actual native button after mounting.');
         assert.equal(mounts, 1);
         assert.equal(tree.type, Button);
+        assert.equal(tree.props.variant, 'secondary');
         assert.equal(tree.props.className, undefined, 'The native component supplies its own components-button class.');
         assert.equal(tree.props.style, undefined);
         assert.equal(tree.props.label, 'Revision preview');
@@ -234,6 +242,9 @@ test('placeholder actions and loading use public components with no custom spinn
     const placeholder = h.nodes('Placeholder')[0];
     assert.equal(placeholder.props.instructions, 'Preparing');
     assert.equal(placeholder.props.icon.type, 'Spinner');
+    assert.equal(placeholder.props.label.type, 'h3', 'Nest the empty state below the panel heading.');
+    assert.equal(placeholder.props.label.children[0], 'Loading');
+    assert.equal(placeholder.props.label.props.tabIndex, -1, 'Keep programmatic focus without adding a Tab stop.');
     const retry = h.nodes('Button').find(({ props }) => props['data-action'] === 'retry');
     assert.equal(retry.props.disabled, true);
     assert.equal(retry.props.variant, 'primary');

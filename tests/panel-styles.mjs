@@ -41,8 +41,8 @@ function browserTests({ core, panel, strings }) {
     }
     const name = 'shared recovery text balances without changing captions or preview content';
     try {
-        shell.innerHTML = `<span class="aflpp-caption">Preview title</span>
-            <div class="aflpp-placeholder"><h2 class="aflpp-empty-title">${strings.failed}</h2>
+        shell.innerHTML = `<h2 id="aflpp-title" class="aflpp-caption">Preview title</h2>
+            <div class="aflpp-placeholder"><h3 class="aflpp-empty-title">${strings.failed}</h3>
                 <div class="components-placeholder__instructions">${strings.reviewBeforeReload}</div>
                 <p class="aflpp-empty-note">${strings.tabEdits}</p></div>
             <div class="aflpp-feedback"><div class="components-notice__content"><p>${strings.refreshFailed}</p></div></div>
@@ -52,8 +52,13 @@ function browserTests({ core, panel, strings }) {
                 throw new Error(`${selector} must use balanced wrapping.`);
             }
         }
-        if (getComputedStyle(shell.querySelector('.aflpp-caption')).whiteSpace !== 'nowrap') {
+        const captionStyle = getComputedStyle(shell.querySelector('.aflpp-caption'));
+        const panelStyle = getComputedStyle(shell);
+        if (captionStyle.whiteSpace !== 'nowrap') {
             throw new Error('Keep the toolbar caption on one line.');
+        }
+        if (captionStyle.font !== panelStyle.font || captionStyle.color !== panelStyle.color || captionStyle.margin !== '0px') {
+            throw new Error('The semantic heading must retain the caption typography and spacing.');
         }
         if (getComputedStyle(shell.querySelector('.aflpp-viewport p')).textWrap === 'balance') {
             throw new Error('Do not apply message wrapping to preview content.');

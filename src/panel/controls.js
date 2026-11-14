@@ -1,6 +1,6 @@
 import { createElement as h, createPortal, createRoot, flushSync, Fragment } from '@wordpress/element';
 import {
-    Button, Card, DropdownMenu, MenuGroup, MenuItem, MenuItemsChoice, Notice, Placeholder,
+    Button, DropdownMenu, MenuGroup, MenuItem, MenuItemsChoice, Notice, Placeholder,
     Popover, SlotFillProvider, Spinner, Toolbar, ToolbarButton,
 } from '@wordpress/components';
 import { icons } from './icons.js';
@@ -9,15 +9,13 @@ import { icons } from './icons.js';
 export function createPreviewLauncher(container) {
     let button;
     const { title, moveHelp, direction } = container.dataset;
-    flushSync(() => createRoot(container).render(h(Card, { elevation: 2, size: 'none' },
-        h(Button, {
-            ref: (element) => { button = element; },
-            label: title, title, description: moveHelp,
-            'aria-controls': 'aflpp-panel', 'aria-expanded': false,
-        },
-        h('span', { className: 'aflpp-launcher-label' }, title),
-        h('span', { className: 'components-external-link__icon wp-exclude-emoji', 'aria-hidden': true }, direction === 'rtl' ? '↖' : '↗'),
-        ),
+    flushSync(() => createRoot(container).render(h(Button, {
+        ref: (element) => { button = element; },
+        variant: 'secondary', label: title, title, description: moveHelp,
+        'aria-controls': 'aflpp-panel', 'aria-expanded': false,
+    },
+    h('span', { className: 'aflpp-launcher-label' }, title),
+    h('span', { className: 'components-external-link__icon wp-exclude-emoji', 'aria-hidden': true }, direction === 'rtl' ? '↖' : '↗'),
     )));
     return button;
 }
@@ -129,7 +127,7 @@ export function createPreviewControls(panel, strings, callbacks) {
             ), devicesContainer),
             createPortal(empty && h(Placeholder, {
                 className: 'aflpp-placeholder', icon: empty.busy ? h(Spinner) : icons[empty.icon],
-                label: h('h2', { className: 'aflpp-empty-title', tabIndex: -1, 'data-action': 'empty-title' }, empty.heading),
+                label: h('h3', { className: 'aflpp-empty-title', tabIndex: -1, 'data-action': 'empty-title' }, empty.heading),
                 instructions: empty.description,
             },
             empty.retry && h(Button, {
