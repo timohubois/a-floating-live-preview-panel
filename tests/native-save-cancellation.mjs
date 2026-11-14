@@ -47,7 +47,7 @@ async function browserFixture(editorSource, nativeSource) {
         const config = { available: true, endpoint: '/preview', base: 'base', strings: {} };
         native = new Function(`${nativeSource}\nreturn createNativeEditor;`)()(config, form);
         const initPreview = new Function('imports', `${editorSource}\nreturn initLivePreview;`)({
-            '../compatibility/acf.js': { initAcf() { throw new Error('ACF is disabled.'); } },
+            '../compatibility/acf-fields.js': { initAcf() { throw new Error('ACF is disabled.'); } },
             '../panel/window.js': { createPreviewPanel: (strings, callbacks) => { options = callbacks; return view; } },
             '../preview/scroll.js': { createPreviewScroll: () => ({ remember() {} }) },
         });
@@ -91,7 +91,7 @@ async function browserFixture(editorSource, nativeSource) {
     };
 }
 
-const editorSource = await previewSourceForVm(new URL('../src/classic-editor/live-preview.js', import.meta.url));
+const editorSource = await previewSourceForVm(new URL('../src/classic-editor/editor.js', import.meta.url));
 const nativeSource = await sourceForVm(new URL('../src/classic-editor/native-editor.js', import.meta.url));
 const jquery = process.env.WORDPRESS_ROOT
     ? await readFile(join(process.env.WORDPRESS_ROOT, 'wp-includes/js/jquery/jquery.js'), 'utf8') : '';

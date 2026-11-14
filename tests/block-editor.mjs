@@ -34,7 +34,9 @@ function fixture({ ready = true, available = true, route = '/wp/v2/posts/123', a
         isPreviewingPost: () => state.previewing,
     };
     const config = {
-        postId: 123, postType: 'post', postRoute: route, restRoot: 'http://site.test/wp-json/', endpoint: 'http://site.test/wp-json/a-floating-live-preview-panel/v1/posts/123/preview',
+        postId: 123, postType: 'post', postRoute: route, restRoot: 'http://site.test/wp-json/',
+        postFormUrl: 'http://site.test/wp-admin/post.php',
+        endpoint: 'http://site.test/wp-json/a-floating-live-preview-panel/v1/posts/123/preview',
         base: 'a'.repeat(64), available, acfEnabled, adminCookiePath: '/wp-admin/', strings: { nativeSaveFailed: 'Reload editor', postOnly: 'Return to post', acfRefreshing: 'Waiting for ACF fields' },
     };
     const document = {
@@ -43,9 +45,9 @@ function fixture({ ready = true, available = true, route = '/wp/v2/posts/123', a
     };
     const context = {
         URL, URLSearchParams, FormData, queueMicrotask, document,
-        window: { crypto: webcrypto, location: new URL('http://site.test/wp-admin/post.php'), _wpMetaBoxUrl: 'http://site.test/wp-admin/post.php?post=123&meta-box-loader=1', addEventListener() {} },
+        window: { crypto: webcrypto, location: new URL('http://site.test/wp-admin/post.php'), addEventListener() {} },
         imports: {
-            '../compatibility/block-editor-acf.js': { createBlockEditorAcf(changed) {
+            '../compatibility/acf-block-editor.js': { createBlockEditorAcf(changed) {
                 acfChanged = changed;
                 return {
                     get ready() { return acfFields.ready; }, observe() {},
@@ -302,6 +304,49 @@ test('legacy meta-box saving chains the REST base and preserves native FormData 
     await h.emit();
     assert.equal(h.calls.resumes.length, resumes + 1);
 });
+
+test('native meta-box receipts use WordPress-provided admin paths without a private editor global', async () => {
+    const h = fixture();
+    h.config.postFormUrl = 'http://site.test/wordpress/wp-admin/post.php';
+    const body = h.metaBody();
+    await h.request({
+        url: `${h.config.postFormUrl}?post=123&meta-box-loader=1&meta-box-loader-nonce=rotated-native-nonce`,
+        method: 'POST', body, parse: false,
+    }, async (options) => {
+        assert.equal(options.body.get('post_ID'), '123');
+        assert.equal(options.body.get('aflpp_base'), 'a'.repeat(64));
+        assert.match(options.url, /meta-box-loader-nonce=rotated-native-nonce$/);
+        h.cookies.set(`aflpp_preview_${options.body.get('aflpp_preview')}`, `${'a'.repeat(64)}.${'b'.repeat(64)}`);
+        return {};
+    });
+    assert.equal(h.config.base, 'b'.repeat(64));
+    assert.equal(body.has('aflpp_preview'), false);
+});
+
+for (const target of ['another-origin', 'another-admin-path', 'another-post', 'another-action', 'not-meta-boxes', 'no-form-url']) {
+    test(`legacy meta-box matching leaves ${target} requests unchanged`, async () => {
+        const h = fixture();
+        const body = h.metaBody();
+        let url = `${h.config.postFormUrl}?post=123&meta-box-loader=1`;
+        if (target === 'another-origin') url = url.replace('site.test', 'elsewhere.test');
+        if (target === 'another-admin-path') url = url.replace('/wp-admin/', '/another/wp-admin/');
+        if (target === 'another-post') body.set('post_ID', '456');
+        if (target === 'another-action') body.set('action', 'unrelated');
+        if (target === 'not-meta-boxes') url = h.config.postFormUrl;
+        if (target === 'no-form-url') delete h.config.postFormUrl;
+        const options = { url, method: 'POST', body, parse: false };
+        const response = {};
+        const result = await h.request(options, async (forwarded) => {
+            assert.equal(forwarded, options);
+            assert.equal(forwarded.body, body);
+            assert.equal(forwarded.body.has('aflpp_preview'), false);
+            return response;
+        });
+        assert.equal(result, response);
+        assert.equal(h.config.base, 'a'.repeat(64));
+        assert.equal(h.calls.pauses.length, 0);
+    });
+}
 
 test('a missing meta-box receipt cannot silently accept metadata changes', async () => {
     const h = fixture();

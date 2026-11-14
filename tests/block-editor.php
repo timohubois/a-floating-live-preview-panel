@@ -2,7 +2,6 @@
 
 /** Run with `wp eval-file tests/block-editor.php`; fixtures are created and removed on this single site. */
 
-use AFloatingLivePreviewPanel\Compatibility\Acf;
 use AFloatingLivePreviewPanel\Preview\LivePreview;
 use AFloatingLivePreviewPanel\Preview\FrontendPreview;
 
@@ -18,7 +17,7 @@ $check = static function (bool $condition, string $message): void {
 $originalUser = get_current_user_id();
 $users = [];
 $posts = [];
-$live = new LivePreview(new Acf());
+$live = new LivePreview();
 register_post_meta('post', '_aflpp_rejected_meta', [
     'single' => true, 'type' => 'string', 'show_in_rest' => true,
     'auth_callback' => '__return_false',
@@ -121,8 +120,12 @@ try {
             (int) get_post_meta($imageRevision, '_thumbnail_id', true) === $expected,
             'Featured-image replacement, removal and omitted-input seeding must stay revision-local.'
         );
-        $frontendAcf = new Acf();
-        $frontend = new FrontendPreview(dirname(__DIR__) . '/a-floating-live-preview-panel.php', $live, $frontendAcf);
+        $originalHooks = [];
+        $previewHooks = ['the_preview', 'timber/post/import_data', 'acf/validate_post_id', 'acf/pre_load_metadata'];
+        foreach ($previewHooks as $hook) {
+            $originalHooks[$hook] = isset($GLOBALS['wp_filter'][$hook]) ? clone $GLOBALS['wp_filter'][$hook] : null;
+        }
+        $frontend = new FrontendPreview(dirname(__DIR__) . '/a-floating-live-preview-panel.php', $live);
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Preserve request globals in the CLI fixture.
         $originalGet = $_GET;
         try {
@@ -141,12 +144,15 @@ try {
         } finally {
             $_GET = $originalGet;
             remove_action('init', [$frontend, 'authorizePreview'], 20);
-            remove_filter('the_preview', [$frontend, 'readPost']);
-            remove_filter('timber/post/import_data', [$frontend, 'readTimberPost'], PHP_INT_MAX);
             remove_filter('get_post_metadata', [$frontend, 'readRevisionMeta']);
             remove_action('template_redirect', [$frontend, 'checkPreviewTarget'], -1);
-            remove_filter('acf/validate_post_id', [$frontendAcf, 'readPostId'], PHP_INT_MAX);
-            remove_filter('acf/pre_load_metadata', [$frontendAcf, 'readMetadata'], PHP_INT_MAX);
+            foreach ($originalHooks as $hook => $callbacks) {
+                if ($callbacks === null) {
+                    unset($GLOBALS['wp_filter'][$hook]);
+                } else {
+                    $GLOBALS['wp_filter'][$hook] = $callbacks;
+                }
+            }
         }
         $check(
             $live->fingerprint($draft) === $base && get_post_thumbnail_id($draft) === $images[0],

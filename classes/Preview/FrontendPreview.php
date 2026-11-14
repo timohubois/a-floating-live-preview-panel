@@ -2,7 +2,6 @@
 
 namespace AFloatingLivePreviewPanel\Preview;
 
-use AFloatingLivePreviewPanel\Compatibility\Acf;
 use WP_Post;
 
 /** Authorize preview reads and render only the selected source on the frontend. */
@@ -16,8 +15,7 @@ final class FrontendPreview
 
     public function __construct(
         private readonly string $file,
-        private readonly LivePreview $livePreview,
-        private readonly Acf $acf
+        private readonly LivePreview $livePreview
     ) {
         add_action('init', [$this, 'authorizePreview'], 20);
     }
@@ -106,11 +104,17 @@ final class FrontendPreview
         // Bind core and compatibility reads to the authorized source, not the latest revision.
         remove_filter('the_preview', '_set_preview');
         add_filter('the_preview', [$this, 'readPost']);
-        // Timber can reload the parent by ID instead of using WordPress's filtered preview object.
-        add_filter('timber/post/import_data', [$this, 'readTimberPost'], PHP_INT_MAX, 2);
-        $this->acf->bindPreview($postId, $this->source->ID, $saved);
         add_filter('get_post_metadata', [$this, 'readRevisionMeta'], 10, 4);
         add_action('template_redirect', [$this, 'checkPreviewTarget'], -1);
+
+        /**
+         * Bind optional reads only after core has authorized and selected the preview source.
+         *
+         * @param int  $postId   Original post identity; unrelated posts must remain untouched.
+         * @param int  $sourceId Authorized post or revision ID, not the latest revision.
+         * @param bool $saved    Whether this is a read-only saved-source preview.
+         */
+        do_action('aflpp_preview_source', $postId, $this->source->ID, $saved);
     }
 
     /** History uses revision-enabled keys; live reads overlay only the supported featured-image input. */
@@ -138,16 +142,6 @@ final class FrontendPreview
             }
         }
         return $post;
-    }
-
-    public function readTimberPost(array $data, object $post): array
-    {
-        if ((int) $post->ID === $this->previewPostId && $this->source) {
-            foreach (['post_title', 'post_content', 'post_excerpt'] as $field) {
-                $data[$field] = $this->source->$field;
-            }
-        }
-        return $data;
     }
 
     public function checkPreviewTarget(): void

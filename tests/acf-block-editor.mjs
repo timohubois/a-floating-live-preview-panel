@@ -3,10 +3,10 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { sourceForVm } from './helpers/modules.mjs';
 
-const shared = await sourceForVm(new URL('../src/compatibility/acf.js', import.meta.url));
-const source = await sourceForVm(new URL('../src/compatibility/block-editor-acf.js', import.meta.url));
+const shared = await sourceForVm(new URL('../src/compatibility/acf-fields.js', import.meta.url));
+const source = await sourceForVm(new URL('../src/compatibility/acf-block-editor.js', import.meta.url));
 
-function fixture() {
+function fixture({ locations = ['normal', 'side'], nativeLocations = true } = {}) {
     let changes = 0, callback, disconnected = 0;
     const actions = new Map(), listeners = new Map(), watched = [], storeValues = new Map();
     const field = { isConnected: true, rows: [{ id: 'old-0' }, { id: 'old-1' }],
@@ -50,8 +50,10 @@ function fixture() {
     };
     const initAcf = vm.runInNewContext(`${shared}\ninitAcf`, context);
     context.imports = {
-        './acf.js': { initAcf },
-        '@wordpress/data': { select: () => storeValues.size ? { getFieldValue: (key) => storeValues.get(key) } : undefined },
+        './acf-fields.js': { initAcf },
+        '@wordpress/data': { select: (name) => name === 'core/edit-post'
+            ? (nativeLocations ? { getActiveMetaBoxLocations: () => locations } : undefined)
+            : (storeValues.size ? { getFieldValue: (key) => storeValues.get(key) } : undefined) },
     };
     const adapter = vm.runInNewContext(`${source}\ncreateBlockEditorAcf`, context)(() => changes++);
     return { adapter, actions, listeners, normal, field, watched, storeValues,
@@ -72,6 +74,28 @@ test('capture only native ACF meta-box values, retaining row deltas, empty value
     assert.equal(body.get('acf[field_side]'), 'Side field', 'unmounted native meta-box location is supported');
     for (const name of ['action', 'unrelated', '_wpnonce', 'acf[file]']) assert.equal(body.has(name), false);
     assert.equal(h.changes, 0, 'TinyMCE capture notifications cannot start another update');
+});
+
+test('capture follows WordPress active locations rather than including disabled meta-box locations', () => {
+    const h = fixture({ locations: ['normal'] });
+    const body = h.adapter.capture();
+    assert.equal(body.get('acf[field_text]'), 'Unsaved');
+    assert.equal(body.has('acf[field_side]'), false);
+});
+
+test('an empty native location list is respected without falling back to inactive forms', () => {
+    const h = fixture({ locations: [] });
+    const body = h.adapter.capture();
+    assert.equal(body.get('_acf_nonce'), 'nonce', 'native base fields remain available');
+    assert.equal(body.has('acf[field_text]'), false);
+    assert.equal(body.has('acf[field_side]'), false);
+});
+
+test('missing native location selectors retain the existing legacy form fallback', () => {
+    const h = fixture({ nativeLocations: false });
+    const body = h.adapter.capture();
+    assert.equal(body.get('acf[field_text]'), 'Unsaved');
+    assert.equal(body.get('acf[field_side]'), 'Side field');
 });
 
 test('only native meta-box input events trigger ACF updates; canvas and modal controls are excluded', () => {

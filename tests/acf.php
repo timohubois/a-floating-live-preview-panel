@@ -24,7 +24,7 @@ $check = static function (bool $condition, string $message): void {
 $originalUser = get_current_user_id();
 $user = 0;
 $postId = 0;
-$live = new LivePreview(new Acf());
+$live = new LivePreview();
 $send = static function (int $postId, array $data): WP_REST_Response {
     $request = new WP_REST_Request('POST', '/a-floating-live-preview-panel/v1/posts/' . $postId . '/preview');
     $request->set_header('X-WP-Nonce', wp_create_nonce('wp_rest'));
@@ -125,9 +125,7 @@ try {
             'Absent source metadata must not fall back to the parent.'
         );
     } finally {
-        remove_filter('acf/validate_post_id', [$reader, 'readPostId'], PHP_INT_MAX);
-        remove_filter('acf/pre_load_metadata', [$reader, 'readMetadata'], PHP_INT_MAX);
-        $reader->clearRevisionCache($postId);
+        $reader->unbindPreview();
     }
     if (function_exists('acf_register_block_type')) {
         acf_register_block_type([
@@ -163,9 +161,7 @@ try {
             $check(str_contains($html, 'Unsaved block meta'), 'Native ACF block rendering must read preview metadata.');
         } finally {
             $GLOBALS['post'] = $originalPost;
-            remove_filter('acf/validate_post_id', [$reader, 'readPostId'], PHP_INT_MAX);
-            remove_filter('acf/pre_load_metadata', [$reader, 'readMetadata'], PHP_INT_MAX);
-            $reader->clearRevisionCache($postId);
+            $reader->unbindPreview();
         }
     }
     WP_CLI::success('ACF preview saves, paginated merging, native post-meta blocks and source isolation passed.');

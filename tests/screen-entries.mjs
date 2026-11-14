@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import { sourceForVm } from './helpers/modules.mjs';
 
 const editorSource = await sourceForVm(new URL('../src/classic-editor.js', import.meta.url));
-const revisionsSource = await sourceForVm(new URL('../src/revisions.js', import.meta.url));
+const revisionsSource = await sourceForVm(new URL('../src/revision-browser.js', import.meta.url));
 const failureSource = await sourceForVm(new URL('../src/panel/startup-error.js', import.meta.url));
 
 function fixture(screen, { configured = true, formAvailable = true, modelAvailable = true, fail = false } = {}) {
@@ -35,13 +35,13 @@ function fixture(screen, { configured = true, formAvailable = true, modelAvailab
             calls.push('observe');
             return native;
         } },
-        './classic-editor/live-preview.js': { initLivePreview(received, observer) {
+        './classic-editor/editor.js': { initLivePreview(received, observer) {
             assert.equal(received, config);
             assert.equal(observer, native);
             calls.push('editor');
             if (fail) throw new Error('Fixture startup failure');
         } },
-        './revisions/preview.js': { initRevisionPreview(received, selection) {
+        './revision-browser/preview.js': { initRevisionPreview(received, selection) {
             assert.equal(received, config);
             assert.equal(selection, model);
             calls.push('revisions');

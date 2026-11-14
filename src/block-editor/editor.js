@@ -1,7 +1,7 @@
 import apiFetch from '@wordpress/api-fetch';
 import { select, subscribe } from '@wordpress/data';
 import { addFilter, removeFilter } from '@wordpress/hooks';
-import { createBlockEditorAcf } from '../compatibility/block-editor-acf.js';
+import { createBlockEditorAcf } from '../compatibility/acf-block-editor.js';
 
 const scope = 'a-floating-live-preview-panel';
 const fingerprint = /^[a-f0-9]{64}$/;
@@ -104,9 +104,11 @@ export function createBlockEditor(config) {
     }
 
     function isMetaSave(options) {
-        if (!window._wpMetaBoxUrl || !(options.body instanceof FormData) || typeof options.url !== 'string') return false;
+        if (typeof config.postFormUrl !== 'string'
+            || !(options.body instanceof FormData) || typeof options.url !== 'string') return false;
         const url = new URL(options.url, window.location.href);
-        const expected = new URL(window._wpMetaBoxUrl, window.location.href);
+        // WordPress supplies its admin form URL; do not depend on its private nonce-bearing JS global.
+        const expected = new URL(config.postFormUrl, window.location.href);
         return url.origin === window.location.origin && url.origin === expected.origin && url.pathname === expected.pathname
             && url.searchParams.has('meta-box-loader') && options.body.get('post_ID') === String(config.postId)
             && options.body.get('action') === 'editpost';

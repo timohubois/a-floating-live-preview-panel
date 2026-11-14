@@ -261,7 +261,7 @@ test('browser constraint validation resumes a rejected native Save', async () =>
     assert.equal(h.nativeEditor.saving, false);
 });
 
-const editorSource = await previewSourceForVm(new URL('../src/classic-editor/live-preview.js', import.meta.url));
+const editorSource = await previewSourceForVm(new URL('../src/classic-editor/editor.js', import.meta.url));
 
 for (const [saved, structural, blocked] of [[true, true, true], [false, true, false], [true, false, false]]) {
     test(`saved=${saved}, structural ACF changes=${structural}: ${blocked ? 'retain reload protection on reopen' : 'allow live preview'}`, async () => {
@@ -280,7 +280,7 @@ for (const [saved, structural, blocked] of [[true, true, true], [false, true, fa
             navigator: { locks: { request: () => { requests++; return new Promise(() => {}); } } },
         };
         context.imports = {
-            '../compatibility/acf.js': { initAcf: () => ({ hasStructuralPaginationChanges: () => structural }) },
+            '../compatibility/acf-fields.js': { initAcf: () => ({ hasStructuralPaginationChanges: () => structural }) },
             '../panel/window.js': { createPreviewPanel: (strings, options) => { callbacks = options; return view; } },
             '../preview/scroll.js': { createPreviewScroll: () => ({ remember() {} }) },
         };

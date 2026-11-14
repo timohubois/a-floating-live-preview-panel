@@ -21,6 +21,7 @@ export function initAcf(form, changed, watchEditor, cancelNativeSave) {
         isField,
         isValidating() { return !!form.classList?.contains('is-validating'); },
         hasStructuralPaginationChanges() {
+            // Value reads do not describe pending paginated row deltas; do not reconstruct ACF's row state.
             return !!form.querySelector(
                 '.acf-repeater[data-pagination="1"] .acf-row:is(.acf-added, .acf-inserted, .acf-reordered, .acf-deleted)'
             );

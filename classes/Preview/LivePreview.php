@@ -2,7 +2,6 @@
 
 namespace AFloatingLivePreviewPanel\Preview;
 
-use AFloatingLivePreviewPanel\Compatibility\Acf;
 use WP_Error;
 use WP_Post;
 use WP_REST_Request;
@@ -19,7 +18,7 @@ final class LivePreview
     /** @var \WeakMap<WP_REST_Request, array> */
     private \WeakMap $restSaves;
 
-    public function __construct(private readonly Acf $acf)
+    public function __construct()
     {
         $this->restSaves = new \WeakMap();
         add_filter('rest_request_before_callbacks', [$this, 'trackRestSave'], 10, 3);
@@ -285,43 +284,67 @@ final class LivePreview
                 $payload[$key] = $input[$key];
             }
         }
-        $payload = $this->acf->preparePayload($payload, $input);
-        if (is_wp_error($payload)) {
-            return $payload;
-        }
-
-        $payload = wp_slash($payload);
-
-        // ACF's classic-preview form hooks read $_POST during the revision save.
+        // Native form-save hooks read $_POST; scope both preparation and saving to this operation.
         $originalPost = $_POST;
         $revisionId = 0;
-        $seed = function (int $revisionId) use ($postId, $imageId): void {
-            $this->seedPreviewMeta($postId, $revisionId);
-            if ($imageId !== null && $this->ownsRevision($postId, $revisionId)) {
-                if ($imageId) {
-                    update_metadata('post', $revisionId, '_thumbnail_id', $imageId);
-                } else {
-                    delete_metadata('post', $revisionId, '_thumbnail_id');
-                }
-            }
-        };
-        add_action('save_post_revision', $seed, 0);
-        if (!defined('DOING_AUTOSAVE')) {
-            define('DOING_AUTOSAVE', true);
-        }
+        $seed = null;
+        $preparationError = null;
         try {
+            /**
+             * Extend the authorized, unslashed form payload, or reject it with WP_Error.
+             * Existing errors must be preserved by subsequent callbacks.
+             *
+             * @param array|WP_Error $payload Native revision-save form values or a prior error.
+             * @param array          $input   Unslashed editor input.
+             * @param int            $postId  Authorized parent post ID.
+             */
+            $payload = apply_filters('aflpp_preview_payload', $payload, $input, $postId);
+            if (is_wp_error($payload)) {
+                $preparationError = $payload;
+                return $payload;
+            }
+            $payload = wp_slash($payload);
+            $seed = function (int $revisionId) use ($postId, $imageId): void {
+                $this->seedPreviewMeta($postId, $revisionId);
+                if ($imageId !== null && $this->ownsRevision($postId, $revisionId)) {
+                    if ($imageId) {
+                        update_metadata('post', $revisionId, '_thumbnail_id', $imageId);
+                    } else {
+                        delete_metadata('post', $revisionId, '_thumbnail_id');
+                    }
+                }
+            };
+            add_action('save_post_revision', $seed, 0);
+            if (!defined('DOING_AUTOSAVE')) {
+                define('DOING_AUTOSAVE', true);
+            }
             $_POST = $payload;
             $revisionId = $this->writeRevision($postId, $payload);
         } finally {
-            remove_action('save_post_revision', $seed, 0);
+            if ($seed !== null) {
+                remove_action('save_post_revision', $seed, 0);
+            }
             $_POST = $originalPost;
-            $acfError = $this->acf->verifySave(is_wp_error($revisionId) ? 0 : (int) $revisionId);
+            /**
+             * Release save state and report integration failures; preserve any earlier error.
+             * Also runs with source ID 0 when preparation is rejected or throws.
+             *
+             * @param WP_Error|null $error      A prior integration error, or null.
+             * @param int           $revisionId Written revision ID, or 0 if no revision was written.
+             * @param int           $postId     Authorized parent post ID.
+             */
+            $saveError = apply_filters(
+                'aflpp_preview_save_error',
+                $preparationError,
+                is_wp_error($revisionId) ? 0 : (int) $revisionId,
+                $postId
+            );
         }
         if (is_wp_error($revisionId)) {
             return new WP_Error('aflpp_preview_failed', $revisionId->get_error_message(), ['status' => 400]);
         }
-        if ($acfError) {
-            return $acfError;
+        if ($saveError) {
+            return $saveError;
         }
         $revisionId = (int) $revisionId;
         if (!$revisionId || !$this->ownsRevision($postId, $revisionId)) {
@@ -406,7 +429,7 @@ final class LivePreview
         }
     }
 
-    /** Start from saved metadata before ACF overlays the submitted fields, including on reused previews. */
+    /** Start from saved metadata before save hooks overlay submitted fields, including on reused previews. */
     private function seedPreviewMeta(int $postId, int $revisionId): void
     {
         if (!$this->ownsRevision($postId, $revisionId)) {
@@ -425,7 +448,13 @@ final class LivePreview
                 add_metadata('post', $revisionId, $key, wp_slash($value));
             }
         }
-        $this->acf->clearRevisionCache($revisionId);
+        /**
+         * Invalidate integration caches after seeding the owned revision, before native save hooks run.
+         *
+         * @param int $revisionId Owned preview revision ID.
+         * @param int $postId     Authorized parent post ID.
+         */
+        do_action('aflpp_preview_meta_seeded', $revisionId, $postId);
     }
 
     private function ownsRevision(int $postId, int $revisionId): bool

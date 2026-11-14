@@ -1,4 +1,4 @@
-import { initAcf } from '../compatibility/acf.js';
+import { initAcf } from '../compatibility/acf-fields.js';
 import { createLivePreview } from '../preview/live-preview.js';
 
 // Classic fields and native form controls stay outside the shared preview lifecycle.

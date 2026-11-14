@@ -3,7 +3,6 @@
 /** Run with `wp eval-file tests/revisions.php` on a disposable single-site installation with this plugin active. */
 
 use AFloatingLivePreviewPanel\Admin\Panel;
-use AFloatingLivePreviewPanel\Compatibility\Acf;
 use AFloatingLivePreviewPanel\Preview\FrontendPreview;
 use AFloatingLivePreviewPanel\Preview\LivePreview;
 
@@ -27,19 +26,35 @@ $originalUser = get_current_user_id();
 $originalGet = $_GET;
 $posts = [];
 $users = [];
-$acf = new Acf();
-$livePreview = new LivePreview($acf);
-$preview = new FrontendPreview(dirname(__DIR__) . '/a-floating-live-preview-panel.php', $livePreview, $acf);
+$hasTimber = class_exists(\Timber\Timber::class);
+// Exercise the compatibility subscribers registered by the real plugin bootstrap.
+$originalHooks = [];
+$previewHooks = [
+    'the_preview', 'get_post_metadata', 'timber/post/import_data', 'acf/validate_post_id',
+    'acf/pre_load_metadata', 'acf/pre_update_metadata', 'acf/pre_delete_metadata',
+];
+foreach ($previewHooks as $hook) {
+    $originalHooks[$hook] = isset($GLOBALS['wp_filter'][$hook]) ? clone $GLOBALS['wp_filter'][$hook] : null;
+}
+$livePreview = new LivePreview();
+$preview = new FrontendPreview(dirname(__DIR__) . '/a-floating-live-preview-panel.php', $livePreview);
+$sources = [];
+$observeSource = static function (int $postId, int $sourceId, bool $readOnly) use (&$sources): void {
+    $sources[] = [$postId, $sourceId, $readOnly];
+};
+add_action('aflpp_preview_source', $observeSource, 20, 3);
 $dieHandler = static fn () => static function ($message, $title, $args): void {
     throw new RuntimeException('aflpp_denied_' . (int) ($args['response'] ?? 0));
 };
 add_filter('wp_die_handler', $dieHandler, PHP_INT_MAX);
-$denied = static function (array $query) use ($preview, $check): void {
+$denied = static function (array $query) use ($preview, $check, &$sources): void {
+    $before = count($sources);
     $_GET = $query;
     try {
         $preview->authorizePreview();
     } catch (RuntimeException $error) {
         $check($error->getMessage() === 'aflpp_denied_403', 'Denied previews must return HTTP 403.');
+        $check(count($sources) === $before, 'Denied requests must never bind compatibility reads.');
         return;
     }
     throw new RuntimeException('An unauthorized preview was accepted.');
@@ -274,6 +289,12 @@ try {
     $_GET = $internalQuery;
     $preview->authorizePreview();
     $check($preview->readPost(clone $post)->post_title === 'Internal live preview', 'Live preview regressed.');
+    $check(end($sources) === [$postId, $internalId, false], 'Live-source context must not be read-only.');
+    $check(
+        apply_filters('timber/post/import_data', ['post_title' => 'Saved title'], $post)['post_title']
+            === ($hasTimber ? 'Internal live preview' : 'Saved title'),
+        'Timber must use the authorized live source only when the dependency is available.'
+    );
     if (function_exists('get_field')) {
         $check(
             update_field('field_aflpp_revision_test_text', 'Writable live ACF text', $postId) !== false
@@ -337,8 +358,30 @@ try {
     $check($rendered->post_content === 'Historical content', 'Core content must come from the selected revision.');
     $check($rendered->post_excerpt === 'Historical excerpt', 'Core excerpt must come from the selected revision.');
     $check($rendered->ID === $postId, 'The parent identity must remain stable.');
-    $timber = $preview->readTimberPost(['post_title' => 'Saved title'], $post);
-    $check($timber['post_title'] === 'Historical title', 'Timber must use the selected revision.');
+    $check(end($sources) === [$postId, $revisionId, true], 'History must expose the selected read-only source.');
+    $import = ['ID' => $postId, 'custom' => 'Keep me'];
+    $expected = $hasTimber ? $import + [
+        'post_title' => 'Historical title', 'post_content' => 'Historical content',
+        'post_excerpt' => 'Historical excerpt',
+    ] : $import;
+    $check(
+        apply_filters('timber/post/import_data', $import, $post) === $expected,
+        'Timber must preserve unrelated data, and stay inert when its dependency is absent.'
+    );
+    if ($hasTimber) {
+        $timberPost = \Timber\Timber::get_post($postId);
+        $check(
+            $timberPost->post_title === 'Historical title'
+            && $timberPost->post_content === 'Historical content'
+            && $timberPost->post_excerpt === 'Historical excerpt',
+            'Installed Timber must import the same selected source through its native API.'
+        );
+    }
+    $unrelated = ['post_title' => 'Unrelated title', 'custom' => 'Keep me'];
+    $check(
+        apply_filters('timber/post/import_data', $unrelated, get_post($otherId)) === $unrelated,
+        'Timber compatibility must leave unrelated posts untouched.'
+    );
     $check(
         get_post_meta($postId, 'aflpp_revision_test_meta', true) === 'Historical metadata',
         'Revisioned meta failed.'
@@ -379,6 +422,12 @@ try {
     $_GET = $query($currentUrl);
     $preview->authorizePreview();
     $check($preview->readPost(clone $post)->post_title === $post->post_title, 'Current-post source failed.');
+    $check(end($sources) === [$postId, $postId, true], 'Current saved sources must also be read-only.');
+    $check(
+        apply_filters('timber/post/import_data', ['post_title' => $post->post_title], $post)['post_title']
+            === $post->post_title,
+        'Timber must rebind to the saved parent without retaining historical fields.'
+    );
     $check(
         get_post_meta($postId, 'aflpp_revision_test_meta', true) === 'Saved metadata',
         'Current metadata failed.'
@@ -394,11 +443,16 @@ try {
 } finally {
     $_GET = $originalGet;
     remove_filter('wp_die_handler', $dieHandler, PHP_INT_MAX);
-    remove_filter('get_post_metadata', [$preview, 'readRevisionMeta']);
-    remove_filter('acf/validate_post_id', [$acf, 'readPostId'], PHP_INT_MAX);
-    remove_filter('acf/pre_load_metadata', [$acf, 'readMetadata'], PHP_INT_MAX);
-    remove_filter('acf/pre_update_metadata', [$acf, 'preventSourceWrite'], PHP_INT_MAX);
-    remove_filter('acf/pre_delete_metadata', [$acf, 'preventSourceWrite'], PHP_INT_MAX);
+    remove_action('aflpp_preview_source', $observeSource, 20);
+    remove_action('init', [$preview, 'authorizePreview'], 20);
+    remove_action('template_redirect', [$preview, 'checkPreviewTarget'], -1);
+    foreach ($originalHooks as $hook => $callbacks) {
+        if ($callbacks === null) {
+            unset($GLOBALS['wp_filter'][$hook]);
+        } else {
+            $GLOBALS['wp_filter'][$hook] = $callbacks;
+        }
+    }
     foreach (array_reverse($posts) as $postId) {
         wp_delete_post($postId, true);
     }

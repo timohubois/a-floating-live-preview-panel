@@ -7,6 +7,7 @@ use AFloatingLivePreviewPanel\Admin\ClassicEditor;
 use AFloatingLivePreviewPanel\Admin\Panel;
 use AFloatingLivePreviewPanel\Admin\RevisionBrowser;
 use AFloatingLivePreviewPanel\Compatibility\Acf;
+use AFloatingLivePreviewPanel\Compatibility\Timber;
 use AFloatingLivePreviewPanel\Preview\FrontendPreview;
 use AFloatingLivePreviewPanel\Preview\LivePreview;
 
@@ -16,8 +17,9 @@ final class Plugin
     public function __construct(string $file)
     {
         $acf = new Acf();
-        $livePreview = new LivePreview($acf);
-        $frontendPreview = new FrontendPreview($file, $livePreview, $acf);
+        new Timber();
+        $livePreview = new LivePreview();
+        $frontendPreview = new FrontendPreview($file, $livePreview);
         $panel = new Panel($file);
         new ClassicEditor($livePreview, $acf, $panel);
         new BlockEditor($livePreview, $acf, $panel);

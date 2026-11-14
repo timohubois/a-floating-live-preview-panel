@@ -3,7 +3,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
 
-const source = await previewSourceForVm(new URL('../src/classic-editor/live-preview.js', import.meta.url));
+const source = await previewSourceForVm(new URL('../src/classic-editor/editor.js', import.meta.url));
 const flush = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
 
 async function fixture({ visible = true, pending = true } = {}) {
@@ -30,7 +30,7 @@ async function fixture({ visible = true, pending = true } = {}) {
         fetch: () => { requests++; return new Promise((resolve) => { finishRequest = resolve; }); },
     };
     context.imports = {
-        '../compatibility/acf.js': { initAcf() { throw new Error('ACF is disabled.'); } },
+        '../compatibility/acf-fields.js': { initAcf() { throw new Error('ACF is disabled.'); } },
         '../panel/window.js': { createPreviewPanel: (strings, callbacks) => { options = callbacks; return view; } },
         '../preview/scroll.js': { createPreviewScroll: () => ({ remember() {} }) },
     };
@@ -163,7 +163,7 @@ test('a cancelled drain never replays its obsolete native Save', async () => {
 });
 
 test('ACF validation rejection is scoped to this form and reads the native validation state', async () => {
-    const source = await sourceForVm(new URL('../src/compatibility/acf.js', import.meta.url));
+    const source = await sourceForVm(new URL('../src/compatibility/acf-fields.js', import.meta.url));
     const actions = new Map();
     let cancelled = 0, validating = true;
     const form = { classList: { contains: (name) => name === 'is-validating' && validating } };

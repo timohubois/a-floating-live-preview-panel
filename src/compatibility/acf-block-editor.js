@@ -1,9 +1,11 @@
 import { select } from '@wordpress/data';
-import { initAcf } from './acf.js';
+import { initAcf } from './acf-fields.js';
 
 // Legacy Gutenberg meta boxes are native forms in the parent document, not in the block canvas.
 function forms() {
-    return [document.querySelector('.metabox-base-form'), ...['normal', 'side', 'advanced'].map((location) =>
+    // Let WordPress choose active locations; retain the existing markup fallback when its selector is absent.
+    const locations = select('core/edit-post')?.getActiveMetaBoxLocations?.() ?? ['normal', 'side', 'advanced'];
+    return [document.querySelector('.metabox-base-form'), ...locations.map((location) =>
         document.querySelector(`.edit-post-meta-boxes-area.is-${location} .metabox-location-${location}`)
         || document.querySelector(`#metaboxes .metabox-location-${location}`))].filter(Boolean);
 }
@@ -28,8 +30,8 @@ export function createBlockEditorAcf(changed) {
     }
     document.addEventListener('input', onInput);
     document.addEventListener('change', onInput, true);
-    // ACF reloads paginated rows after Gutenberg's meta-box save. Observe their replacement,
-    // not request timing, and never clear ACF's row deltas or call its private refresh methods.
+    // isSavingMetaBoxes() ends before ACF's asynchronous row refresh. No public completion
+    // signal covers empty results too; observe replacement, not timing or private refresh methods.
     const observer = new MutationObserver(onChange);
 
     return {

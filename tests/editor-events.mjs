@@ -87,7 +87,7 @@ async function browserTests(editorSource, initAcf, nativeSource) {
         const createPanel = (strings, callbacks) => { options = callbacks; return view; };
         const createScroll = () => ({ remember() {} });
         const initPreview = new Function('imports', `${editorSource}\nreturn initLivePreview;`)({
-            '../compatibility/acf.js': { initAcf },
+            '../compatibility/acf-fields.js': { initAcf },
             '../panel/window.js': { createPreviewPanel: createPanel },
             '../preview/scroll.js': { createPreviewScroll: createScroll },
         });
@@ -297,9 +297,9 @@ async function browserTests(editorSource, initAcf, nativeSource) {
 }
 
 test('native editor events and ACF compatibility boundaries in Chromium', async (t) => {
-    const editorSource = await previewSourceForVm(new URL('../src/classic-editor/live-preview.js', import.meta.url));
+    const editorSource = await previewSourceForVm(new URL('../src/classic-editor/editor.js', import.meta.url));
     const nativeSource = await sourceForVm(new URL('../src/classic-editor/native-editor.js', import.meta.url));
-    const acfSource = await readFile(new URL('../src/compatibility/acf.js', import.meta.url), 'utf8');
+    const acfSource = await readFile(new URL('../src/compatibility/acf-fields.js', import.meta.url), 'utf8');
     const acfUrl = `data:text/javascript;base64,${Buffer.from(acfSource).toString('base64')}`;
     const wordpressScripts = process.env.WORDPRESS_ROOT ? await Promise.all([
         'wp-includes/js/jquery/jquery.js', 'wp-includes/js/quicktags.js',

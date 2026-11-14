@@ -45,7 +45,7 @@ final class RevisionBrowser
         if (!$post) {
             return;
         }
-        $this->panel->enqueue('revisions', [
+        $this->panel->enqueue('revision-browser', [
             'postId' => $post->ID,
             // Core's synthetic current-post entry does not always pass through revisionData().
             'currentPreviewUrl' => $this->preview->savedPreviewUrl($post, $post->ID),

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
 import { icons } from '../src/panel/icons.js';
@@ -15,6 +15,20 @@ function shape({ props }) {
     });
 }
 
+test('asset entries use consistent feature names and only emit standard WordPress build files', async () => {
+    const entries = ['classic-editor', 'block-editor', 'revision-browser', 'preview-navigation'];
+    const { scripts } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+    for (const command of ['build', 'start']) {
+        assert.deepEqual(scripts[command].split(/\s+/).slice(2), entries.map((entry) => `src/${entry}.js`));
+    }
+    const expected = entries.flatMap((entry) => [
+        `${entry}.js`, `${entry}.asset.php`,
+        ...(entry === 'preview-navigation' ? [] : [`${entry}.css`, `${entry}-rtl.css`]),
+    ]);
+    assert.deepEqual((await readdir(new URL('../build/', import.meta.url))).sort(), expected.sort(),
+        'obsolete entry assets must not remain in the shipped build');
+});
+
 test('the editor build declares its public WordPress runtime dependencies', () => {
     const dependencies = [...asset.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1].matchAll(/'([^']+)'/g)]
         .map((match) => match[1]);
@@ -27,8 +41,8 @@ test('the editor build declares its public WordPress runtime dependencies', () =
 });
 
 test('the revision build uses the same public runtime without editor save coordination', async () => {
-    const revisionBundle = await readFile(new URL('../build/revisions.js', import.meta.url), 'utf8');
-    const revisionAsset = await readFile(new URL('../build/revisions.asset.php', import.meta.url), 'utf8');
+    const revisionBundle = await readFile(new URL('../build/revision-browser.js', import.meta.url), 'utf8');
+    const revisionAsset = await readFile(new URL('../build/revision-browser.asset.php', import.meta.url), 'utf8');
     const dependencies = (source) => source.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1];
     assert.equal(dependencies(revisionAsset), dependencies(asset));
     assert.doesNotMatch(revisionBundle, /__experimental|__unstable|before-autosave|heartbeat-send|deferredSaves/);
@@ -53,10 +67,11 @@ test('the shipped editor bundle uses WordPress runtime globals and bundles exact
     assert.equal(window.aFloatingLivePreviewPanelIcons, undefined, 'icons are module-local, not a plugin global');
 });
 
-test('both admin entries emit the same panel stylesheet without a separate shared runtime', async () => {
-    const [editor, revisions] = await Promise.all(['classic-editor', 'revisions'].map((entry) =>
+test('all admin entries emit the same panel stylesheet without a separate shared runtime', async () => {
+    const [editor, blocks, revisions] = await Promise.all(['classic-editor', 'block-editor', 'revision-browser'].map((entry) =>
         readFile(new URL(`../build/${entry}.css`, import.meta.url), 'utf8')
     ));
+    assert.equal(editor, blocks);
     assert.equal(editor, revisions);
     assert.match(editor, /\.aflpp-panel/);
     assert.match(editor, /\.aflpp-pip-document/);

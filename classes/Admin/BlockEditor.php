@@ -42,6 +42,7 @@ final class BlockEditor
         $config['postType'] = $post->post_type;
         $config['postRoute'] = rest_get_route_for_post($post);
         $config['restRoot'] = rest_url();
+        $config['postFormUrl'] = admin_url('post.php');
         $config['acfEnabled'] = $this->acf->isAvailable();
         $config['strings']['acfRefreshing'] = __(
             'Waiting for ACF to reload repeating fields. If the fields don’t finish loading, reload the editor.',
