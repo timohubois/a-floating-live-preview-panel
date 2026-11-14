@@ -136,7 +136,7 @@ composer check-platform-reqs
 composer php:lint
 ```
 
-All authored JavaScript and panel CSS live in `src/`. WordPress's standard tooling builds four entries: `src/classic-editor.js`, `src/block-editor.js`, `src/revisions.js` and `src/preview-navigation.js`. The admin entries import public APIs from `@wordpress/components`, `@wordpress/element`, `@wordpress/data`, `@wordpress/preferences`, `@wordpress/api-fetch` and `@wordpress/hooks`; selected official icons live in `src/panel/icons.js`. WordPress supplies the installed runtime instead of bundling another copy of React or its components:
+All authored JavaScript and panel CSS live in `src/`. WordPress's standard tooling builds four entries: `src/classic-editor.js`, `src/block-editor.js`, `src/revision-browser.js` and `src/preview-navigation.js`. The admin entries import public APIs from `@wordpress/components`, `@wordpress/element`, `@wordpress/data`, `@wordpress/preferences`, `@wordpress/api-fetch` and `@wordpress/hooks`; selected official icons live in `src/panel/icons.js`. WordPress supplies the installed runtime instead of bundling another copy of React or its components:
 
 ```sh
 npm ci
@@ -177,6 +177,8 @@ blocking live-editor or unrelated writes:
 ```sh
 wp eval-file /path/to/a-floating-live-preview-panel/tests/revisions.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/block-editor.php
+wp eval-file /path/to/a-floating-live-preview-panel/tests/compatibility.php
+wp eval-file /path/to/a-floating-live-preview-panel/tests/compatibility-dependencies.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/preview-isolation.php
 ```
 
@@ -228,21 +230,181 @@ WordPress.org package, not GitHub's automatic source ZIP. These workflows do not
 replace authenticated editor-to-frontend browser testing or verify the general
 compatibility claims above.
 
+### Architectural principles
+
+Keep the plugin a thin, native-first shell around normal WordPress frontend
+rendering, with a narrow isolation layer for unsaved editor state. Native Preview
+is the reference for frontend behavior on supported inputs, not a command the panel
+repeatedly executes: panel refreshes must not update the saved parent post, create
+or overwrite recovery autosaves, or cause a newer-autosave notice. WordPress's own
+saving, autosave, validation and genuine recovery notices remain untouched.
+
+The live path is editor capture, an isolated preview source, authorized frontend
+reads, then normal theme rendering. Saved-revision browsing reuses the authorized
+read and presentation paths without capturing editor values or writing previews.
+
+- Apply YAGNI: build for concrete supported workflows, not hypothetical editors, entities or integrations. DRY means sharing actual common behavior, not forcing distinct editor/revision lifecycles into configurable controllers. Do not add provider frameworks, integration registries, speculative interfaces or classes merely for symmetry.
+- Prefer existing public WordPress and integration contracts over custom field formats, renderers or copies of native save workflows. Small explicit mappings are appropriate where native editor attributes and storage differ; do not build a universal field framework merely to hide those differences.
+- Keep temporary-source storage, authorization and cleanup together. The plugin owns that isolation boundary and preview presentation/refresh coordination; WordPress and the active theme own normal frontend rendering. Optional integrations own their narrowly scoped adaptations.
+- Keep editor and compatibility adapters thin. Every custom adaptation should have a concrete reason it cannot be delegated through a suitable native contract, plus focused regression coverage. Calling a native API inside a large custom workflow does not by itself meet this principle.
+- Surface missing native contracts and maintenance costs before adding another workaround. Agree an explicit support limit where appropriate rather than silently accumulating special cases or dropping existing support. A missing native contract requires an explicit support-limit or bounded-exception decision; it is not permission to add private dependencies. The accepted ACF exceptions below do not authorize new ones.
+- Treat these as constraints for new work and simplification reviews, not a claim that every current implementation detail is already minimal. Keep verified behavior and documented limitations distinct from architectural intent.
+
 ### Structure and ownership
 
 - `a-floating-live-preview-panel.php` explicitly loads the PHP classes; `classes/Plugin.php` connects the owners. No Composer autoloader is required at runtime.
 - `classes/Admin/ClassicEditor.php`, `BlockEditor.php` and `RevisionBrowser.php` connect their respective native screens. `Admin/Panel.php` owns shared assets, labels and the PHP view in `views/panel.php`.
 - `classes/Preview/LivePreview.php` owns internal preview revision writes, fingerprints, native-save coordination and cleanup. `Preview/FrontendPreview.php` authorizes reads and overlays only the selected source on frontend output. Live-source ownership and token verification stay together in `LivePreview`.
-- `classes/Compatibility/Acf.php` owns the optional ACF save/read contracts; `src/compatibility/acf.js` bridges its browser events; `block-editor-acf.js` captures native meta-box forms and observes ACF's own post-save row replacement. Small Timber read handling stays beside frontend content reads rather than becoming another integration class.
-- `src/preview/live-preview.js` shares live writes, frames and Web Locks between editor adapters. `classic-editor/live-preview.js` captures classic/ACF fields; `classic-editor/native-editor.js` observes native Preview, heartbeat and validation. `block-editor/editor.js` reads public editor selectors and coordinates native saves through the awaited pre-save hook and narrowly scoped API-fetch middleware.
-- `src/revisions/preview.js` owns read-only revision selection. It never acquires editor locks or writes previews. It follows core's `wp.revisions.view.frame.model`; guard and verify that integration when changing supported WordPress versions.
+- `classes/Compatibility/` lists the explicit third-party integrations. Each class owns its integration's hooks and adaptations: `Acf.php` owns ACF field preparation, save verification, cache invalidation and source reads; `Timber.php` owns Timber post-import reads. The PHP preview owners expose lifecycle hooks and do not depend on either implementation. `src/compatibility/acf-fields.js` bridges ACF browser events; `acf-block-editor.js` captures native meta-box forms and observes ACF's own post-save row replacement.
+- `src/preview/live-preview.js` shares live writes, frames and Web Locks between editor adapters. `classic-editor/editor.js` captures classic/ACF fields; `classic-editor/native-editor.js` observes native Preview, heartbeat and validation. `block-editor/editor.js` reads public editor selectors and coordinates native saves through the awaited pre-save hook and narrowly scoped API-fetch middleware.
+- `src/revision-browser/preview.js` owns read-only revision selection. It never acquires editor locks or writes previews. It follows core's `wp.revisions.view.frame.model`; guard and verify that integration when changing supported WordPress versions.
 - `src/panel/window.js` owns window presentation, focus, preferences, fullscreen and PiP. `panel/geometry.js` owns preferred bounds, docking, resizing and temporary viewport fitting; pointer/keyboard event binding stays with the window. `controls.js` renders public WordPress components and `viewport.js` sizes the preview viewport.
 - `src/preview/frame.js` owns iframe replacement and cancellation; `scroll.js` enhances only recognized preview HTML. These are shared by the separate editor and revision lifecycles.
 
 Keep PHP class names and filenames in PascalCase and browser filenames in kebab-case. Group source by responsibility, not separate generic JavaScript/CSS buckets. Preserve runtime identifiers such as preference keys, REST paths and the `aflpp-` CSS namespace when reorganizing internals. Extract concrete shared behavior, not generic controller or module frameworks.
 
+Asset entry names match their feature owners: `classic-editor`, `block-editor`,
+`revision-browser` and `preview-navigation`. The editor-specific adapters are
+`classic-editor/editor.js` and `block-editor/editor.js`; only the shared coordinator
+is named `preview/live-preview.js`. Compatibility filenames put the integration
+first: `compatibility/acf-fields.js` and `compatibility/acf-block-editor.js`. The read-only
+browser module lives in `revision-browser/preview.js`; it is not another live editor.
+Tests follow the corresponding feature/integration names where they target an owner.
+
+`src/` contains authored assets; `build/` contains generated assets with the same
+entry basenames. WordPress tooling intentionally adds `.asset.php` dependency files
+and `-rtl.css` stylesheets; do not rename those suffixes or hand-edit generated files.
+The native WordPress script handle `revisions` remains a dependency of our
+`revision-browser` entry; it is not an obsolete plugin asset. The build test rejects
+old or unexpected output filenames so a rename cannot leave stale release assets.
+
+### Compatibility ownership and supported scope
+
+The plugin owns an isolated preview data source feeding normal WordPress rendering.
+It does not repeatedly invoke native Preview or replace the theme's renderer. Saved
+posts and recovery autosaves remain WordPress-owned; the preview owners authorize,
+select, write and clean up only their own temporary sources.
+
+Compatibility is explicit, not hidden inside the preview engine:
+
+| Integration owner | Supported adaptation | Boundary |
+| --- | --- | --- |
+| `Compatibility/Acf.php` and `src/compatibility/acf*.js` | Post-local form values, native ACF save verification, revision value-cache invalidation, selected-source field reads and saved-history write guards; browser events and legacy meta-box coordination. | ACF is optional. Support depends on ACF's field/revision APIs; this is not support for every field type, options pages, related entities or a complete historical site snapshot. |
+| `Compatibility/Timber.php` | Overlays `post_title`, `post_content` and `post_excerpt` on Timber's `timber/post/import_data` hook for the authorized post. Preserves parent identity, other import data and unrelated posts. | Read adaptation only; it does not capture more editor inputs, implement Twig rendering or restore historical templates/styles. Normal metadata and ACF reads retain their respective owners. |
+
+Flynt is a local test theme, not a plugin integration or runtime requirement. A
+compatibility class identifies a deliberate integration, not a guarantee across all
+versions of that dependency. Add a concrete owner and regression tests when adding
+third-party behavior; do not put its hooks in `Preview/` or introduce a generic
+integration registry. `Plugin.php` instantiates the owners; they register their own
+hooks. Editor adapters may request ACF assets/configuration through its owner, while
+field-specific PHP and browser behavior stays in the compatibility files.
+
+### Native-first bridge review
+
+The focused review checked WordPress 7.2-beta5 and ACF PRO 6.8.10 source. Relevant
+entry points are core's `wp-admin/edit-form-blocks.php` and `core/edit-post` store;
+ACF's repeater `listenForSavedMetaBoxes()` / `ajaxLoadPage()` methods in
+`assets/build/js/pro/acf-pro-input.min.js`; and `acf_flush_value_cache()` in
+`includes/acf-value-functions.php`. This is not a new version-range or authenticated
+browser compatibility guarantee.
+
+| Bridge | Native contract considered | Result and remaining boundary |
+| --- | --- | --- |
+| Recognizing native legacy meta-box requests | Core builds its endpoint with `admin_url('post.php')`. | `Admin/BlockEditor.php` supplies that URL. Request matching no longer reads the private `_wpMetaBoxUrl` global or copies its nonce logic. Core still sends the request; the plugin only scopes its acknowledgement to the same-origin endpoint, loader request, post ID and `editpost` action. |
+| Native meta-box capture and acknowledgement | `core/edit-post` selectors `getActiveMetaBoxLocations()` and `isSavingMetaBoxes()`. | WordPress now chooses the active locations to capture, including an empty list. The existing location fallback is retained only when the selector is absent. These APIs do not supply signed form values or a request-correlated saved-data fingerprint, so native `FormData` capture and the acknowledgement receipt remain necessary. We do not call `requestMetaBoxUpdates()` to prepare previews: that would perform a real native save. The native form markup and loader request shape remain version-sensitive seams. |
+| ACF paginated row reload after a native save | Native save state and ACF lifecycle actions. | ACF starts a separate AJAX row reload after `isSavingMetaBoxes()` becomes false. In the inspected implementation, `remount` occurs per returned row and does not cover an empty result; no whole-refresh completion action was found. Keep the existing scoped row-replacement observer, including zero-row results, rather than guessing from elapsed time or calling ACF's private refresh methods. Row markup remains an implementation dependency, not a stable public contract. |
+| ACF pending structural pagination edits | Field value reads and normal ACF change actions. | These do not supply the pending add/delete/reorder deltas across loaded and unloaded rows. Keep the existing native row-marker check that protects Classic Preview handover; do not build another row-state model or reset ACF's deltas. The marker classes remain a version-sensitive assumption. |
+| Request-local ACF source cache invalidation | `acf_flush_value_cache($postId, $fieldName)` and the values-store `reset()`. | The flush helper clears one named field, not all cached values for a post/revision, including absent/default fields. Resetting the whole store would affect unrelated objects. Keep the existing source-prefix invalidation; the cache-key prefix remains an explicit internal assumption, not a newly guaranteed API. |
+
+#### Accepted ACF compatibility exceptions
+
+**Decision: preserve the current ACF features and accept only the three bounded
+adaptations above.** Native-first does not mean public-contract-only at the expense
+of supported behavior. These are deliberate compatibility obligations, not unresolved
+items that must be removed regardless of feature cost, and not stable public APIs:
+
+- `src/compatibility/acf-block-editor.js` may observe paginated row replacement to
+  resume after ACF's own reload, including empty results. It must not trigger or
+  reimplement that reload.
+- `src/compatibility/acf-fields.js` may inspect pending structural row markers so the
+  Classic Preview handover requires a reload only when necessary. It must not
+  reconstruct ACF's row state or reset its deltas.
+- `classes/Compatibility/Acf.php` may recognize value-cache key prefixes to invalidate
+  only the preview's parent/source values. It must not reset unrelated objects' caches.
+
+Conditions of this decision:
+
+- Keep these assumptions inside their ACF compatibility owners. WordPress and ACF
+  retain normal saving, autosave, validation and field-value interpretation; WordPress
+  and the active theme retain rendering. The exceptions do not broaden permissions
+  or allow panel refreshes to change saved posts or recovery autosaves.
+- Maintain focused regressions when changing a bridge: empty, deleted and reordered
+  paginated rows; reused preview sources; fresh raw/formatted/default field values;
+  and isolation from unrelated posts. Tests establish behavior in the checked
+  environments, not stability across all ACF versions or coverage of every field type.
+- If native save or row-reload acknowledgement cannot be confirmed, retain the last
+  frame, explain the problem and require an editor reload instead of guessing a new
+  baseline or using a timer as proof. Reload is a synchronization fallback, not a
+  general substitute for correct server-side cache invalidation; known cache-contract
+  incompatibilities need an explicit support decision rather than stale output.
+- Do not impose blanket reloads on working flows merely to remove these dependencies.
+  New private assumptions, broader support or reductions in existing behavior require
+  a separate review and explicit decision. Do not add a custom field/repeater engine,
+  vendor fork or generic integration framework.
+- Replace each exception when a suitable public ACF contract covers its actual needs:
+  whole-refresh completion including empty results, pending structural deltas, or
+  source-scoped cache invalidation. Verify equivalent behavior and autosave isolation
+  before retiring that bridge; an API with a similar name is not enough.
+
+The safe simplifications delegate request identification and active form locations
+to WordPress. They do not change native save URLs/nonces, create another save workflow
+or alter preview isolation.
+
+### Preview integration hooks
+
+The PHP preview owners expose these narrowly scoped lifecycle hooks:
+
+| Hook | Arguments and contract |
+| --- | --- |
+| `aflpp_preview_payload` (filter) | `array\|WP_Error $payload, array $input, int $postId`. Runs after core preview permission/conflict checks, before slashing or writing. Extend unslashed native form values or reject with `WP_Error`; preserve any earlier error. |
+| `aflpp_preview_meta_seeded` (action) | `int $revisionId, int $postId`. Runs after saved metadata is seeded into the owned temporary revision and before native save hooks consume submitted values. Integrations can invalidate their revision caches. |
+| `aflpp_preview_save_error` (filter) | `?WP_Error $error, int $revisionId, int $postId`. Release preparation state and report save failures, preserving earlier errors. Runs in `finally` after preparation/save, including rejection or exceptions; ID `0` means no revision was written. A rejected payload passes its `WP_Error`; a thrown exception propagates after cleanup. Core write errors still take precedence. |
+| `aflpp_preview_source` (action) | `int $postId, int $sourceId, bool $readOnly`. Runs only after core authorizes and selects the frontend source and installs its native read overlays. Live previews use `false`; saved revisions and the current saved post use `true`. Bind integration reads only to that post/source pair. |
+
+These are trusted PHP integration points, not authorization APIs. Adapters must not
+select a different revision, modify the parent/recovery autosave, broaden permissions
+or affect unrelated objects. The source action passes IDs, not a mutable core preview
+object or its authorization token.
+
+Hook lifetime is part of each compatibility owner's contract:
+
+- Lifecycle subscriptions (`aflpp_preview_*`) remain registered for the PHP request so
+  the owner can handle later operations. Registering these does not call optional APIs.
+- ACF's `acf/save_post` monitor exists only for a prepared write. The coordinator's
+  `finally` block triggers cleanup after success, rejection or exceptions, including
+  exceptions during payload preparation.
+- Frontend read overlays remain active through rendering, not just while the source
+  action is dispatched. Each adapter removes its own filters in `unbindPreview()`,
+  before rebinding and at late request shutdown. Cleanup is idempotent; ACF also clears
+  preview value caches and removes old saved-history write guards before live rebinding.
+- Availability checks happen inside the adapter at use time, not once in the bootstrap:
+  other plugins and a theme's Timber autoloader may load later. Missing dependencies or
+  required read APIs install no third-party read/write filters. Unbound callbacks are
+  safe no-ops. Core-only writes work without ACF; submitted ACF values without its save
+  APIs return a controlled error rather than being silently discarded.
+
+The revision fixture exercises the real compatibility subscriptions: denied requests
+never announce a source; live, historical and current sources rebind correctly; Timber
+imports preserve unrelated data; ACF history remains read-only. If Timber is installed,
+it also checks `Timber::get_post()` against the selected historical source. The
+compatibility fixture checks core-only writes, lifecycle/error propagation, exception
+cleanup and read-filter rebinding/release without requiring ACF or Timber. The
+dependency fixture simulates unavailable ACF/Timber and partial ACF APIs without
+changing site configuration.
+
 Verify both screen-to-preview workflows on a disposable WordPress site with the
-theme and optional ACF fields you intend to use.
+theme and optional integrations you intend to use.
 
 ## License
 

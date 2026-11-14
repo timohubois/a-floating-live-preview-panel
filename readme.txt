@@ -55,6 +55,10 @@ Both editors preview title, content, excerpt and supported post-local ACF fields
 
 The plugin respects ACF's opt-in datastore when already enabled; it never enables it or edits Gutenberg's metadata to prepare a preview. After native meta-box saving, the panel waits for ACF to replace its paginated rows before resuming. If that reload fails, it retains the last preview and asks you to reload rather than resetting ACF's row markers. Live previews do not provide crash recovery: Gutenberg skips legacy meta boxes during native autosave, and ACF datastore recovery behavior remains ACF's responsibility.
 
+= Are ACF, Timber or Flynt required? =
+
+No. The preview uses WordPress's normal frontend rendering APIs. Optional compatibility files explicitly own third-party behavior: ACF handles supported post-local fields and their save/read contracts; Timber makes its post imports read title, content and excerpt from the authorized preview source. These integrations do not change preview permissions or replace theme rendering. Flynt is a local test theme, not a separate integration or requirement. Each adapter checks its own required APIs before use and removes its temporary hooks when the write or preview request ends. Missing dependencies leave core previews working; submitted ACF values without its save APIs produce a clear error rather than being discarded. This is not a guarantee across all dependency versions; see README.md for ownership and scope.
+
 = Does this replace saving or publishing? =
 
 No. It writes a separate internal preview revision per user and post, without updating the saved parent post, overwriting recovery autosaves or publishing changes. Preview revisions are reused on refresh and deleted when the parent post is updated or permanently deleted. WordPress's normal server autosave continues independently, including its usual updates to your own drafts. Closing the preview does not discard editor fields.
