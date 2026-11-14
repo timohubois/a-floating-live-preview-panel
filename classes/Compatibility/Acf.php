@@ -33,7 +33,7 @@ final class Acf
             return $payload;
         }
         if (
-            !is_array($input['acf']) || !function_exists('acf_restrict_save_input')
+            !is_array($input['acf']) || !function_exists('acf_save_post')
             || !isset($input['_acf_nonce']) || !is_string($input['_acf_nonce'])
             || !wp_verify_nonce($input['_acf_nonce'], 'post')
             || (isset($input['_acf_fields']) && !is_array($input['_acf_fields']))

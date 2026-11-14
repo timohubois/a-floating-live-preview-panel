@@ -438,6 +438,32 @@ test('no-frame and retained-frame recovery use native UI models without weakenin
     assert.equal(h.state.notice, null);
 });
 
+for (const hasPreview of [false, true]) {
+    test(`paused editor capture visibly explains how to resume with a ${hasPreview ? 'retained frame' : 'placeholder'}`, () => {
+        const h = fixture(true);
+        const message = 'Return to editing this post to resume its live preview.';
+        h.view.report(message, 'paused', { hasPreview, canRetry: false });
+        assert.equal(h.state.busy, false);
+        assert.equal(h.state.canRefresh, false);
+        const content = hasPreview ? h.state.notice : h.state.empty;
+        assert.equal(content.heading, 'pausedTitle');
+        assert.equal(content.description, message);
+        assert.equal(content.retry, false);
+        if (hasPreview) {
+            assert.equal(h.state.empty, null);
+            assert.equal(h.state.notice.status, 'info');
+            assert.equal(h.state.notice.dismissible, false);
+            assert.equal(h.node('aflpp-panel .aflpp-feedback').hidden, false);
+        } else {
+            assert.equal(h.state.empty.busy, false);
+            assert.equal(h.state.empty.icon, 'info');
+        }
+        h.view.report('Refreshed', 'ready', { hasPreview: true, canRefresh: true });
+        assert.equal(h.state.notice, null);
+        assert.equal(h.state.canRefresh, true);
+    });
+}
+
 test('ordinary updates and native saving never replace a retained frame with a placeholder or success notice', () => {
     const h = fixture(true);
     for (const [text, state] of [['updating', 'loading'], ['saving', 'loading'], ['stale', 'stale'], ['current', 'ready']]) {

@@ -14,6 +14,8 @@ export function createPreviewFrame(view, scrolling, strings, report) {
         if (url.origin === 'null' || url.origin !== window.location.origin) throw new Error(strings.browser);
         const token = url.searchParams.get('aflpp_token');
         if (!token) throw new Error(strings.failed);
+        // Isolated editors cannot inspect otherwise same-origin, non-isolated preview documents.
+        if (window.crossOriginIsolated) url.searchParams.set('aflpp_isolated', '1');
         cancel();
         address = url.href;
         // Keep the new-tab action available for every output type, including browser-native viewers.

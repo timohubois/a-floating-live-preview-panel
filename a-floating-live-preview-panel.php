@@ -22,6 +22,7 @@ require_once __DIR__ . '/classes/Preview/LivePreview.php';
 require_once __DIR__ . '/classes/Preview/FrontendPreview.php';
 require_once __DIR__ . '/classes/Admin/Panel.php';
 require_once __DIR__ . '/classes/Admin/ClassicEditor.php';
+require_once __DIR__ . '/classes/Admin/BlockEditor.php';
 require_once __DIR__ . '/classes/Admin/RevisionBrowser.php';
 require_once __DIR__ . '/classes/Plugin.php';
 

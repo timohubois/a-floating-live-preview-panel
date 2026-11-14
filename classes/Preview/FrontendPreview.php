@@ -11,6 +11,7 @@ final class FrontendPreview
     private ?WP_Post $source = null;
     private int $previewPostId = 0;
     private string $previewToken = '';
+    private bool $isolated = false;
 
     public function __construct(
         private readonly string $file,
@@ -98,6 +99,7 @@ final class FrontendPreview
 
         $this->previewPostId = $postId;
         $this->previewToken = $token;
+        $this->isolated = isset($_GET['aflpp_isolated']) && $_GET['aflpp_isolated'] === '1';
         $this->source = sanitize_post($source);
         // Bind core and compatibility reads to the authorized source, not the latest revision.
         remove_filter('the_preview', '_set_preview');
@@ -153,6 +155,21 @@ final class FrontendPreview
             // Native routing owns other destinations, including archives, redirects and error pages.
             // The authorized source remains bound only to its original post; do not label other output verified.
             return;
+        }
+        // Match isolated Gutenberg screens without disabling core's client-side media processing.
+        // Older WordPress versions can also be isolated by the Gutenberg plugin.
+        if ($this->isolated) {
+            // Preserve site-supplied policies instead of replacing their resource-loading rules.
+            $alreadyIsolated = function_exists('wp_is_cross_origin_isolated_request')
+                ? wp_is_cross_origin_isolated_request()
+                : (bool) preg_grep('/^Document-Isolation-Policy:/i', headers_list());
+            if (!$alreadyIsolated) {
+                if (function_exists('wp_send_document_isolation_policy_header')) {
+                    wp_send_document_isolation_policy_header();
+                } else {
+                    header('Document-Isolation-Policy: isolate-and-credentialless');
+                }
+            }
         }
         // Core canonical redirects drop preview=true without native autosave parameters, losing our core-field overlay.
         remove_action('template_redirect', 'redirect_canonical');

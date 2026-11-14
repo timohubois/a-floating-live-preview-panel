@@ -11,7 +11,7 @@ A floating live frontend preview while editing posts, pages and eligible custom 
 
 == Description ==
 
-A Floating Live Preview Panel adds a movable, resizable frontend preview to classic WordPress editing screens and the native revision browser. Your theme and plugins render the output through WordPress's native preview routing, including redirects and browser-native output such as PDFs.
+A Floating Live Preview Panel adds a movable, resizable frontend preview to WordPress's post Block Editor, classic editing screens and the native revision browser. Your theme and plugins render the output through WordPress's native preview routing, including redirects and browser-native output such as PDFs.
 
 Live updates write a separate internal preview revision, not the saved parent post or WordPress's recovery autosave, and do not publish changes. Preview revisions do not appear in the normal revision history or trigger the newer-autosave notice. Use the normal WordPress save, update or publish controls to save your changes to the post.
 
@@ -25,18 +25,18 @@ Live updates write a separate internal preview revision, not the saved parent po
 
 **Before you start**
 
-Requires WordPress 6.7+, PHP 8.3+, a saved post in a frontend-viewable post type, and permission to edit it. Live editing requires the classic editor and enabled revisions. ACF is optional.
+Requires WordPress 6.7+, PHP 8.3+, a saved post in a frontend-viewable post type, and permission to edit it. Live editing requires the post Block Editor or classic editor and enabled revisions. ACF is optional.
 
 The admin and frontend must share an origin and the browser must support ES modules. Live editing additionally requires working authenticated WordPress REST requests and Web Locks in a secure context. Composer and Node.js are not required to run the plugin.
 
-**Development status:** not a verified release. The full authenticated editor-to-frontend workflow still needs integration testing. The public panel API baseline is WordPress 6.7; a general browser, theme or ACF compatibility range has not been verified.
+**Development status:** not a verified release. Local authenticated Gutenberg flows have been exercised with Flynt, WordPress 7.1.2 and ACF; this is not a full compatibility guarantee. The public panel API baseline is WordPress 6.7; a general browser, theme or ACF compatibility range has not been verified.
 
 == Installation ==
 
 Use a disposable local or staging WordPress installation while this is in development.
 
 1. Place the plugin in /wp-content/plugins/a-floating-live-preview-panel/ and activate **A Floating Live Preview Panel**.
-2. Open a saved post, page or frontend-viewable custom post type in its classic editing screen. Save a new post as a draft first; the plugin does not enable revisions for you.
+2. Open a post, page or frontend-viewable custom post type in its Block Editor or classic editing screen. New posts need a native draft save first; the Block Editor panel becomes available without reloading. The plugin does not force saves or enable revisions for you.
 3. Use the compact preview window or **Live preview** launcher. Edit supported fields and the preview refreshes after a short pause.
 4. Move the window by its plain titlebar or drag the closed **Live preview** launcher; they share one position. Resize from usable borders and corners. Arrow keys work on the move grip, launcher and single boundary resize control; hold Shift for larger steps. Use **Preview actions** for **Position**, **Size → Small / Large**, other display modes or **Open preview in new tab**.
 5. Use WordPress's normal save, update or publish controls to save your changes to the post.
@@ -51,7 +51,7 @@ Title, content, excerpt, revision-enabled post metadata and stored ACF values co
 
 = Which fields update live? =
 
-Title, content, excerpt and supported post-local ACF fields. Other metadata, related content and global settings are not live inputs. ACF support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages.
+Both editors preview title, content and excerpt. The Block Editor supplies serialized blocks in visual or code mode. Classic editing also captures supported post-local ACF fields. Block Editor ACF/meta fields, featured images, taxonomies, template selections and unsaved separate entities are not live inputs. Native ACF/legacy meta-box saving remains intact; saved values become the new baseline. ACF support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages.
 
 = Does this replace saving or publishing? =
 
@@ -59,17 +59,17 @@ No. It writes a separate internal preview revision per user and post, without up
 
 = What happens when I save, update or publish? =
 
-An open panel keeps its last frame while outstanding live writes finish and WordPress validates and submits the form. Live updates pause during this action and resume if browser, WordPress or ACF validation rejects it. Successful saving uses the normal editor reload and restores remembered panel preferences. A panel you explicitly closed stays closed.
+An open panel keeps its last frame while outstanding live writes finish and WordPress validates and submits the form. Live updates pause during this action and resume if browser, WordPress or ACF validation rejects it. Classic saves use the normal editor reload. Block Editor saves and autosaves keep the editor open, wait for legacy meta-box saves, then resume previewing against the acknowledged saved state. A panel you explicitly closed stays closed. If the saved state cannot be confirmed, preserve your edits and reload; the panel never guesses a new baseline or prevents WordPress from saving.
 
 = What happens when I use WordPress's Preview button? =
 
-The panel and its last frame stay visible while outstanding live writes finish. Native Preview retains WordPress's normal behavior, including saving changes to your own drafts, and live updates normally resume afterward. A request-specific cookie containing state fingerprints, not editor content, acknowledges completion; it is cleared on completion and expires after one minute.
+The panel and its last frame stay visible while outstanding live writes finish. Native Preview retains WordPress's normal behavior, including saving changes to your own drafts, and live updates normally resume afterward. Block Editor native REST saves and autosaves use request-specific fingerprint receipts. Classic Preview and block-editor legacy meta-box saves use an acknowledgement cookie containing fingerprints, not editor content; it is cleared on completion and expires after one minute.
 
-If native Preview saves additions, deletions or reordering in a draft's paginated ACF repeaters, the panel keeps its last frame but asks you to reload. ACF's remaining row changes still refer to the old saved order. Copy any later edits, then reload the editor before saving again.
+In the classic editor, if native Preview saves additions, deletions or reordering in a draft's paginated ACF repeaters, the panel keeps its last frame but asks you to reload. ACF's remaining row changes still refer to the old saved order. Copy any later edits, then reload the editor before saving again.
 
 = Does it work with the Block Editor? =
 
-Live updates support classic post-editing screens, not the Block Editor or Site Editor. Saved post revisions can still be previewed through WordPress's native revision browser.
+Yes, for posts, pages and frontend-viewable custom post types that use the post Block Editor. Title, serialized block content and excerpt update live, and new posts become eligible after their first native save. The Site Editor and unsaved changes to separate entities such as synced patterns are excluded. Saved post revisions can also be previewed through WordPress's native revision browser.
 
 = What does Scroll to changes do? =
 

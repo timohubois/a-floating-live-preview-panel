@@ -16,8 +16,14 @@ final class LivePreview
 
     private int $autosavePostId = 0;
 
+    /** @var \WeakMap<WP_REST_Request, array> */
+    private \WeakMap $restSaves;
+
     public function __construct(private readonly Acf $acf)
     {
+        $this->restSaves = new \WeakMap();
+        add_filter('rest_request_before_callbacks', [$this, 'trackRestSave'], 10, 3);
+        add_filter('rest_post_dispatch', [$this, 'rebaseRestSave'], PHP_INT_MAX, 3);
         add_action('rest_api_init', [$this, 'registerRoutes']);
         add_action('init', [$this, 'registerStatus']);
         add_action('post_updated', [$this, 'deletePreviews']);
@@ -71,11 +77,12 @@ final class LivePreview
         return true;
     }
 
-    /** Core and metadata only; heartbeat/editor bookkeeping does not invalidate a preview. */
+    /** Content and metadata only; editor locks and asynchronous core queue flags are not content. */
     public function fingerprint(int $postId): string
     {
         $meta = get_post_meta($postId);
-        unset($meta['_edit_lock'], $meta['_edit_last']);
+        // Core cron removes these queue flags independently after published-post saves.
+        unset($meta['_edit_lock'], $meta['_edit_last'], $meta['_encloseme'], $meta['_pingme']);
         ksort($meta);
 
         return hash('sha256', (string) wp_json_encode([get_post($postId, ARRAY_A), $meta]));
@@ -105,7 +112,66 @@ final class LivePreview
         return $response;
     }
 
-    /** Acknowledge the native Preview POST without replacing its save or redirect. */
+    /** Observe only opted-in native post/autosave routes; never reject or replace a native save. */
+    public function trackRestSave($response, array $handler, WP_REST_Request $request)
+    {
+        $postId = (int) $request->get_param('id');
+        $post = $postId ? get_post($postId) : null;
+        $base = (string) $request->get_header('X-AFLPP-Base');
+        $token = (string) $request->get_header('X-AFLPP-Request');
+        if (
+            !$post || !in_array($request->get_method(), ['POST', 'PUT', 'PATCH'], true)
+            || !preg_match('/^[a-f0-9]{64}$/D', $base) || !preg_match('/^[a-f0-9]{32}$/D', $token)
+            || !current_user_can('edit_post', $postId)
+            || !wp_verify_nonce((string) $request->get_header('X-WP-Nonce'), 'wp_rest')
+        ) {
+            return $response;
+        }
+        $route = rest_get_route_for_post($post);
+        if (!$route || !in_array($request->get_route(), [$route, $route . '/autosaves'], true)) {
+            return $response;
+        }
+        $this->restSaves[$request] = [
+            'postId' => $postId, 'base' => $base, 'request' => $token,
+            'matches' => hash_equals($this->fingerprint($postId), $base),
+        ];
+        return $response;
+    }
+
+    /** A private, request-correlated receipt is removed by our middleware before core receives the record. */
+    public function rebaseRestSave(
+        WP_REST_Response $response,
+        WP_REST_Server $server,
+        WP_REST_Request $request
+    ): WP_REST_Response {
+        $save = $this->restSaves[$request] ?? null;
+        unset($this->restSaves[$request]);
+        $status = $response->get_status();
+        if (!$save || !(($status >= 200 && $status < 300) || ($status >= 400 && $status < 500))) {
+            return $response;
+        }
+        $data = $response->get_data();
+        if (!is_array($data)) {
+            return $response;
+        }
+        $post = get_post($save['postId']);
+        $after = $save['matches'] && $post ? $this->fingerprint($post->ID) : 'conflict';
+        // A client error can happen after the post was updated, for example while saving metadata.
+        // Only unchanged failures are safe to retry with the editor's existing baseline.
+        if ($status >= 400 && $after !== $save['base']) {
+            return $response;
+        }
+        $data['_aflpp_receipt'] = [
+            'request' => $save['request'],
+            'before' => $save['base'],
+            'after' => $after,
+            'available' => $post && $this->isAvailable($post),
+        ];
+        $response->set_data($data);
+        return $response;
+    }
+
+    /** Acknowledge native Preview and Gutenberg's legacy meta-box POST without replacing their save or redirect. */
     public function trackNativePreview(): void
     {
         $postId = isset($_POST['post_ID']) && is_scalar($_POST['post_ID']) ? absint($_POST['post_ID']) : 0;
@@ -116,11 +182,13 @@ final class LivePreview
             ? wp_unslash($_POST['aflpp_base']) : '';
         $action = isset($_POST['wp-preview']) && is_string($_POST['wp-preview'])
             ? wp_unslash($_POST['wp-preview']) : '';
+        $metaSave = isset($_POST['aflpp_metabox'], $_GET['meta-box-loader'], $_POST['action'])
+            && $_POST['aflpp_metabox'] === '1' && $_POST['action'] === 'editpost';
         // phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         $nonce = isset($_POST['_wpnonce']) && is_string($_POST['_wpnonce'])
             ? sanitize_text_field(wp_unslash($_POST['_wpnonce'])) : '';
         if (
-            $action !== 'dopreview' || !$postId
+            ($action !== 'dopreview' && !$metaSave) || !$postId
             || !preg_match('/^[a-f0-9]{32}$/D', $token) || !preg_match('/^[a-f0-9]{64}$/D', $base)
             || !current_user_can('edit_post', $postId) || !wp_verify_nonce($nonce, 'update-post_' . $postId)
         ) {
@@ -140,6 +208,12 @@ final class LivePreview
             }
             return $location;
         }, PHP_INT_MAX);
+    }
+
+    public function isAvailable(WP_Post $post): bool
+    {
+        return in_array($post->post_status, ['draft', 'pending', 'publish', 'private', 'future'], true)
+            && wp_revisions_enabled($post);
     }
 
     private function stateAction(int $postId, int $revisionId): string
@@ -166,8 +240,7 @@ final class LivePreview
         require_once ABSPATH . 'wp-admin/includes/post.php';
 
         if (
-            !in_array($post->post_status, ['draft', 'pending', 'publish', 'private', 'future'], true)
-            || !wp_revisions_enabled($post) || wp_check_post_lock($postId)
+            !$this->isAvailable($post) || wp_check_post_lock($postId)
             || !hash_equals($this->fingerprint($postId), $input['base'])
         ) {
             return new WP_Error(

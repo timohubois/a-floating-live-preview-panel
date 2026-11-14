@@ -88,7 +88,7 @@ function contentSnapshot(doc) {
     const entries = [];
     // Ancestor attributes can control the content's layout; ignore their unrelated siblings/text.
     for (let node = root.parentElement; node; node = node.parentElement) {
-        entries.unshift({ node: root, signature: JSON.stringify([node.localName, presentationAttributes(node)]) });
+        entries.unshift({ node: root, signature: node.localName, presentation: JSON.stringify(presentationAttributes(node)) });
     }
     const depths = new Map([[root, 0]]);
     for (const node of [root, ...root.querySelectorAll('*')]) {
@@ -102,7 +102,8 @@ function contentSnapshot(doc) {
             : [];
         const background = node.style?.backgroundImage || node.getAttribute('data-bg') || '';
         // Include empty wrappers: layout/structure changes need not alter text or media.
-        entries.push({ node, signature: JSON.stringify([depth, node.localName, text, media, background, presentationAttributes(node)]) });
+        entries.push({ node, signature: JSON.stringify([depth, node.localName, text, media, background]),
+            presentation: JSON.stringify(presentationAttributes(node)) });
     }
     return entries;
 }
@@ -129,11 +130,16 @@ function presentationAttributes(node) {
 }
 
 function changedTarget(previous, next) {
-    let index = 0;
-    while (index < previous.length && index < next.length && previous[index].signature === next[index].signature) index += 1;
-    if (index === previous.length && index === next.length) return null;
-    // Deletions land on the next surviving content, or the preceding item at the end.
-    let target = next[Math.min(index, next.length - 1)]?.node;
-    while (target && !target.getClientRects().length) target = target.parentElement;
-    return target;
+    // Prefer edited content over incidental runtime classes/styles, such as lazy-loaded avatars.
+    // Keep presentation-only edits as a fallback instead of maintaining theme-specific ignore lists.
+    for (const key of ['signature', 'presentation']) {
+        let index = 0;
+        while (index < previous.length && index < next.length && previous[index][key] === next[index][key]) index += 1;
+        if (index === previous.length && index === next.length) continue;
+        // Deletions land on the next surviving content, or the preceding item at the end.
+        let target = next[Math.min(index, next.length - 1)]?.node;
+        while (target && !target.getClientRects().length) target = target.parentElement;
+        return target;
+    }
+    return null;
 }

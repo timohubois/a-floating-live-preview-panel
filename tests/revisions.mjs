@@ -10,7 +10,7 @@ const revision = (id, address = url(id)) => ({
     id, get: (key) => ({ aflppPreviewUrl: address, dateShort: `Date ${id}`, author: { name: `Author ${id}` } })[key],
 });
 
-function fixture({ visible = true, selected = revision(11) } = {}) {
+function fixture({ visible = true, selected = revision(11), isolated = false } = {}) {
     const timers = new Map(), listeners = new Map(), events = new Map(), reports = [], allFrames = [], scrolls = [];
     let options, nextTimer = 0, title = '', clears = 0, returned = 0;
     const children = [];
@@ -45,7 +45,7 @@ function fixture({ visible = true, selected = revision(11) } = {}) {
     };
     const context = {
         URL, console,
-        window: { location: { origin: 'http://site.local' }, addEventListener: (event, callback) => events.set(event, callback) },
+        window: { crossOriginIsolated: isolated, location: { origin: 'http://site.local' }, addEventListener: (event, callback) => events.set(event, callback) },
         setTimeout(callback, delay) { timers.set(++nextTimer, { callback, delay }); return nextTimer; },
         clearTimeout: (id) => timers.delete(id),
         fetch() { throw new Error('Revision browsing must not fetch a write endpoint.'); },
@@ -95,6 +95,18 @@ test('revision browsing loads the native To source without editor APIs or Web Lo
     assert.equal(h.title, 'Date 11 — Author 11');
     assert.equal(h.children[0].referrerPolicy, 'same-origin');
 });
+
+for (const isolated of [false, true]) {
+    test(`preview documents opt into matching isolation only for isolated editors: ${isolated}`, async () => {
+        const h = fixture({ isolated });
+        const address = new URL(h.children[0].src);
+        assert.equal(address.searchParams.get('aflpp_isolated'), isolated ? '1' : null);
+        assert.equal(address.searchParams.get('aflpp_token'), 'token-11');
+        await h.load();
+        assert.equal(h.last.state, 'ready');
+        assert.equal(new URL(h.last.previewUrl).searchParams.get('aflpp_isolated'), isolated ? '1' : null);
+    });
+}
 
 test('rapid slider changes cancel old loads, debounce and display only the latest revision', async () => {
     const h = fixture();

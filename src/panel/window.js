@@ -94,6 +94,9 @@ export function createPreviewPanel(strings, {
                 manual: strings.closeOtherHelp,
             }[reason] || strings.conflictHelp;
             note = reason === 'manual' ? strings.manualSwitchHint : strings.tabEdits;
+        } else if (state === 'paused') {
+            heading = strings.pausedTitle;
+            description = text;
         } else if (state === 'error') {
             if (reason === 'unavailable' || reason === 'browser') {
                 heading = reason === 'unavailable' ? strings.unavailableTitle : strings.browserTitle;
@@ -121,7 +124,7 @@ export function createPreviewPanel(strings, {
 
     function feedbackState() {
         const { state, hasPreview, canRetry, reason } = current;
-        const problem = hasPreview && ['error', 'conflict', 'handover'].includes(state);
+        const problem = hasPreview && ['error', 'conflict', 'handover', 'paused'].includes(state);
         feedback.hidden = !problem && !windowNotice;
         feedback.tabIndex = feedback.hidden ? -1 : 0;
         panel.dataset.hasFeedback = String(!feedback.hidden);
@@ -130,7 +133,7 @@ export function createPreviewPanel(strings, {
         return {
             heading: problem ? heading : windowNotice,
             description: problem ? description : strings.windowNoticeHelp,
-            status: !problem || state === 'handover' ? 'info' : state === 'error' && !canRetry ? 'error' : 'warning',
+            status: !problem || ['handover', 'paused'].includes(state) ? 'info' : state === 'error' && !canRetry ? 'error' : 'warning',
             dismissible: !problem,
             retry: problem && (takeOverAction || (canRetry && ['error', 'conflict'].includes(state))),
             close: problem && state === 'error' && !canRetry && reason !== 'reload',
@@ -141,7 +144,7 @@ export function createPreviewPanel(strings, {
 
     // A failed window operation must not change preview ownership, readiness or refresh controls.
     function showWindowNotice(text) {
-        if (!(current.hasPreview && ['error', 'conflict', 'handover'].includes(current.state))) {
+        if (!(current.hasPreview && ['error', 'conflict', 'handover', 'paused'].includes(current.state))) {
             windowNotice = text;
             syncControls();
         }
@@ -160,7 +163,7 @@ export function createPreviewPanel(strings, {
         const wasInside = panel.contains(focused);
         const resetEmptyScroll = !hasPreview && (current.state !== state || current.text !== text || current.reason !== reason);
         current = { text, state, canTakeOver, hasPreview, previewUrl, canRefresh, canRetry, reason };
-        if (['error', 'conflict', 'handover'].includes(state)) windowNotice = '';
+        if (['error', 'conflict', 'handover', 'paused'].includes(state)) windowNotice = '';
         panel.dataset.state = state;
         panel.dataset.hasPreview = String(hasPreview);
         takeOverAction = canTakeOver && ['conflict', 'handover'].includes(state);
@@ -261,7 +264,7 @@ export function createPreviewPanel(strings, {
             busy: current.hasPreview && ['stale', 'loading', 'handover'].includes(current.state) && current.text !== strings.saving,
             empty: current.hasPreview ? null : {
                 ...presentation(), busy: ['loading', 'stale', 'ready', 'handover'].includes(current.state),
-                icon: ['unavailable', 'browser'].includes(current.reason) ? 'info' : current.state === 'conflict' ? 'pip' : 'warning',
+                icon: current.state === 'paused' || ['unavailable', 'browser'].includes(current.reason) ? 'info' : current.state === 'conflict' ? 'pip' : 'warning',
                 retry, disabled: current.state === 'handover', close: current.state === 'error' && !retry,
                 action: takeOverAction ? (current.state === 'handover' ? strings.takingOver : strings.takeOver) : strings.retry,
                 previewUrl: current.state === 'error' ? current.previewUrl : undefined,

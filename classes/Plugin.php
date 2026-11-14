@@ -2,6 +2,7 @@
 
 namespace AFloatingLivePreviewPanel;
 
+use AFloatingLivePreviewPanel\Admin\BlockEditor;
 use AFloatingLivePreviewPanel\Admin\ClassicEditor;
 use AFloatingLivePreviewPanel\Admin\Panel;
 use AFloatingLivePreviewPanel\Admin\RevisionBrowser;
@@ -19,6 +20,7 @@ final class Plugin
         $frontendPreview = new FrontendPreview($file, $livePreview, $acf);
         $panel = new Panel($file);
         new ClassicEditor($livePreview, $acf, $panel);
+        new BlockEditor($livePreview, $panel);
         new RevisionBrowser($frontendPreview, $panel);
     }
 }

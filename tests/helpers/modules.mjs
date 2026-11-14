@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 export async function sourceForVm(url) {
     const source = await readFile(url, 'utf8');
     return source
+        .replace(/^import (\w+) from ['"]([^'"]+)['"];$/gm, (_, name, path) => `const ${name} = imports[${JSON.stringify(path)}].default;`)
         .replace(/^import\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"];$/gm, (_, names, path) => {
             const bindings = names.replace(/\b(\w+)\s+as\s+(\w+)\b/g, '$1: $2');
             return `const { ${bindings} } = imports[${JSON.stringify(path)}];`;
@@ -15,7 +16,11 @@ export async function sourceForVm(url) {
 // Execute the same shared iframe implementation in VM and data-URL browser fixtures.
 export async function previewSourceForVm(url) {
     const frame = await sourceForVm(new URL('../../src/preview/frame.js', import.meta.url));
-    const source = (await sourceForVm(url))
-        .replace(/^const \{\s*createPreviewFrame\s*\} = imports\["\.\.\/preview\/frame\.js"\];$/m, '');
+    let source = await sourceForVm(url);
+    if (url.pathname.endsWith('/classic-editor/live-preview.js')) {
+        const session = await sourceForVm(new URL('../../src/preview/live-preview.js', import.meta.url));
+        source = source.replace(/^const \{\s*createLivePreview\s*\} = imports\["\.\.\/preview\/live-preview\.js"\];$/m, session);
+    }
+    source = source.replace(/^const \{\s*createPreviewFrame\s*\} = imports\["\.\.\/preview\/frame\.js"\];$/m, '');
     return `${frame}\n${source}`;
 }

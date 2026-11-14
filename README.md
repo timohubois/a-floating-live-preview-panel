@@ -1,17 +1,18 @@
 # A Floating Live Preview Panel
 
 A floating frontend preview while editing WordPress posts, pages and eligible
-custom post types in the classic editor, and while browsing their saved revisions.
+custom post types in the Block Editor or classic editor, and while browsing their saved revisions.
 
-**Development status:** not a verified release. The full authenticated
-editor-to-frontend workflow still needs integration testing.
+**Development status:** not a verified release. Local authenticated Gutenberg
+flows have been exercised with Flynt and ACF on WordPress 7.1.2 and 7.2-beta5.
+This is not a full browser, theme or plugin compatibility guarantee.
 
 ## Requirements
 
 - WordPress 6.7+ and PHP 8.3+.
-- Permission to edit a frontend-viewable post. Live editing requires the classic editor and enabled revisions; saved previews use WordPress's native revision browser.
+- Permission to edit a frontend-viewable post. Live editing requires the post Block Editor or classic editor and enabled revisions; saved previews use WordPress's native revision browser.
 - A same-origin admin and frontend, and a browser with ES modules. Live editing additionally requires working authenticated WordPress REST requests and Web Locks in a secure context.
-- Live updates inside the Block Editor and Site Editor are not supported. Saved post revisions can still be previewed in the native revision browser.
+- The Site Editor and unsaved changes to separate entities such as synced patterns are not supported.
 
 ACF is optional. A general browser, theme or ACF compatibility range has not been
 verified. Composer and Node.js are not required to run the plugin.
@@ -21,7 +22,7 @@ verified. Composer and Node.js are not required to run the plugin.
 Use a disposable local or staging WordPress installation while this is in development.
 
 1. Install the attached GitHub release ZIP or WordPress.org package in `wp-content/plugins/a-floating-live-preview-panel/` and activate **A Floating Live Preview Panel**. For a Git checkout or GitHub's automatic **Source code** ZIP, run `npm ci && npm run build` in the plugin directory first; generated assets are not included in source archives.
-2. Open a saved post, page or frontend-viewable custom post type in its classic editing screen. Save a new post as a draft first; the plugin does not enable revisions for you.
+2. Open a post, page or frontend-viewable custom post type in its Block Editor or classic editing screen. New posts need a native draft save first; the Block Editor panel becomes available without reloading. The plugin does not force saves or enable revisions for you.
 3. Use the compact preview window or **Live preview** launcher. Edit supported fields and the preview refreshes after a short pause.
 4. Use WordPress's normal save, update or publish controls to save your changes to the post.
 
@@ -43,15 +44,18 @@ It retains WordPress's normal behavior, including saving changes to your own dra
 **Save**, **Update** and **Publish** also keep an open panel and its last frame visible
 while live writes drain and WordPress validates and submits the form. Live updates
 pause during this action and resume if browser, WordPress or ACF validation rejects
-it. A successful save uses WordPress's normal editor reload and restores remembered
-panel preferences; an explicitly closed panel stays closed.
+it. Classic saves use WordPress's normal editor reload. Block Editor saves and
+autosaves keep the editor open, wait for any legacy meta-box saves, then resume
+previewing against the acknowledged saved state. An explicitly closed panel stays
+closed. If the saved state cannot be confirmed, preserve your edits and reload;
+the panel never guesses a new baseline or prevents WordPress from saving.
 
 - **Preview actions** uses native WordPress controls. **Position** remembers bottom-left, bottom-center or bottom-right docking; dragging freely clears the dock selection. Resizing keeps the selected dock. **Size → Small / Large** offers click/tap and keyboard alternatives to border resizing. **Reset size and position** restores the default compact, bottom-right panel. **Open preview in new tab**, fullscreen and pop-out **PiP** (Picture-in-Picture) appear where available.
 - **Pop out preview (PiP)** appears only in browsers that support Document Picture-in-Picture, not just video PiP. Its icon-only shortcut sits inside the preview's bottom-right corner, fading in only when the pointer is near the button, or appearing immediately on keyboard focus. It stays visible on devices without hover, and reduced-motion settings disable the fade. The pop-out uses the browser's native **Back to tab** and close controls to return inline. **Refresh preview** stays visible in the pop-out header, including its loading indicator. Its **⋮** menu contains **Close live preview**, which stops the preview instead of merely closing the pop-out. A normal WordPress page reload closes PiP; use the same **Pop out preview (PiP)** action to open it again. There is no PiP persistence or reload-specific behavior.
 - **Desktop**, **Tablet** and **Mobile** use a native WordPress toolbar with pressed states and arrow-key navigation. They change the preview's viewport width, not its device or user agent.
 - Loading and no-frame recovery use a centered native Placeholder. Problems with a retained frame appear in a native Notice below the header, without covering the preview. Unresolved problems remain visible; incidental window-operation notices can be dismissed.
 - **Remember preview visibility** is on by default. Visibility, viewport and **Scroll to changes** preferences are per user across posts. Compact size and position, docking and expanded/compact mode are also remembered. Restored layouts fit inside the current window; fullscreen and PiP are never reopened automatically. Preferences remain after deactivation; uninstalling through WordPress removes the plugin's server-stored preferences.
-- **Scroll to changes** is on by default. It follows detected content, structure and layout-attribute changes without theme-specific integration. It normally centers shorter changed content and shows taller content from its beginning. Detection and header handling are best-effort; disable it to retain manual positioning.
+- **Scroll to changes** is on by default. It follows detected content, structure and layout-attribute changes without theme-specific integration. Content changes take priority over incidental runtime presentation changes; presentation-only edits remain detectable. It normally centers shorter changed content and shows taller content from its beginning. Detection and header handling are best-effort; disable it to retain manual positioning.
 
 ### Revision browser
 
@@ -84,15 +88,26 @@ Preview revisions stay out of the normal revision history and do not trigger the
 newer-autosave notice. They are reused on refresh and deleted when the parent post
 is updated or permanently deleted. Existing recovery autosaves are left untouched.
 
-Live inputs are title, content, excerpt and supported post-local ACF fields. Other
-metadata, related content and global settings are not live inputs. WordPress's
-normal server autosave continues independently, including its usual updates to
-your own drafts. Native Preview completion is acknowledged by a request-specific
-cookie containing state fingerprints, not editor content. It is cleared on completion
-and expires after one minute.
+Both editors preview title, content and excerpt; the Block Editor supplies serialized
+blocks in either visual or code mode. Classic editing also captures supported
+post-local ACF fields. Block Editor ACF/meta fields, featured images, taxonomies,
+template selections and unsaved separate entities are not live inputs. Native
+ACF/legacy meta-box saving remains intact; saved values become the new baseline.
+When the editor switches to an unsupported entity, the panel visibly pauses without
+a loading spinner and retains its last frame. Returning to the original post resumes
+live updates.
+WordPress's normal server autosave continues independently, including its usual
+updates to your own drafts. Native REST saves carry request-specific fingerprint
+receipts. A rejected REST save permits continued previewing only when a matching
+receipt confirms that the saved fingerprint stayed unchanged: even a 4xx can follow
+a partial post update. Failed saves never advance the baseline. Classic Preview
+and block-editor legacy meta-box saves use a short-lived
+acknowledgement cookie containing fingerprints, not editor content; it is cleared
+on completion and expires after one minute.
 
-- **ACF:** support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages. If native Preview saves draft repeater additions, deletions or reordering, the panel retains its last frame but requires an editor reload: ACF's remaining row changes still refer to the old saved order. Copy any later edits before reloading, and reload before saving again.
+- **Classic live ACF fields:** support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages. If native Preview saves draft repeater additions, deletions or reordering, the panel retains its last frame but requires an editor reload: ACF's remaining row changes still refer to the old saved order. Copy any later edits before reloading, and reload before saving again.
 - **Frontend output:** your theme and plugins determine the result, including redirects and browser-native output such as PDFs. Scroll restoration and change-following only apply to recognized HTML previews. Changes made only through stylesheets or frontend state may be missed; dynamic output at load can introduce unrelated differences. PDF page, zoom and scroll state may reset on refresh.
+- **Isolated editors:** authorized HTML previews opt into an isolated Block Editor's `Document-Isolation-Policy` when the frontend is not already isolated, preserving document access for scrolling without disabling core's client-side media processing. Existing frontend isolation policies are retained. Cross-origin subresources follow the resulting policy. Non-isolated screens do not request it.
 - **Trusted code only:** the preview is not sandboxed. Same-origin frontend scripts can access the editor. Use trusted theme and plugin code.
 - **Embedding:** site and browser restrictions still apply. Do not weaken them to force embedding; use **Open preview in new tab** when needed. **Preview refreshed** reports a document load, not verified content or publication.
 - **Multiple tabs:** **Preview here** switches preview ownership between editor tabs after pending writes finish. Fields are not copied or merged. Coordination is limited to the same browser, not other browsers or devices; this is not a collaborative editing tool.
@@ -116,7 +131,7 @@ composer check-platform-reqs
 composer php:lint
 ```
 
-All authored JavaScript and panel CSS live in `src/`. WordPress's standard tooling builds three entries: `src/classic-editor.js`, `src/revisions.js` and `src/preview-navigation.js`. The admin entries import public APIs from `@wordpress/components`, `@wordpress/element`, `@wordpress/data` and `@wordpress/preferences`; selected official icons live in `src/panel/icons.js`. WordPress supplies the installed runtime instead of bundling another copy of React or its components:
+All authored JavaScript and panel CSS live in `src/`. WordPress's standard tooling builds four entries: `src/classic-editor.js`, `src/block-editor.js`, `src/revisions.js` and `src/preview-navigation.js`. The admin entries import public APIs from `@wordpress/components`, `@wordpress/element`, `@wordpress/data`, `@wordpress/preferences`, `@wordpress/api-fetch` and `@wordpress/hooks`; selected official icons live in `src/panel/icons.js`. WordPress supplies the installed runtime instead of bundling another copy of React or its components:
 
 ```sh
 npm ci
@@ -156,6 +171,27 @@ blocking live-editor or unrelated writes:
 
 ```sh
 wp eval-file /path/to/a-floating-live-preview-panel/tests/revisions.php
+wp eval-file /path/to/a-floating-live-preview-panel/tests/block-editor.php
+wp eval-file /path/to/a-floating-live-preview-panel/tests/preview-isolation.php
+```
+
+The block-editor fixture checks native REST save receipts, source conflicts,
+authorization, first-save eligibility, draft/published autosaves, unchanged validation
+rejections, metadata errors after partial post updates, and isolated serialized-block
+previews. Client adapter tests cover pre-save draining, request correlation, legacy
+meta-box acknowledgement and failure handling, including malformed fingerprints and
+read-only errors in strict mode. The HTTP-free preview-isolation fixture checks that
+existing site policies are preserved with both core APIs and the older-core fallback.
+Frame/scroll tests cover isolation opt-in, incidental presentation changes, content
+edits and presentation-only edits. These do not replace authenticated browser testing
+of native editor controls.
+
+The optional ACF fixture checks classic live-field saves, paginated repeater merging
+and source isolation. It exits successfully with a skip message when ACF Pro with
+repeater support is absent:
+
+```sh
+wp eval-file /path/to/a-floating-live-preview-panel/tests/acf.php
 ```
 
 ### GitHub Actions and releases
@@ -190,10 +226,10 @@ compatibility claims above.
 ### Structure and ownership
 
 - `a-floating-live-preview-panel.php` explicitly loads the PHP classes; `classes/Plugin.php` connects the owners. No Composer autoloader is required at runtime.
-- `classes/Admin/ClassicEditor.php` and `RevisionBrowser.php` connect their respective native screens. `Admin/Panel.php` owns shared assets, labels and the PHP view in `views/panel.php`.
+- `classes/Admin/ClassicEditor.php`, `BlockEditor.php` and `RevisionBrowser.php` connect their respective native screens. `Admin/Panel.php` owns shared assets, labels and the PHP view in `views/panel.php`.
 - `classes/Preview/LivePreview.php` owns internal preview revision writes, fingerprints, native-save coordination and cleanup. `Preview/FrontendPreview.php` authorizes reads and overlays only the selected source on frontend output. Live-source ownership and token verification stay together in `LivePreview`.
 - `classes/Compatibility/Acf.php` owns the optional ACF save/read contracts; `src/compatibility/acf.js` bridges its browser events. Small Timber read handling stays beside frontend content reads rather than becoming another integration class.
-- `src/classic-editor/live-preview.js` owns field capture, live writes, Web Locks and save sequencing. `classic-editor/native-editor.js` observes native Preview, heartbeat and validation. The entry initializes them synchronously, with native observers first.
+- `src/preview/live-preview.js` shares live writes, frames and Web Locks between editor adapters. `classic-editor/live-preview.js` captures classic/ACF fields; `classic-editor/native-editor.js` observes native Preview, heartbeat and validation. `block-editor/editor.js` reads public editor selectors and coordinates native saves through the awaited pre-save hook and narrowly scoped API-fetch middleware.
 - `src/revisions/preview.js` owns read-only revision selection. It never acquires editor locks or writes previews. It follows core's `wp.revisions.view.frame.model`; guard and verify that integration when changing supported WordPress versions.
 - `src/panel/window.js` owns window presentation, focus, preferences, fullscreen and PiP. `panel/geometry.js` owns preferred bounds, docking, resizing and temporary viewport fitting; pointer/keyboard event binding stays with the window. `controls.js` renders public WordPress components and `viewport.js` sizes the preview viewport.
 - `src/preview/frame.js` owns iframe replacement and cancellation; `scroll.js` enhances only recognized preview HTML. These are shared by the separate editor and revision lifecycles.
