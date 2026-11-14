@@ -14,7 +14,7 @@ function browserTests({ core, panel }) {
     launcher.type = 'button';
     launcher.className = 'components-button is-secondary';
     launcherContainer.append(launcher);
-    launcher.innerHTML = '<span class="aflpp-launcher-label">Live preview</span><span class="components-external-link__icon wp-exclude-emoji" aria-hidden="true">↗</span>';
+    launcher.innerHTML = '<span class="aflpp-launcher-label">Live preview</span>';
     const nativeLauncher = document.createElement('button');
     nativeLauncher.type = 'button';
     nativeLauncher.className = 'components-button is-secondary';
@@ -48,24 +48,19 @@ function browserTests({ core, panel }) {
         finally { launcher.blur(); nativeLauncher.blur(); }
     }
     for (const direction of ['ltr', 'rtl']) {
-        const name = `${direction} launcher keeps its trailing arrow visible with a long translated label`;
+        const name = `${direction} text-only launcher truncates a long translated label without overflowing`;
         try {
             launcher.dir = direction;
             launcherContainer.style.maxWidth = '120px';
             launcher.querySelector('.aflpp-launcher-label').textContent = 'A long translated live preview label '.repeat(8);
-            const arrow = launcher.querySelector('.components-external-link__icon');
-            arrow.textContent = direction === 'rtl' ? '↖' : '↗';
-            const label = launcher.firstElementChild.getBoundingClientRect();
-            const icon = arrow.getBoundingClientRect();
+            const label = launcher.firstElementChild;
+            const text = label.getBoundingClientRect();
             const box = launcher.getBoundingClientRect();
-            if (direction === 'rtl' ? icon.right > label.left : icon.left < label.right) {
-                throw new Error('The arrow must follow the label in the reading direction.');
+            if (text.width <= 0 || text.left < box.left || text.right > box.right || launcher.scrollWidth > launcher.clientWidth) {
+                throw new Error('Keep the translated label inside the button.');
             }
-            if (icon.width <= 0 || icon.left < box.left || icon.right > box.right || launcher.scrollWidth > launcher.clientWidth) {
-                throw new Error('Keep the arrow inside the button while truncating only its label.');
-            }
-            if (arrow.getAttribute('aria-hidden') !== 'true' || getComputedStyle(launcher.firstElementChild).textOverflow !== 'ellipsis') {
-                throw new Error('The decorative arrow must not change the accessible label.');
+            if (label.scrollWidth <= label.clientWidth || getComputedStyle(label).textOverflow !== 'ellipsis') {
+                throw new Error('Truncate long labels with an ellipsis without changing the full text.');
             }
             results.push({ name });
         } catch (error) { results.push({ name, error: error.message }); }

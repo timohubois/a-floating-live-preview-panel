@@ -121,7 +121,6 @@
 .aflpp-launcher { position: fixed; right: auto; bottom: auto; z-index: 99990; display: flex; width: max-content; max-width: calc(100vw - 32px); border-radius: 2px; background: #fff; box-shadow: 0 2px 6px #0002; cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
 .aflpp-launcher .components-button { max-width: 100%; cursor: inherit; }
 .aflpp-launcher-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aflpp-launcher .components-external-link__icon { flex-shrink: 0; }
 .aflpp-panel:fullscreen { width: 100% !important; height: 100% !important; inset: 0 !important; transform: none !important; border: 0; border-radius: 0; }
 .aflpp-panel:fullscreen .aflpp-header,
 .aflpp-panel:fullscreen .aflpp-devicebar { border-radius: 0; }

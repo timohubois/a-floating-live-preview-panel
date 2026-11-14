@@ -85,7 +85,7 @@ for (const direction of ['ltr', 'rtl']) {
     test(`launcher renders a native WordPress secondary Button synchronously in ${direction}`, () => {
         const Button = Symbol('Native Button');
         const button = {};
-        const container = { dataset: { title: 'Revision preview', moveHelp: 'Drag or use arrow keys.', direction } };
+        const container = { dir: direction, dataset: { title: 'Revision preview', moveHelp: 'Drag or use arrow keys.' } };
         let tree;
         let mounts = 0;
         const imports = {
@@ -119,9 +119,10 @@ for (const direction of ['ltr', 'rtl']) {
         assert.equal(tree.props['aria-expanded'], false);
         assert.equal(tree.props.hidden, undefined, 'Hide the entire surface through its mount, not just the button.');
         assert.equal(tree.props.href, undefined, 'This opens a panel, not an external page.');
+        assert.equal(tree.props.icon, undefined, 'Do not imply that the preview opens externally.');
+        assert.equal(tree.children.length, 1, 'Keep the launcher text-only, without a trailing icon.');
+        assert.equal(tree.children[0].props.className, 'aflpp-launcher-label');
         assert.equal(tree.children[0].children[0], 'Revision preview');
-        assert.equal(tree.children[1].props['aria-hidden'], true);
-        assert.equal(tree.children[1].children[0], direction === 'rtl' ? '↖' : '↗');
     });
 }
 

@@ -8,14 +8,13 @@ import { icons } from './icons.js';
 // Keep the launcher mounted in the editor while panel controls unmount for fullscreen/PiP moves.
 export function createPreviewLauncher(container) {
     let button;
-    const { title, moveHelp, direction } = container.dataset;
+    const { title, moveHelp } = container.dataset;
     flushSync(() => createRoot(container).render(h(Button, {
         ref: (element) => { button = element; },
         variant: 'secondary', label: title, title, description: moveHelp,
         'aria-controls': 'aflpp-panel', 'aria-expanded': false,
     },
     h('span', { className: 'aflpp-launcher-label' }, title),
-    h('span', { className: 'components-external-link__icon wp-exclude-emoji', 'aria-hidden': true }, direction === 'rtl' ? '↖' : '↗'),
     )));
     return button;
 }

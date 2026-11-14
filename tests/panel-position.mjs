@@ -30,7 +30,7 @@ function browserTests({ core, css, geometry, source }) {
                 ${css}
                 </style></head><body><div id="wpadminbar"></div>
                 <div id="wpcontent"><div id="wpbody-content"><div class="wrap">Editor content</div></div></div>
-                <div id="aflpp-toggle" class="aflpp-launcher" hidden><button type="button" class="components-button is-secondary"><span class="aflpp-launcher-label">Revision preview</span><span class="components-external-link__icon wp-exclude-emoji" aria-hidden="true">${direction === 'rtl' ? '↖' : '↗'}</span></button></div>
+                <div id="aflpp-toggle" class="aflpp-launcher" hidden><button type="button" class="components-button is-secondary"><span class="aflpp-launcher-label">Revision preview</span></button></div>
                 <section id="aflpp-panel" class="aflpp-panel" aria-labelledby="aflpp-title" hidden>
                     <header class="aflpp-header"><div class="aflpp-move-control"><button>Move</button></div>
                         <div class="aflpp-titlebar"><h2 id="aflpp-title" class="aflpp-caption">Live preview</h2></div>
@@ -42,7 +42,7 @@ function browserTests({ core, css, geometry, source }) {
             doc.close();
             const win = doc.defaultView;
             // A left-edge corner remembered with the shorter editor launcher is also restored
-            // on revision screens. Measure the full label and native trailing arrow.
+            // on revision screens. Measure the full text-only label.
             const saved = { bounds: { x: -348, y: -268, width: 480, height: 340 }, dock: null, anchor: 'right', expanded: false };
             const preferences = new Map([['panelOpen', false], ['layout', saved]]);
             const focusCalls = [];

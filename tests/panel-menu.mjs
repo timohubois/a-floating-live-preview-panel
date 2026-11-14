@@ -149,7 +149,7 @@ function nativeLauncherTests() {
         container.className = 'aflpp-launcher';
         container.hidden = true;
         container.style.cssText = 'left:20px;top:20px';
-        Object.assign(container.dataset, { title: 'Live preview', moveHelp: 'Drag or use arrow keys.', direction });
+        Object.assign(container.dataset, { title: 'Live preview', moveHelp: 'Drag or use arrow keys.' });
         document.body.append(container);
         try {
             const button = window.previewControls.createPreviewLauncher(container);
@@ -160,8 +160,7 @@ function nativeLauncherTests() {
             check(button.getAttribute('aria-label') === 'Live preview', 'Keep the action label independent of status messages.');
             const description = document.getElementById(button.getAttribute('aria-describedby'));
             check(description?.textContent === container.dataset.moveHelp, 'Let Button provide its accessible description.');
-            const arrow = button.querySelector('.components-external-link__icon');
-            check(arrow.textContent === (direction === 'rtl' ? '↖' : '↗') && arrow.getAttribute('aria-hidden') === 'true', 'Keep the trailing arrow decorative and directional.');
+            check(!button.querySelector('svg, .components-external-link__icon') && button.querySelector('.aflpp-launcher-label')?.textContent === 'Live preview', 'Keep the launcher text-only rather than suggesting an external link.');
             container.hidden = false;
             const reference = button.cloneNode(true);
             reference.removeAttribute('id');
@@ -191,9 +190,9 @@ function nativeLauncherTests() {
             container.style.maxWidth = '120px';
             button.querySelector('.aflpp-launcher-label').textContent = 'A long translated live preview label '.repeat(8);
             const box = container.getBoundingClientRect();
-            const icon = arrow.getBoundingClientRect();
             check(box.width <= 120 && button.getBoundingClientRect().width <= box.width, 'Fit the entire secondary Button to the available width.');
-            check(icon.width > 0 && icon.left >= box.left && icon.right <= box.right && button.scrollWidth <= button.clientWidth, 'Keep the native trailing arrow visible while truncating only the label.');
+            const label = button.querySelector('.aflpp-launcher-label');
+            check(label.scrollWidth > label.clientWidth && getComputedStyle(label).textOverflow === 'ellipsis' && button.scrollWidth <= button.clientWidth, 'Truncate the long label without overflowing the button.');
             results.push({ name });
         } catch (error) { results.push({ name, error: error.stack }); }
         finally { container.remove(); }

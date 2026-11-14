@@ -8,7 +8,6 @@ defined('ABSPATH') || exit;
 ?>
 <div id="aflpp-toggle" class="aflpp-launcher" hidden
     data-title="<?php echo esc_attr($title); ?>"
-    data-direction="<?php echo is_rtl() ? 'rtl' : 'ltr'; ?>"
     data-move-help="<?php esc_attr_e(
         'Drag to move the preview, or use the arrow keys. Hold Shift to move farther.',
         'a-floating-live-preview-panel'
