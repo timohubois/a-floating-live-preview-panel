@@ -1,8 +1,7 @@
 <?php
 
-namespace AFloatingLivePreviewPanel\Admin;
+namespace AFloatingLivePreviewPanel;
 
-use AFloatingLivePreviewPanel\Preview\FrontendPreview;
 use WP_Post;
 
 /** Connect WordPress's revision browser without changing its comparison or restore behavior. */

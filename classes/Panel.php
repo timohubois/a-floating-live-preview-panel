@@ -1,8 +1,7 @@
 <?php
 
-namespace AFloatingLivePreviewPanel\Admin;
+namespace AFloatingLivePreviewPanel;
 
-use AFloatingLivePreviewPanel\Preview\LivePreview;
 use WP_Post;
 
 /** Own the shared admin window's assets, presentation and common labels. */

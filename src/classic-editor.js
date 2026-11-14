@@ -1,5 +1,5 @@
-import { createNativeEditor } from './classic-editor/native-editor.js';
-import { initLivePreview } from './classic-editor/editor.js';
+import { createNativeEditor } from './screens/classic-native-editor.js';
+import { initLivePreview } from './screens/classic-editor.js';
 import { showStartupError } from './panel/startup-error.js';
 import './panel/panel.css';
 

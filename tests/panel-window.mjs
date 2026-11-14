@@ -630,7 +630,7 @@ for (const hasPreview of [false, true]) {
 
 // Exercise complete messages, not just individual strings: server errors must not repeat the reload warning.
 const reloadDetails = [panelStrings.nativePreviewAcf, panelStrings.nativePreviewFailed, blockEditorStrings.nativeSaveFailed];
-for (const path of ['classes/Preview/LivePreview.php', 'classes/Compatibility/Acf.php']) {
+for (const path of ['classes/LivePreview.php', 'classes/Compatibility/Acf.php']) {
     const php = await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
     for (const [, code, message] of php.matchAll(/new WP_Error\(\s*'(aflpp_[^']+)',\s*__\(\s*'([^']+)'/g)) {
         if (['aflpp_invalid_nonce', 'aflpp_preview_conflict', 'aflpp_source_changed', 'aflpp_acf_unavailable'].includes(code)) {

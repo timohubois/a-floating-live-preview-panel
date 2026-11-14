@@ -9,6 +9,6 @@ async function stringsFrom(path) {
     ]));
 }
 
-export const panelStrings = await stringsFrom('classes/Admin/Panel.php');
-export const revisionStrings = { ...panelStrings, ...await stringsFrom('classes/Admin/RevisionBrowser.php') };
-export const blockEditorStrings = { ...panelStrings, ...await stringsFrom('classes/Admin/BlockEditor.php') };
+export const panelStrings = await stringsFrom('classes/Panel.php');
+export const revisionStrings = { ...panelStrings, ...await stringsFrom('classes/RevisionBrowser.php') };
+export const blockEditorStrings = { ...panelStrings, ...await stringsFrom('classes/BlockEditor.php') };

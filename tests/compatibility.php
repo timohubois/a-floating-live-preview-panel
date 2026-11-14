@@ -4,7 +4,7 @@
 
 use AFloatingLivePreviewPanel\Compatibility\Acf;
 use AFloatingLivePreviewPanel\Compatibility\Timber;
-use AFloatingLivePreviewPanel\Preview\LivePreview;
+use AFloatingLivePreviewPanel\LivePreview;
 
 if (!defined('WP_CLI') || !WP_CLI || !class_exists(LivePreview::class) || is_multisite()) {
     throw new RuntimeException('Run through WP-CLI on a single-site installation with this plugin active.');

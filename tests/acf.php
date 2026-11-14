@@ -3,7 +3,7 @@
 /** Run with `wp eval-file tests/acf.php` on a single site; skips without ACF Pro. */
 
 use AFloatingLivePreviewPanel\Compatibility\Acf;
-use AFloatingLivePreviewPanel\Preview\LivePreview;
+use AFloatingLivePreviewPanel\LivePreview;
 
 if (!defined('WP_CLI') || !WP_CLI || !class_exists(LivePreview::class) || is_multisite()) {
     throw new RuntimeException('Run through WP-CLI on a single-site installation with this plugin active.');

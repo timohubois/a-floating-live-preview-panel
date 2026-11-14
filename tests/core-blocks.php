@@ -3,8 +3,8 @@
 /** Run with `wp eval-file tests/core-blocks.php` on a disposable single-site installation. */
 
 use AFloatingLivePreviewPanel\Compatibility\CoreBlocks;
-use AFloatingLivePreviewPanel\Preview\FrontendPreview;
-use AFloatingLivePreviewPanel\Preview\LivePreview;
+use AFloatingLivePreviewPanel\FrontendPreview;
+use AFloatingLivePreviewPanel\LivePreview;
 
 if (!defined('WP_CLI') || !WP_CLI || !class_exists(CoreBlocks::class) || is_multisite()) {
     throw new RuntimeException('Run through WP-CLI on a single-site installation with this plugin active.');

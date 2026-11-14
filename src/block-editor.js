@@ -1,4 +1,4 @@
-import { createBlockEditor } from './block-editor/editor.js';
+import { createBlockEditor } from './screens/block-editor.js';
 import { createLivePreview } from './preview/live-preview.js';
 import { showStartupError } from './panel/startup-error.js';
 import './panel/panel.css';

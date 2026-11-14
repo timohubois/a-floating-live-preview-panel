@@ -3,7 +3,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
 
-const source = await previewSourceForVm(new URL('../src/classic-editor/editor.js', import.meta.url));
+const source = await previewSourceForVm(new URL('../src/screens/classic-editor.js', import.meta.url));
 const flush = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
 
 async function fixture({ visible = true, pending = true } = {}) {

@@ -4,7 +4,7 @@ import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-const source = await sourceForVm(new URL('../src/classic-editor/native-editor.js', import.meta.url));
+const source = await sourceForVm(new URL('../src/screens/classic-native-editor.js', import.meta.url));
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 const deferred = () => {
     let resolve, reject;
@@ -261,7 +261,7 @@ test('browser constraint validation resumes a rejected native Save', async () =>
     assert.equal(h.nativeEditor.saving, false);
 });
 
-const editorSource = await previewSourceForVm(new URL('../src/classic-editor/editor.js', import.meta.url));
+const editorSource = await previewSourceForVm(new URL('../src/screens/classic-editor.js', import.meta.url));
 
 for (const [saved, structural, blocked] of [[true, true, true], [false, true, false], [true, false, false]]) {
     test(`saved=${saved}, structural ACF changes=${structural}: ${blocked ? 'retain reload protection on reopen' : 'allow live preview'}`, async () => {

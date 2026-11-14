@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
 
 // ES modules are strict in production, including receipt cleanup on rejected native saves.
-const source = `"use strict";\n${await sourceForVm(new URL('../src/block-editor/editor.js', import.meta.url))}`;
+const source = `"use strict";\n${await sourceForVm(new URL('../src/screens/block-editor.js', import.meta.url))}`;
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 const deferred = () => {
     let resolve, reject;
@@ -609,7 +609,7 @@ for (const fail of [false, true]) {
         vm.runInNewContext(entry, {
             window: { aFloatingLivePreviewPanel: { strings: { bootFailed: 'Unavailable' } } },
             imports: {
-                './block-editor/editor.js': { createBlockEditor: () => { calls.push('observe'); return native; } },
+                './screens/block-editor.js': { createBlockEditor: () => { calls.push('observe'); return native; } },
                 './preview/live-preview.js': { createLivePreview: (config, editor) => {
                     assert.equal(editor, native);
                     calls.push('preview');

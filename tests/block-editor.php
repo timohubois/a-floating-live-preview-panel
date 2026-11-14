@@ -2,8 +2,8 @@
 
 /** Run with `wp eval-file tests/block-editor.php`; fixtures are created and removed on this single site. */
 
-use AFloatingLivePreviewPanel\Preview\LivePreview;
-use AFloatingLivePreviewPanel\Preview\FrontendPreview;
+use AFloatingLivePreviewPanel\LivePreview;
+use AFloatingLivePreviewPanel\FrontendPreview;
 
 if (!defined('WP_CLI') || !WP_CLI || !class_exists(LivePreview::class) || is_multisite()) {
     throw new RuntimeException('Run through WP-CLI on a single-site installation with this plugin active.');

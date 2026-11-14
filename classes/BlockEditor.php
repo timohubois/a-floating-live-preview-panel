@@ -1,9 +1,8 @@
 <?php
 
-namespace AFloatingLivePreviewPanel\Admin;
+namespace AFloatingLivePreviewPanel;
 
 use AFloatingLivePreviewPanel\Compatibility\Acf;
-use AFloatingLivePreviewPanel\Preview\LivePreview;
 use WP_Post;
 
 /** Connect only the post block editor, not the Site Editor or its separate entities. */

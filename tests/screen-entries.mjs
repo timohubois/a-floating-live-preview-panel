@@ -29,19 +29,19 @@ function fixture(screen, { configured = true, formAvailable = true, modelAvailab
     };
     const showStartupError = vm.runInNewContext(`${failureSource}\nshowStartupError`, context);
     context.imports = {
-        './classic-editor/native-editor.js': { createNativeEditor(received, target) {
+        './screens/classic-native-editor.js': { createNativeEditor(received, target) {
             assert.equal(received, config);
             assert.equal(target, form);
             calls.push('observe');
             return native;
         } },
-        './classic-editor/editor.js': { initLivePreview(received, observer) {
+        './screens/classic-editor.js': { initLivePreview(received, observer) {
             assert.equal(received, config);
             assert.equal(observer, native);
             calls.push('editor');
             if (fail) throw new Error('Fixture startup failure');
         } },
-        './revision-browser/preview.js': { initRevisionPreview(received, selection) {
+        './screens/revision-browser.js': { initRevisionPreview(received, selection) {
             assert.equal(received, config);
             assert.equal(selection, model);
             calls.push('revisions');

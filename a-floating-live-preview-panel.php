@@ -20,12 +20,12 @@ defined('ABSPATH') || exit;
 require_once __DIR__ . '/classes/Compatibility/Acf.php';
 require_once __DIR__ . '/classes/Compatibility/CoreBlocks.php';
 require_once __DIR__ . '/classes/Compatibility/Timber.php';
-require_once __DIR__ . '/classes/Preview/LivePreview.php';
-require_once __DIR__ . '/classes/Preview/FrontendPreview.php';
-require_once __DIR__ . '/classes/Admin/Panel.php';
-require_once __DIR__ . '/classes/Admin/ClassicEditor.php';
-require_once __DIR__ . '/classes/Admin/BlockEditor.php';
-require_once __DIR__ . '/classes/Admin/RevisionBrowser.php';
+require_once __DIR__ . '/classes/LivePreview.php';
+require_once __DIR__ . '/classes/FrontendPreview.php';
+require_once __DIR__ . '/classes/Panel.php';
+require_once __DIR__ . '/classes/ClassicEditor.php';
+require_once __DIR__ . '/classes/BlockEditor.php';
+require_once __DIR__ . '/classes/RevisionBrowser.php';
 require_once __DIR__ . '/classes/Plugin.php';
 
 new Plugin(__FILE__);

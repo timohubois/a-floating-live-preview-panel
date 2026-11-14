@@ -3,7 +3,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { previewSourceForVm } from './helpers/modules.mjs';
 
-const source = await previewSourceForVm(new URL('../src/revision-browser/preview.js', import.meta.url));
+const source = await previewSourceForVm(new URL('../src/screens/revision-browser.js', import.meta.url));
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 const url = (id) => `http://site.local/?preview=true&aflpp_saved=1&aflpp_revision=${id}&aflpp_token=token-${id}`;
 const revision = (id, address = url(id)) => ({

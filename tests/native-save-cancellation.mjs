@@ -91,8 +91,8 @@ async function browserFixture(editorSource, nativeSource) {
     };
 }
 
-const editorSource = await previewSourceForVm(new URL('../src/classic-editor/editor.js', import.meta.url));
-const nativeSource = await sourceForVm(new URL('../src/classic-editor/native-editor.js', import.meta.url));
+const editorSource = await previewSourceForVm(new URL('../src/screens/classic-editor.js', import.meta.url));
+const nativeSource = await sourceForVm(new URL('../src/screens/classic-native-editor.js', import.meta.url));
 const jquery = process.env.WORDPRESS_ROOT
     ? await readFile(join(process.env.WORDPRESS_ROOT, 'wp-includes/js/jquery/jquery.js'), 'utf8') : '';
 const script = `(${browserFixture.toString()})(${JSON.stringify(editorSource)}, ${JSON.stringify(nativeSource)});`;

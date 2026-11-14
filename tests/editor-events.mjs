@@ -297,8 +297,8 @@ async function browserTests(editorSource, initAcf, nativeSource) {
 }
 
 test('native editor events and ACF compatibility boundaries in Chromium', async (t) => {
-    const editorSource = await previewSourceForVm(new URL('../src/classic-editor/editor.js', import.meta.url));
-    const nativeSource = await sourceForVm(new URL('../src/classic-editor/native-editor.js', import.meta.url));
+    const editorSource = await previewSourceForVm(new URL('../src/screens/classic-editor.js', import.meta.url));
+    const nativeSource = await sourceForVm(new URL('../src/screens/classic-native-editor.js', import.meta.url));
     const acfSource = await readFile(new URL('../src/compatibility/acf-fields.js', import.meta.url), 'utf8');
     const acfUrl = `data:text/javascript;base64,${Buffer.from(acfSource).toString('base64')}`;
     const wordpressScripts = process.env.WORDPRESS_ROOT ? await Promise.all([

@@ -159,7 +159,7 @@ test('position choices and preferences use native radio and checkbox components'
 
 for (const inPage of [true, false]) {
     test(`layout remembering uses the existing native checkbox pattern ${inPage ? 'in-page' : 'outside in-page mode'}`, async () => {
-        const labels = await readFile(new URL('../classes/Admin/Panel.php', import.meta.url), 'utf8');
+        const labels = await readFile(new URL('../classes/Panel.php', import.meta.url), 'utf8');
         assert.match(labels, /'rememberPosition' => __\('Remember size and position', 'a-floating-live-preview-panel'\)/);
         const h = fixture();
         const toggle = () => h.nodes('MenuItem').find(({ props }) => props['data-action'] === 'remember-position');

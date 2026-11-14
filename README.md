@@ -327,24 +327,26 @@ read and presentation paths without capturing editor values or writing previews.
 
 ### Structure and ownership
 
-- `a-floating-live-preview-panel.php` explicitly loads the PHP classes; `classes/Plugin.php` connects the owners. No Composer autoloader is required at runtime.
-- `classes/Admin/ClassicEditor.php`, `BlockEditor.php` and `RevisionBrowser.php` connect their respective native screens. `Admin/Panel.php` owns shared assets, labels and the PHP view in `views/panel.php`.
-- `classes/Preview/LivePreview.php` owns internal preview revision writes, fingerprints, native-save coordination and cleanup. `Preview/FrontendPreview.php` authorizes reads and overlays only the selected source on frontend output. Live-source ownership and token verification stay together in `LivePreview`.
+- `a-floating-live-preview-panel.php` explicitly loads the PHP classes; `classes/Plugin.php` connects the owners. PHP owners live directly in `classes/`, with only compatibility adaptations grouped in a subdirectory. No Composer autoloader is required at runtime.
+- `classes/ClassicEditor.php`, `BlockEditor.php` and `RevisionBrowser.php` connect their respective native screens. `classes/Panel.php` owns shared assets, labels and the PHP view in `views/panel.php`; the view remains a plain markup template, not a separate rendering layer.
+- `classes/LivePreview.php` owns internal preview revision writes, fingerprints, native-save coordination and cleanup. `classes/FrontendPreview.php` authorizes reads and overlays only the selected source on frontend output. Live-source ownership and token verification stay together in `LivePreview`.
 - `classes/Compatibility/` lists explicit core and third-party adaptations: `CoreBlocks.php` delegates native Post Excerpt rendering with the authorized source's fields; `Acf.php` owns ACF field preparation, save verification, cache invalidation and source reads; `Timber.php` owns Timber post-import reads. The PHP preview owners expose lifecycle hooks and do not depend on these implementations. `src/compatibility/acf-fields.js` bridges ACF browser events; `acf-block-editor.js` captures native meta-box forms and observes ACF's own post-save row replacement.
-- `src/preview/live-preview.js` shares live writes, frames and Web Locks between editor adapters. `classic-editor/editor.js` captures classic/ACF fields; `classic-editor/native-editor.js` observes native Preview, heartbeat and validation. `block-editor/editor.js` reads public editor selectors and coordinates native saves through the awaited pre-save hook and narrowly scoped API-fetch middleware.
-- `src/revision-browser/preview.js` owns read-only revision selection. It never acquires editor locks or writes previews. It follows core's `wp.revisions.view.frame.model`; guard and verify that integration when changing supported WordPress versions.
+- `src/screens/` contains native screen integrations. `classic-editor.js` captures classic/ACF fields; `classic-native-editor.js` observes native Preview, heartbeat and validation. `block-editor.js` reads public editor selectors and coordinates native saves through the awaited pre-save hook and narrowly scoped API-fetch middleware. Both editors use `src/preview/live-preview.js` for shared live writes, frames and Web Locks.
+- `src/screens/revision-browser.js` owns read-only revision selection. It never acquires editor locks or writes previews. It follows core's `wp.revisions.view.frame.model`; guard and verify that integration when changing supported WordPress versions.
 - `src/panel/window.js` owns window presentation, focus, preferences, fullscreen and PiP. `panel/geometry.js` owns preferred bounds, docking, resizing and temporary viewport fitting; pointer/keyboard event binding stays with the window. `controls.js` renders public WordPress components and `viewport.js` sizes the preview viewport.
 - `src/preview/frame.js` owns iframe replacement and cancellation; `scroll.js` enhances only recognized preview HTML. These are shared by the separate editor and revision lifecycles.
 
-Keep PHP class names and filenames in PascalCase and browser filenames in kebab-case. Group source by responsibility, not separate generic JavaScript/CSS buckets. Preserve runtime identifiers such as preference keys, REST paths and the `aflpp-` CSS namespace when reorganizing internals. Extract concrete shared behavior, not generic controller or module frameworks.
+Keep PHP class names and filenames in PascalCase and browser filenames in kebab-case. Group browser modules by responsibility: `screens/` connects native screens, `preview/` manages preview updates and documents, `panel/` presents the floating window, and `compatibility/` contains optional integrations. Shared behavior stays with its owner rather than in generic helpers, utilities or separate JavaScript/CSS buckets. Preserve runtime identifiers such as preference keys, REST paths and the `aflpp-` CSS namespace when reorganizing internals. Extract concrete shared behavior, not generic controller or module frameworks.
 
-Asset entry names match their feature owners: `classic-editor`, `block-editor`,
-`revision-browser` and `preview-navigation`. The editor-specific adapters are
-`classic-editor/editor.js` and `block-editor/editor.js`; only the shared coordinator
-is named `preview/live-preview.js`. Compatibility filenames put the integration
-first: `compatibility/acf-fields.js` and `compatibility/acf-block-editor.js`. The read-only
-browser module lives in `revision-browser/preview.js`; it is not another live editor.
-Tests follow the corresponding feature/integration names where they target an owner.
+The four JavaScript files directly in `src/` remain the build entries: `classic-editor`,
+`block-editor`, `revision-browser` and `preview-navigation`. The admin entries initialize
+screen integrations, import panel styles and handle startup failures; the navigation
+entry runs inside the frontend preview. Screen behavior lives in `screens/`, separate
+from startup. Only the shared live coordinator is named `preview/live-preview.js`;
+`screens/revision-browser.js` is read-only, not another live editor. Compatibility
+filenames put the integration first: `compatibility/acf-fields.js` and
+`compatibility/acf-block-editor.js`. Tests follow the corresponding feature/integration
+names where they target an owner.
 
 `src/` contains authored assets; `build/` contains generated assets with the same
 entry basenames. WordPress tooling intentionally adds `.asset.php` dependency files
@@ -371,7 +373,7 @@ Compatibility is explicit, not hidden inside the preview engine:
 Flynt is a local test theme, not a plugin integration or runtime requirement. A
 compatibility class identifies a deliberate integration, not a guarantee across all
 versions of that dependency. Add a concrete owner and regression tests when adding
-third-party behavior; do not put its hooks in `Preview/` or introduce a generic
+third-party behavior; do not put its hooks in the shared preview owners or introduce a generic
 integration registry. `Plugin.php` instantiates the owners; they register their own
 hooks. Editor adapters may request ACF assets/configuration through its owner, while
 field-specific PHP and browser behavior stays in the compatibility files.
@@ -414,7 +416,7 @@ browser compatibility guarantee.
 
 | Bridge | Native contract considered | Result and remaining boundary |
 | --- | --- | --- |
-| Recognizing native legacy meta-box requests | Core builds its endpoint with `admin_url('post.php')`. | `Admin/BlockEditor.php` supplies that URL. Request matching no longer reads the private `_wpMetaBoxUrl` global or copies its nonce logic. Core still sends the request; the plugin only scopes its acknowledgement to the same-origin endpoint, loader request, post ID and `editpost` action. |
+| Recognizing native legacy meta-box requests | Core builds its endpoint with `admin_url('post.php')`. | `classes/BlockEditor.php` supplies that URL. Request matching no longer reads the private `_wpMetaBoxUrl` global or copies its nonce logic. Core still sends the request; the plugin only scopes its acknowledgement to the same-origin endpoint, loader request, post ID and `editpost` action. |
 | Native meta-box capture and acknowledgement | `core/edit-post` selectors `getActiveMetaBoxLocations()` and `isSavingMetaBoxes()`. | WordPress now chooses the active locations to capture, including an empty list. The existing location fallback is retained only when the selector is absent. These APIs do not supply signed form values or a request-correlated saved-data fingerprint, so native `FormData` capture and the acknowledgement receipt remain necessary. We do not call `requestMetaBoxUpdates()` to prepare previews: that would perform a real native save. The native form markup and loader request shape remain version-sensitive seams. |
 | ACF paginated row reload after a native save | Native save state and ACF lifecycle actions. | ACF starts a separate AJAX row reload after `isSavingMetaBoxes()` becomes false. In the inspected implementation, `remount` occurs per returned row and does not cover an empty result; no whole-refresh completion action was found. Keep the existing scoped row-replacement observer, including zero-row results, rather than guessing from elapsed time or calling ACF's private refresh methods. Row markup remains an implementation dependency, not a stable public contract. |
 | ACF pending structural pagination edits | Field value reads and normal ACF change actions. | These do not supply the pending add/delete/reorder deltas across loaded and unloaded rows. Keep the existing native row-marker check that protects Classic Preview handover; do not build another row-state model or reset ACF's deltas. The marker classes remain a version-sensitive assumption. |

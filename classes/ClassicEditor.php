@@ -1,9 +1,8 @@
 <?php
 
-namespace AFloatingLivePreviewPanel\Admin;
+namespace AFloatingLivePreviewPanel;
 
 use AFloatingLivePreviewPanel\Compatibility\Acf;
-use AFloatingLivePreviewPanel\Preview\LivePreview;
 use WP_Post;
 
 /** Connect the classic editor to the shared panel and preview features. */

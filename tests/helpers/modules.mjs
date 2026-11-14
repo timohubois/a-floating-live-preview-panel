@@ -17,7 +17,7 @@ export async function sourceForVm(url) {
 export async function previewSourceForVm(url) {
     const frame = await sourceForVm(new URL('../../src/preview/frame.js', import.meta.url));
     let source = await sourceForVm(url);
-    if (url.pathname.endsWith('/classic-editor/editor.js')) {
+    if (url.pathname.endsWith('/screens/classic-editor.js')) {
         const session = await sourceForVm(new URL('../../src/preview/live-preview.js', import.meta.url));
         source = source.replace(/^const \{\s*createLivePreview\s*\} = imports\["\.\.\/preview\/live-preview\.js"\];$/m, session);
     }

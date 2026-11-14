@@ -1,4 +1,4 @@
-import { initRevisionPreview } from './revision-browser/preview.js';
+import { initRevisionPreview } from './screens/revision-browser.js';
 import { showStartupError } from './panel/startup-error.js';
 import './panel/panel.css';
 

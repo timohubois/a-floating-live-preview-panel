@@ -2,10 +2,10 @@
 
 /** Run with `wp eval-file tests/revisions.php` on a disposable single-site installation with this plugin active. */
 
-use AFloatingLivePreviewPanel\Admin\Panel;
+use AFloatingLivePreviewPanel\Panel;
 use AFloatingLivePreviewPanel\Compatibility\CoreBlocks;
-use AFloatingLivePreviewPanel\Preview\FrontendPreview;
-use AFloatingLivePreviewPanel\Preview\LivePreview;
+use AFloatingLivePreviewPanel\FrontendPreview;
+use AFloatingLivePreviewPanel\LivePreview;
 
 if (!defined('WP_CLI') || !WP_CLI || !class_exists(FrontendPreview::class)) {
     throw new RuntimeException('Run this through WP-CLI with A Floating Live Preview Panel active.');
