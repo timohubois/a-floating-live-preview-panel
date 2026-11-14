@@ -176,7 +176,7 @@ export function createLivePreview(config, nativeEditor) {
             return;
         }
         if (nativeEditor.ready === false) {
-            report(nativeEditor.notReady, 'paused', { canRetry: false });
+            report(nativeEditor.notReady, nativeEditor.notReadyState ?? 'paused', { canRetry: false });
             return;
         }
         if (!config.available) {

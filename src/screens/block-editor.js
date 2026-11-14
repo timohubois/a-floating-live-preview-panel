@@ -8,7 +8,7 @@ const fingerprint = /^[a-f0-9]{64}$/;
 
 // Use public editor selectors/hooks. Never replace savePost or inspect the block canvas.
 export function createBlockEditor(config) {
-    const native = { ready: false, notReady: config.strings.postOnly, saving: false, idle: Promise.resolve(), title: config.postTitle };
+    const native = { ready: false, notReady: config.strings.loading, notReadyState: 'loading', saving: false, idle: Promise.resolve(), title: config.postTitle };
     let preview;
     let destroyed = false;
     let lastValues;
@@ -40,16 +40,19 @@ export function createBlockEditor(config) {
     function observe() {
         if (destroyed || !preview) return;
         const state = editor();
-        const postReady = ownsPost() && !!state.getCurrentPost()?.id;
+        // An empty editor store is still initializing, not an unsupported editing context.
+        const postLoaded = !!state?.getCurrentPost()?.id;
+        const postReady = postLoaded && ownsPost();
         acf?.observe();
         const ready = postReady && (acf?.ready ?? true);
-        native.notReady = postReady ? config.strings.acfRefreshing : config.strings.postOnly;
+        native.notReady = !postLoaded ? config.strings.loading : postReady ? config.strings.acfRefreshing : config.strings.postOnly;
+        native.notReadyState = postLoaded ? 'paused' : 'loading';
         const saving = postReady && (state.isSavingPost() || requests > 0);
         const becameReady = ready && !native.ready;
         native.ready = ready;
         native.saving = saving;
         if (!ready) {
-            preview.pause(native.notReady, 'paused');
+            preview.pause(native.notReady, native.notReadyState);
             return;
         }
         if (saving && !wasSaving) {

@@ -14,11 +14,11 @@ const deferred = () => {
     return { promise, resolve, reject };
 };
 
-function fixture({ ready = true, available = true, route = '/wp/v2/posts/123', acfEnabled = false } = {}) {
+function fixture({ ready = true, loaded = true, available = true, route = '/wp/v2/posts/123', acfEnabled = false } = {}) {
     const calls = { pauses: [], pauseStates: [], resumes: [], titles: [], changes: 0, requests: [], contentReads: 0 };
     const acfFields = { ready: true, saved: 0, destroyed: false, waitAfterSave: false };
     let acfChanged;
-    const state = { id: ready ? 123 : 0, type: 'post', saving: false, previewing: false, title: 'Title', content: '<!-- wp:paragraph --><p>Unsaved</p><!-- /wp:paragraph -->', excerpt: 'Excerpt', blocks: [], savedContent: 'Saved content' };
+    const state = { id: ready ? 123 : 0, loaded, type: 'post', saving: false, previewing: false, title: 'Title', content: '<!-- wp:paragraph --><p>Unsaved</p><!-- /wp:paragraph -->', excerpt: 'Excerpt', blocks: [], savedContent: 'Saved content' };
     const cookies = new Map();
     let subscription, filter, middleware, pending;
     const apiFetch = async (options) => { calls.requests.push(options); return { url: '/preview' }; };
@@ -26,7 +26,7 @@ function fixture({ ready = true, available = true, route = '/wp/v2/posts/123', a
     const selectors = {
         getCurrentPostId: () => state.id,
         getCurrentPostType: () => state.type,
-        getCurrentPost: () => ({ id: state.id, content: state.savedContent }),
+        getCurrentPost: () => state.loaded ? { id: state.id, content: state.savedContent } : undefined,
         getPostEdits: () => ({ content: state.content, meta: state.meta }),
         getEditedPostAttribute: (name) => state[name],
         getEditedPostContent: () => { calls.contentReads++; return state.content ?? state.savedContent; },
@@ -37,7 +37,7 @@ function fixture({ ready = true, available = true, route = '/wp/v2/posts/123', a
         postId: 123, postType: 'post', postRoute: route, restRoot: 'http://site.test/wp-json/',
         postFormUrl: 'http://site.test/wp-admin/post.php',
         endpoint: 'http://site.test/wp-json/a-floating-live-preview-panel/v1/posts/123/preview',
-        base: 'a'.repeat(64), available, acfEnabled, adminCookiePath: '/wp-admin/', strings: { nativeSaveFailed: 'Reload editor', postOnly: 'Return to post', acfRefreshing: 'Waiting for ACF fields' },
+        base: 'a'.repeat(64), available, acfEnabled, adminCookiePath: '/wp-admin/', strings: { loading: 'Loading preview…', nativeSaveFailed: 'Reload editor', postOnly: 'Return to post', acfRefreshing: 'Waiting for ACF fields' },
     };
     const document = {
         get cookie() { return [...cookies].map(([key, value]) => `${key}=${value}`).join('; '); },
@@ -98,6 +98,25 @@ test('wait for the intended post and capture only supported unsaved editor value
     await h.emit();
     assert.equal(h.calls.changes, changes + 1);
 });
+
+for (const options of [{ ready: false }, { loaded: false }]) {
+    test(`initial Gutenberg setup stays loading until the post is available: ${JSON.stringify(options)}`, async () => {
+        const h = fixture(options);
+        assert.equal(h.native.ready, false);
+        assert.equal(h.native.notReady, 'Loading preview…');
+        assert.equal(h.native.notReadyState, 'loading');
+        assert.equal(h.calls.pauseStates.at(-1), 'loading');
+        assert.equal(h.calls.resumes.length, 0);
+        assert.equal(h.calls.requests.length, 0);
+        await h.emit();
+        assert.equal(h.calls.pauseStates.includes('paused'), false);
+        h.state.id = 123;
+        h.state.loaded = true;
+        await h.emit();
+        assert.equal(h.native.ready, true);
+        assert.equal(h.calls.resumes.length, 1);
+    });
+}
 
 test('unrelated notifications and metadata edits never serialize content or rewrite the caption', async () => {
     const h = fixture();
@@ -466,7 +485,7 @@ test('destroy detaches observers and leaves middleware inert', async () => {
     await h.request(options, async (received) => { assert.equal(received, options); return {}; });
 });
 
-async function previewFixture({ ready = true, pending, idle = Promise.resolve() } = {}) {
+async function previewFixture({ ready = true, notReady = 'Return to post', notReadyState = 'paused', pending, idle = Promise.resolve() } = {}) {
     const source = await sourceForVm(new URL('../src/preview/live-preview.js', import.meta.url));
     const calls = { reports: [], writes: 0, loads: 0, clears: 0, locks: 0 };
     const timers = new Map();
@@ -474,7 +493,7 @@ async function previewFixture({ ready = true, pending, idle = Promise.resolve() 
     const view = { visible: true, report: (text, state, options) => calls.reports.push({ text, state, ...options }),
         setVisible(value) { this.visible = value; }, setTitle() {}, returnToEditor() {},
     };
-    const native = { ready, notReady: 'Return to post', idle, saving: false,
+    const native = { ready, notReady, notReadyState, idle, saving: false,
         preparePreview: () => { calls.writes++; return pending ?? Promise.resolve({ url: '/preview' }); },
     };
     const session = vm.runInNewContext(`${source}\ncreateLivePreview`, {
@@ -491,7 +510,7 @@ async function previewFixture({ ready = true, pending, idle = Promise.resolve() 
                 clear() { loaded = false; calls.clears++; },
             }) },
         },
-    })({ available: true, endpoint: '/preview', base: 'base', strings: { current: 'Refreshed' } }, native);
+    })({ available: true, endpoint: '/preview', base: 'base', strings: { loading: 'Loading preview…', updating: 'Updating preview…', current: 'Refreshed' } }, native);
     session.start();
     await flush();
     return { session, native, calls, view, callbacks,
@@ -501,6 +520,28 @@ async function previewFixture({ ready = true, pending, idle = Promise.resolve() 
         },
     };
 }
+
+test('opening and reopening during Gutenberg initialization stays loading without acquiring preview ownership', async () => {
+    const h = await previewFixture({ ready: false, notReady: 'Loading preview…', notReadyState: 'loading' });
+    h.callbacks.onClose();
+    h.callbacks.onOpen();
+    const report = h.calls.reports.at(-1);
+    assert.equal(report.text, 'Loading preview…');
+    assert.equal(report.state, 'loading');
+    assert.equal(report.canRetry, false);
+    assert.equal(report.canRefresh, false);
+    assert.equal(h.calls.reports.some(({ state }) => state === 'paused'), false);
+    assert.equal(h.calls.locks, 0);
+    assert.equal(h.calls.writes, 0);
+    h.native.ready = true;
+    h.session.resume();
+    await h.tick();
+    assert.equal(h.calls.reports.at(-1).state, 'ready');
+    assert.equal(h.calls.locks, 1);
+    assert.equal(h.calls.loads, 1);
+    h.callbacks.onClose();
+    await flush();
+});
 
 for (const ready of [false, true]) {
     test(`an unsupported context pauses ${ready ? 'a retained preview' : 'initial opening and reopening'} and resumes on return`, async () => {
