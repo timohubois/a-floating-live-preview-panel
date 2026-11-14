@@ -171,7 +171,7 @@ function nativeLauncherTests() {
             reference.removeAttribute('aria-describedby');
             document.body.append(reference);
             try {
-                const properties = ['backgroundColor', 'border', 'borderRadius', 'boxShadow', 'fontFamily', 'fontSize', 'fontWeight', 'padding', 'color', 'outlineStyle', 'outlineWidth', 'outlineColor', 'outlineOffset'];
+                const properties = ['color', 'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'webkitFontSmoothing', 'height', 'padding', 'backgroundColor', 'backgroundImage', 'border', 'borderRadius', 'boxShadow', 'outlineStyle', 'outlineWidth', 'outlineColor', 'outlineOffset'];
                 const appearance = (element) => JSON.stringify(properties.map((property) => getComputedStyle(element)[property]));
                 for (const focused of [false, true]) {
                     if (focused) button.focus();
@@ -184,6 +184,8 @@ function nativeLauncherTests() {
                 check(getComputedStyle(container).backgroundColor === 'rgb(255, 255, 255)', 'Keep the floating surface opaque over editor content.');
                 check(getComputedStyle(container).boxShadow !== 'none', 'Apply the subtle floating shadow to the mount, not the button focus ring.');
                 check(getComputedStyle(container).borderRadius === getComputedStyle(button).borderRadius, 'Align the floating surface with the native button corners.');
+                check(container.getBoundingClientRect().height === button.getBoundingClientRect().height, 'Fit the surface without a baseline gap.');
+                check(getComputedStyle(button).cursor === 'grab', 'Keep the launcher draggable.');
             } finally { reference.remove(); }
             button.focus();
             check(document.activeElement === button, 'The native button must receive focus.');
@@ -196,6 +198,8 @@ function nativeLauncherTests() {
             const box = container.getBoundingClientRect();
             check(box.width <= 120 && button.getBoundingClientRect().width <= box.width, 'Fit the entire secondary Button to the available width.');
             const label = button.querySelector('.aflpp-launcher-label');
+            const text = label.getBoundingClientRect(), bounds = button.getBoundingClientRect();
+            check(text.width > 0 && text.left >= bounds.left && text.right <= bounds.right, 'Keep the translated label inside the button in both directions.');
             check(label.scrollWidth > label.clientWidth && getComputedStyle(label).textOverflow === 'ellipsis' && button.scrollWidth <= button.clientWidth, 'Truncate the long label without overflowing the button.');
             results.push({ name });
         } catch (error) { results.push({ name, error: error.stack }); }
@@ -224,8 +228,9 @@ async function nativePreferenceTests(strings) {
                 hasPreview: true, dock: 'center', size: 'small', device: 'desktop',
                 rememberVisibility: true, rememberPosition: true, followChanges: true,
             };
-            let toggles = 0;
+            let toggles = 0, closes = 0;
             controls = window.previewControls.createPreviewControls(panel, strings, {
+                close() { closes++; },
                 rememberPosition() {
                     toggles++;
                     state = { ...state, rememberPosition: !state.rememberPosition };
@@ -241,7 +246,10 @@ async function nativePreferenceTests(strings) {
                 const item = preference();
                 check(item?.getAttribute('role') === 'menuitemcheckbox', 'Use the native checkbox menu item.');
                 check(item.textContent.trim() === strings.rememberPosition, 'Expose the translated preference label.');
-                check(item.getAttribute('aria-checked') === String(checked), 'Expose the current saved checkbox state.');
+                for (const [action, selected] of [['remember-visibility', true], ['remember-position', checked], ['follow', true]]) {
+                    const toggle = document.querySelector(`[data-action="${action}"]`);
+                    check(toggle.getAttribute('role') === 'menuitemcheckbox' && toggle.getAttribute('aria-checked') === String(selected), 'Expose every preference as a native checkbox with its current state.');
+                }
                 const visibility = document.querySelector('[data-action="remember-visibility"]');
                 check(visibility.textContent.trim() === 'Remember if the preview is open', 'Use the new plain-language visibility label.');
                 check(visibility.scrollWidth <= visibility.clientWidth, 'Keep the longer label within the native menu.');
@@ -263,6 +271,13 @@ async function nativePreferenceTests(strings) {
                 check(state.rememberPosition === !checked, 'Update the preference once without changing display mode.');
             }
             check(toggles === 2, 'Invoke each toggle only once.');
+            if (mode === 'PiP') {
+                controls.focus('mode');
+                check(document.activeElement === trigger && !panel.querySelector('[data-action="mode"], [data-action="close"]'), 'Use native browser window controls and focus the actions menu.');
+                trigger.click(); await pause();
+                document.querySelector('[data-action="close"]').click();
+                check(closes === 1 && !preference(), 'The PiP menu must close live preview once and dismiss itself.');
+            }
             results.push({ name });
         } catch (error) { results.push({ name, error: error.stack }); }
         finally { controls?.beforeMove(); panel.remove(); }
