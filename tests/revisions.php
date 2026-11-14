@@ -3,6 +3,7 @@
 /** Run with `wp eval-file tests/revisions.php` on a disposable single-site installation with this plugin active. */
 
 use AFloatingLivePreviewPanel\Admin\Panel;
+use AFloatingLivePreviewPanel\Compatibility\CoreBlocks;
 use AFloatingLivePreviewPanel\Preview\FrontendPreview;
 use AFloatingLivePreviewPanel\Preview\LivePreview;
 
@@ -148,10 +149,20 @@ try {
         'ID' => $revisionId, 'post_author' => $subscriber, 'post_title' => 'Historical title',
         'post_content' => 'Historical content', 'post_excerpt' => 'Historical excerpt',
     ]);
+    $generatedRevisionId = _wp_put_post_revision($postId);
+    $check(is_int($generatedRevisionId) && $generatedRevisionId > 0, 'Could not create an empty-excerpt revision.');
+    wp_update_post([
+        'ID' => $generatedRevisionId, 'post_excerpt' => '',
+        'post_content' => '<p>Historical generated excerpt</p>',
+    ]);
+    $excerptBlock = static fn (): string => (new WP_Block([
+        'blockName' => 'core/post-excerpt', 'attrs' => [], 'innerBlocks' => [],
+        'innerHTML' => '', 'innerContent' => [],
+    ], ['postId' => $postId, 'postType' => 'post']))->render();
     $internalId = wp_insert_post([
         'post_type' => 'revision', 'post_status' => 'aflpp-preview', 'post_parent' => $postId,
         'post_author' => $admin, 'post_name' => $postId . '-aflpp-preview-' . $admin,
-        'post_title' => 'Internal live preview',
+        'post_title' => 'Internal live preview', 'post_excerpt' => 'Internal live excerpt',
     ]);
     $posts[] = $internalId;
     $foreignInternalId = wp_insert_post([
@@ -289,6 +300,10 @@ try {
     $_GET = $internalQuery;
     $preview->authorizePreview();
     $check($preview->readPost(clone $post)->post_title === 'Internal live preview', 'Live preview regressed.');
+    $renderer = WP_Block_Type_Registry::get_instance()->get_registered('core/post-excerpt')->render_callback;
+    $coreBlocks = is_array($renderer) ? $renderer[0] : null;
+    $check($coreBlocks instanceof CoreBlocks, 'The real bootstrap must bind the native block compatibility owner.');
+    $check(str_contains($excerptBlock(), 'Internal live excerpt'), 'Live core excerpts must use the selected source.');
     $check(end($sources) === [$postId, $internalId, false], 'Live-source context must not be read-only.');
     $check(
         apply_filters('timber/post/import_data', ['post_title' => 'Saved title'], $post)['post_title']
@@ -357,6 +372,10 @@ try {
     $check($rendered->post_title === 'Historical title', 'Core title must come from the selected revision.');
     $check($rendered->post_content === 'Historical content', 'Core content must come from the selected revision.');
     $check($rendered->post_excerpt === 'Historical excerpt', 'Core excerpt must come from the selected revision.');
+    $check(
+        str_contains($excerptBlock(), 'Historical excerpt') && !str_contains($excerptBlock(), 'Saved excerpt'),
+        'The native Post Excerpt block must render the selected historical excerpt.'
+    );
     $check($rendered->ID === $postId, 'The parent identity must remain stable.');
     $check(end($sources) === [$postId, $revisionId, true], 'History must expose the selected read-only source.');
     $import = ['ID' => $postId, 'custom' => 'Keep me'];
@@ -419,8 +438,18 @@ try {
         $rows = get_field('aflpp_revision_test_rows', $postId);
         $check(($rows[0]['text'] ?? '') === 'Historical ACF row', 'Historical repeater values failed.');
     }
+    $_GET = $query($preview->savedPreviewUrl($post, $generatedRevisionId));
+    $preview->authorizePreview();
+    $check(
+        str_contains($excerptBlock(), 'Historical generated excerpt') && !str_contains($excerptBlock(), 'Saved excerpt'),
+        'An empty historical excerpt must generate from the selected historical content.'
+    );
     $_GET = $query($currentUrl);
     $preview->authorizePreview();
+    $check(
+        str_contains($excerptBlock(), 'Saved excerpt') && !str_contains($excerptBlock(), 'Historical'),
+        'Current saved selection must not retain the historical block excerpt.'
+    );
     $check($preview->readPost(clone $post)->post_title === $post->post_title, 'Current-post source failed.');
     $check(end($sources) === [$postId, $postId, true], 'Current saved sources must also be read-only.');
     $check(
@@ -441,6 +470,9 @@ try {
         'Panel markup, revision permissions, core/Timber fields, metadata, optional ACF and read-only behavior passed.'
     );
 } finally {
+    if (isset($coreBlocks) && $coreBlocks instanceof CoreBlocks) {
+        $coreBlocks->unbindPreview();
+    }
     $_GET = $originalGet;
     remove_filter('wp_die_handler', $dieHandler, PHP_INT_MAX);
     remove_action('aflpp_preview_source', $observeSource, 20);

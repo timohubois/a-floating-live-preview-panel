@@ -114,7 +114,7 @@ on completion and expires after one minute.
 
 - **Block Editor ACF fields:** native form serialization preserves ACF's field keys, empty values, signed field lists and paginated row changes. The optional ACF PRO datastore is respected when already enabled; the plugin never enables it or changes Gutenberg's edited metadata to prepare a preview. After a native meta-box save, previewing pauses with its last frame until ACF replaces its paginated rows. If ACF's reload fails, the panel remains paused and asks you to reload; it never resets row markers or guesses that a delay was sufficient. Live preview storage is not recovery storage: legacy meta boxes are not sent by Gutenberg's native autosave, and ACF datastore recovery behavior remains ACF's responsibility.
 - **Classic live ACF fields:** support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages. If native Preview saves draft repeater additions, deletions or reordering, the panel retains its last frame but requires an editor reload: ACF's remaining row changes still refer to the old saved order. Copy any later edits before reloading, and reload before saving again.
-- **Excerpt rendering:** unsaved excerpts are captured in the preview source, but a renderer that reloads the saved post by ID may still show its saved excerpt. On WordPress 6.7 and 7.1.4, core's Post Excerpt block does this even in native Preview of a published post. The panel retains that native behavior rather than replacing the block renderer; a native save or own-draft autosave can change the saved value.
+- **Excerpt rendering:** core's native Post Excerpt block uses the authorized preview excerpt, or generates one from preview content when it is cleared. The same adaptation supports selected saved revisions while preserving other-post contexts, native filters, excerpt length and read-more links. It is scoped to core's native registered renderer: custom renderers and other theme/plugin reads that reload saved posts by ID are not adapted automatically. Native WordPress Preview outside the panel remains unchanged, including its stale published-post excerpt behavior reproduced on WordPress 6.7 and 7.1.4.
 - **Frontend output:** your theme and plugins determine the result, including redirects and browser-native output such as PDFs. Scroll restoration and change-following only apply to recognized HTML previews. Changes made only through stylesheets or frontend state may be missed; dynamic output at load can introduce unrelated differences. PDF page, zoom and scroll state may reset on refresh.
 - **Isolated editors:** authorized HTML previews opt into an isolated Block Editor's `Document-Isolation-Policy` when the frontend is not already isolated, preserving document access for scrolling without disabling core's client-side media processing. Existing frontend isolation policies are retained. Cross-origin subresources follow the resulting policy. Non-isolated screens do not request it.
 - **Trusted code only:** the preview is not sandboxed. Same-origin frontend scripts can access the editor. Use trusted theme and plugin code.
@@ -181,6 +181,7 @@ blocking live-editor or unrelated writes:
 ```sh
 wp eval-file /path/to/a-floating-live-preview-panel/tests/revisions.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/block-editor.php
+wp eval-file /path/to/a-floating-live-preview-panel/tests/core-blocks.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/compatibility.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/compatibility-dependencies.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/preview-isolation.php
@@ -196,6 +197,13 @@ existing site policies are preserved with both core APIs and the older-core fall
 Frame/scroll tests cover isolation opt-in, incidental presentation changes, content
 edits and presentation-only edits. These do not replace authenticated browser testing
 of native editor controls.
+
+The core-blocks fixture renders the actual native Post Excerpt block with explicit,
+cleared, whitespace-only and empty excerpts. It checks preview-content generation,
+native filter order, formatting, length/more behavior against a saved control post,
+unrelated post contexts and Query Loops, original permalinks, cache/global isolation,
+permissions and renderer lifecycle. The revisions fixture also checks explicit and
+generated historical block excerpts and rebinding to current saved data without writes.
 
 The optional ACF fixture checks shared live-field saves, paginated repeater merging,
 native post-meta block saving/rendering and source isolation. It exits successfully with a skip message when ACF Pro with
@@ -227,8 +235,9 @@ Both installations passed authenticated checks for:
 
 The 364-test JavaScript suite and five core PHP fixtures passed against both core
 versions; the optional ACF fixture skipped as expected. Core checksums passed, and
-browser runs recorded no PHP errors. A separate native-preview comparison confirmed
-the Post Excerpt block limitation above on both versions.
+browser runs recorded no PHP errors. A separate native-preview comparison reproduced
+core's stale Post Excerpt reads on both versions; the focused follow-up below adapts
+panel sources without changing ordinary native Preview.
 
 The same ZIP also passed the Gutenberg and classic browser suites on WordPress
 7.1.4 with ACF PRO 6.8.11, using separate fixtures with the datastore disabled and
@@ -246,6 +255,18 @@ plugin active together. A fresh administrator's real heartbeat sent the post for
 nonce, with one core `_wpnonce` and a separate toolbar `ask_the_origin_nonce`.
 Native draft autosave, save/reopen, continued ACF editing and published-post recovery
 preservation/notices passed. Ask the Origin's saved settings stayed unchanged.
+
+A rebuilt ZIP with the focused core Post Excerpt adapter passed two authenticated
+browser workflows per core-only version (6.7 and 7.1.4), plus sign-in setup: published
+Gutenberg explicit/cleared/empty excerpts through real autosave and save/reopen;
+and historical explicit/generated/current saved excerpts with zero live-preview
+POST writes. Parent/recovery hashes distinguished isolated updates from native
+writes, and native Preview still reproduced core's unadapted saved excerpt. All
+six core PHP fixtures and 364 JavaScript tests passed per version; optional ACF
+coverage skipped on these core-only installations. Focused core-blocks, revisions
+and ACF PHP fixtures also passed on the existing Flynt / WordPress 7.2-beta5 /
+ACF PRO 6.8.10 development site. This follow-up did not repeat the earlier ACF
+browser matrix.
 
 These results do not establish a general theme/browser/ACF range or verify other
 PHP versions, multisite editor workflows or production deployment. Disposable browser
@@ -288,7 +309,10 @@ rendering, with a narrow isolation layer for unsaved editor state. Native Previe
 is the reference for frontend behavior on supported inputs, not a command the panel
 repeatedly executes: panel refreshes must not update the saved parent post, create
 or overwrite recovery autosaves, or cause a newer-autosave notice. WordPress's own
-saving, autosave, validation and genuine recovery notices remain untouched.
+saving, autosave, validation and genuine recovery notices remain untouched. A known
+native preview-read defect may have an explicit, source-scoped compatibility
+adaptation while leaving native rendering and ordinary requests intact; the Post
+Excerpt case below is one such bounded adaptation, not a global preview rewrite.
 
 The live path is editor capture, an isolated preview source, authorized frontend
 reads, then normal theme rendering. Saved-revision browsing reuses the authorized
@@ -306,7 +330,7 @@ read and presentation paths without capturing editor values or writing previews.
 - `a-floating-live-preview-panel.php` explicitly loads the PHP classes; `classes/Plugin.php` connects the owners. No Composer autoloader is required at runtime.
 - `classes/Admin/ClassicEditor.php`, `BlockEditor.php` and `RevisionBrowser.php` connect their respective native screens. `Admin/Panel.php` owns shared assets, labels and the PHP view in `views/panel.php`.
 - `classes/Preview/LivePreview.php` owns internal preview revision writes, fingerprints, native-save coordination and cleanup. `Preview/FrontendPreview.php` authorizes reads and overlays only the selected source on frontend output. Live-source ownership and token verification stay together in `LivePreview`.
-- `classes/Compatibility/` lists the explicit third-party integrations. Each class owns its integration's hooks and adaptations: `Acf.php` owns ACF field preparation, save verification, cache invalidation and source reads; `Timber.php` owns Timber post-import reads. The PHP preview owners expose lifecycle hooks and do not depend on either implementation. `src/compatibility/acf-fields.js` bridges ACF browser events; `acf-block-editor.js` captures native meta-box forms and observes ACF's own post-save row replacement.
+- `classes/Compatibility/` lists explicit core and third-party adaptations: `CoreBlocks.php` delegates native Post Excerpt rendering with the authorized source's fields; `Acf.php` owns ACF field preparation, save verification, cache invalidation and source reads; `Timber.php` owns Timber post-import reads. The PHP preview owners expose lifecycle hooks and do not depend on these implementations. `src/compatibility/acf-fields.js` bridges ACF browser events; `acf-block-editor.js` captures native meta-box forms and observes ACF's own post-save row replacement.
 - `src/preview/live-preview.js` shares live writes, frames and Web Locks between editor adapters. `classic-editor/editor.js` captures classic/ACF fields; `classic-editor/native-editor.js` observes native Preview, heartbeat and validation. `block-editor/editor.js` reads public editor selectors and coordinates native saves through the awaited pre-save hook and narrowly scoped API-fetch middleware.
 - `src/revision-browser/preview.js` owns read-only revision selection. It never acquires editor locks or writes previews. It follows core's `wp.revisions.view.frame.model`; guard and verify that integration when changing supported WordPress versions.
 - `src/panel/window.js` owns window presentation, focus, preferences, fullscreen and PiP. `panel/geometry.js` owns preferred bounds, docking, resizing and temporary viewport fitting; pointer/keyboard event binding stays with the window. `controls.js` renders public WordPress components and `viewport.js` sizes the preview viewport.
@@ -340,6 +364,7 @@ Compatibility is explicit, not hidden inside the preview engine:
 
 | Integration owner | Supported adaptation | Boundary |
 | --- | --- | --- |
+| `Compatibility/CoreBlocks.php` | Delegates core's native Post Excerpt callback with a private block/post copy carrying the authorized source's title/content/excerpt and the original parent's identity. Cleared excerpts use native generation from preview content. | Only the matched original post and native registered callback; other post contexts, actual block contexts, globals, caches and custom renderers stay untouched. No renderer copy, global ID substitution or persistence. |
 | `Compatibility/Acf.php` and `src/compatibility/acf*.js` | Post-local form values, native ACF save verification, revision value-cache invalidation, selected-source field reads and saved-history write guards; browser events and legacy meta-box coordination. | ACF is optional. Support depends on ACF's field/revision APIs; this is not support for every field type, options pages, related entities or a complete historical site snapshot. |
 | `Compatibility/Timber.php` | Overlays `post_title`, `post_content` and `post_excerpt` on Timber's `timber/post/import_data` hook for the authorized post. Preserves parent identity, other import data and unrelated posts. | Read adaptation only; it does not capture more editor inputs, implement Twig rendering or restore historical templates/styles. Normal metadata and ACF reads retain their respective owners. |
 
@@ -350,6 +375,33 @@ third-party behavior; do not put its hooks in `Preview/` or introduce a generic
 integration registry. `Plugin.php` instantiates the owners; they register their own
 hooks. Editor adapters may request ACF assets/configuration through its owner, while
 field-specific PHP and browser behavior stays in the compatibility files.
+
+### Core Post Excerpt read adaptation
+
+Core's explicit context-ID lookup can bypass the main preview object. Upstream
+[#37648](https://github.com/WordPress/gutenberg/pull/37648) used the global preview
+object to fix excerpts; [#49495](https://github.com/WordPress/gutenberg/pull/49495)
+restored the explicit ID for legitimate other-post contexts. Reverting to the global
+post would repeat that regression.
+
+`CoreBlocks` binds only after `FrontendPreview` authorizes and selects a source.
+It temporarily wraps only the registered `render_block_core_post_excerpt` callback,
+then delegates to that unchanged native function. For the exact original-post ID,
+only the callback's private block copy receives a cloned parent post carrying the
+selected fields. Native `get_the_excerpt()` and `get_the_permalink()` accept that
+`WP_Post`; it retains the parent's ID, post type, slug and other identity fields.
+The actual block context remains an integer ID. Native excerpt generation, filters,
+formatting, length and read-more processing run once through core's own pipeline.
+
+This relies on that renderer forwarding its post context to object-aware native
+functions, as checked on WordPress 6.7 and 7.1.4. It is not a general object-valued
+block-context contract. Keep the assumption and its tests in this owner, revisit
+it when core changes, and remove it when native preview reads preserve both source
+and explicit post context. Rebinding and shutdown release the owned callback;
+cleanup must not overwrite a later theme/plugin renderer. Ordinary/rejected requests
+remain inactive, and other-post contexts are never replaced by the global post or
+a revision ID. This exception does not authorize cached-post mutation or a copied
+block renderer.
 
 ### Native-first bridge review
 
