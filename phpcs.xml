@@ -9,6 +9,7 @@
     <arg value="ps"/>
     <arg name="extensions" value="php"/>
     <config name="testVersion" value="8.3-"/>
+    <config name="minimum_supported_wp_version" value="6.7"/>
     <rule ref="PHPCompatibilityWP"/>
     <rule ref="PSR12">
         <!-- Allow WordPress guards and bootstrap code alongside declarations. -->

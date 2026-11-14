@@ -94,10 +94,17 @@ is updated or permanently deleted. Existing recovery autosaves are left untouche
 
 Both editors preview title, content, excerpt and supported post-local ACF fields.
 The Block Editor supplies serialized blocks in either visual or code mode and also
-previews featured-image selection, replacement and removal. ACF meta-box values use
-the same field-save integration as classic editing; ACF blocks keep their native
-content-save hooks, including blocks configured to store values in post metadata.
-Arbitrary non-ACF metadata, taxonomies, template selections and unsaved separate
+previews author, publication date/time and taxonomy assignment changes, plus
+featured-image selection, replacement and removal. Publication dates update the
+preview, not the post's scheduling or publication state. Taxonomy support covers
+native term lists, Post Terms blocks and standard Timber `post.category`,
+`post.categories()` and `post.terms()` reads. Direct relationship queries remain
+saved. ACF meta-box values use the same field-save
+integration as classic editing; ACF blocks keep their native content-save hooks,
+including blocks configured to store values in post metadata.
+With Yoast SEO, the Block Editor also previews native primary-term selections and
+the configured taxonomy breadcrumb trail without persisting unsaved SEO data.
+Other arbitrary non-ACF metadata, template selections and unsaved separate
 entities are not live inputs. Native ACF/legacy meta-box saving remains intact;
 saved values become the new baseline.
 When the editor switches to an unsupported entity, the panel visibly pauses without
@@ -155,7 +162,7 @@ Native component CSS is still enqueued separately and copied into PiP, including
 
 The public panel APIs and built asset loading are checked against WordPress 6.7 and 7.1.4 core assets, including in-page, fullscreen and native PiP controls. This is not a full authenticated editor-to-frontend compatibility guarantee.
 
-Node.js is needed only for development, not on the WordPress site. After installing the development dependencies, run the JavaScript regression tests with:
+Node.js 24.5+ is needed only for development, not on the WordPress site. The ownership tests use native Web Locks and BroadcastChannel. After installing the development dependencies, run the JavaScript regression tests with:
 
 ```sh
 node --test tests/*.mjs
@@ -181,9 +188,15 @@ blocking live-editor or unrelated writes:
 ```sh
 wp eval-file /path/to/a-floating-live-preview-panel/tests/revisions.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/block-editor.php
+wp eval-file /path/to/a-floating-live-preview-panel/tests/author.php
+wp eval-file /path/to/a-floating-live-preview-panel/tests/date-terms.php
+wp eval-file /path/to/a-floating-live-preview-panel/tests/preview-fields.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/core-blocks.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/compatibility.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/compatibility-dependencies.php
+wp eval-file /path/to/a-floating-live-preview-panel/tests/editor-extensions.php
+wp eval-file /path/to/a-floating-live-preview-panel/tests/timber-terms.php
+wp eval-file /path/to/a-floating-live-preview-panel/tests/yoast.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/preview-isolation.php
 ```
 
@@ -211,6 +224,16 @@ repeater support is absent:
 
 ```sh
 wp eval-file /path/to/a-floating-live-preview-panel/tests/acf.php
+```
+
+Uninstall checks are destructive and require both an explicit opt-in and the dedicated
+`aflpp_test_` table prefix on a disposable installation. They check revision/user batches,
+preserved content, recovery autosaves and unrelated preferences, including multisite.
+CI runs them on single-site WordPress, then converts that disposable site to multisite
+and runs them again. Never point them at a project database:
+
+```sh
+AFLPP_TEST_UNINSTALL=1 wp eval-file /path/to/a-floating-live-preview-panel/tests/uninstall.php
 ```
 
 ### Installed-ZIP verification
@@ -334,8 +357,8 @@ read and presentation paths without capturing editor values or writing previews.
 - `a-floating-live-preview-panel.php` explicitly loads the PHP classes; `classes/Plugin.php` connects the owners. PHP owners live directly in `classes/`, with only compatibility adaptations grouped in a subdirectory. No Composer autoloader is required at runtime.
 - `classes/ClassicEditor.php`, `BlockEditor.php` and `RevisionBrowser.php` connect their respective native screens. `classes/Panel.php` owns shared assets, labels and the PHP view in `views/panel.php`; the view remains a plain markup template, not a separate rendering layer.
 - `classes/LivePreview.php` owns internal preview revision writes, fingerprints, native-save coordination and cleanup. `classes/FrontendPreview.php` authorizes reads and overlays only the selected source on frontend output. Live-source ownership and token verification stay together in `LivePreview`.
-- `classes/Compatibility/` lists explicit core and third-party adaptations: `CoreBlocks.php` delegates native Post Excerpt rendering with the authorized source's fields; `Acf.php` owns ACF field preparation, save verification, cache invalidation and source reads; `Timber.php` owns Timber post-import reads. The PHP preview owners expose lifecycle hooks and do not depend on these implementations. `src/compatibility/acf-fields.js` bridges ACF browser events; `acf-block-editor.js` captures native meta-box forms and observes ACF's own post-save row replacement.
-- `src/screens/` contains native screen integrations. `classic-editor.js` captures classic/ACF fields; `classic-native-editor.js` observes native Preview, heartbeat and validation. `block-editor.js` reads public editor selectors and coordinates native saves through the awaited pre-save hook and narrowly scoped API-fetch middleware. Both editors use `src/preview/live-preview.js` for shared live writes, frames and Web Locks.
+- `classes/Compatibility/` lists explicit core and third-party adaptations: `CoreBlocks.php` delegates native Post Excerpt rendering with the authorized source's fields; `Acf.php` owns ACF field preparation, save verification, cache invalidation and source reads; `Timber.php` and `TimberPost.php` own Timber post imports and term lists; `Yoast.php` owns native primary-term preparation and breadcrumb trails, including a scoped indexable write guard. The PHP preview owners expose lifecycle hooks and do not depend on these implementations. `src/compatibility/acf-editor.js` registers ACF's editor hooks; `acf-fields.js` bridges ACF browser events, and `acf-block-editor.js` captures native meta-box forms and observes ACF's own post-save row replacement. `src/compatibility/yoast.js` registers editor hooks and reads Yoast's native primary-term store without dispatching editor changes.
+- `src/screens/` contains native screen integrations. `classic-editor.js` captures core classic fields; `classic-native-editor.js` observes native Preview, heartbeat and validation. `block-editor.js` reads public editor selectors and coordinates native saves through the awaited pre-save hook and narrowly scoped API-fetch middleware. Neither editor names optional plugins. `editor-extensions.js` scopes native WordPress hooks and cleanup to an editor lifetime. Both editors use `src/preview/live-preview.js` for shared live writes, frames and Web Locks.
 - `src/screens/revision-browser.js` owns read-only revision selection. It never acquires editor locks or writes previews. It follows core's `wp.revisions.view.frame.model`; guard and verify that integration when changing supported WordPress versions.
 - `src/panel/window.js` owns window presentation, focus, preferences, fullscreen and PiP. `panel/geometry.js` owns preferred bounds, docking, resizing and temporary viewport fitting; pointer/keyboard event binding stays with the window. `controls.js` renders public WordPress components and `viewport.js` sizes the preview viewport.
 - `src/preview/frame.js` owns iframe replacement and cancellation; `scroll.js` enhances only recognized preview HTML. These are shared by the separate editor and revision lifecycles.
@@ -370,17 +393,19 @@ Compatibility is explicit, not hidden inside the preview engine:
 
 | Integration owner | Supported adaptation | Boundary |
 | --- | --- | --- |
-| `Compatibility/CoreBlocks.php` | Delegates core's native Post Excerpt callback with a private block/post copy carrying the authorized source's title/content/excerpt and the original parent's identity. Cleared excerpts use native generation from preview content. | Only the matched original post and native registered callback; other post contexts, actual block contexts, globals, caches and custom renderers stay untouched. No renderer copy, global ID substitution or persistence. |
+| `Compatibility/CoreBlocks.php` | Delegates core's native Post Excerpt callback with a private block/post copy carrying the authorized source's title/content/excerpt and the original parent's identity. Cleared excerpts use native generation from preview content. Live author selections use the same private-copy approach for native Post Author, Post Author Name, Post Author Biography and Avatar callbacks. Publication dates use the public post-data binding on newer core, or a private Post Date callback copy on older core. | Only the matched original post and native registered callbacks; other post contexts, explicit avatar users, actual block contexts, globals, caches and custom renderers stay untouched. No renderer copy, global ID substitution or persistence. |
 | `Compatibility/Acf.php` and `src/compatibility/acf*.js` | Post-local form values, native ACF save verification, revision value-cache invalidation, selected-source field reads and saved-history write guards; browser events and legacy meta-box coordination. | ACF is optional. Support depends on ACF's field/revision APIs; this is not support for every field type, options pages, related entities or a complete historical site snapshot. |
-| `Compatibility/Timber.php` | Overlays `post_title`, `post_content` and `post_excerpt` on Timber's `timber/post/import_data` hook for the authorized post. Preserves parent identity, other import data and unrelated posts. | Read adaptation only; it does not capture more editor inputs, implement Twig rendering or restore historical templates/styles. Normal metadata and ACF reads retain their respective owners. |
+| `Compatibility/Timber.php` and `TimberPost.php` | Overlays title/content/excerpt, live author and publication dates through `timber/post/import_data`. Uses the public post-class hook to delegate native `terms()` with the authorized post's selections, covering `post.category`, categories, tags and custom taxonomies. Preserves parent identity, other import data and unrelated posts. | The term bridge replaces only the standard `Timber\Post` class for the selected live post; theme-specific subclasses stay untouched. It adapts only the term query inside that call, never shared relationship caches or other posts. Native relationship-dependent query modes remain saved. No Twig renderer or theme changes. Normal metadata and ACF reads retain their respective owners. |
+| `Compatibility/Yoast.php` and `src/compatibility/yoast.js` | Validates native primary-term selections, stores them only on the owned live revision, and adapts the selected post's primary metadata and breadcrumb links. Uses Yoast's native renderer and parent breadcrumb surface. | Optional; existing Gutenberg controls only. Changes the configured main-taxonomy trail, preserves custom titles and parent hierarchy, and blocks lazy saves of this post's indexable/primary models. Bulk metadata, indexed repositories, other posts and saved-history taxonomy behavior stay native. No analysis-score, SEO title or meta-description capture. |
 
 Flynt is a local test theme, not a plugin integration or runtime requirement. A
 compatibility class identifies a deliberate integration, not a guarantee across all
 versions of that dependency. Add a concrete owner and regression tests when adding
 third-party behavior; do not put its hooks in the shared preview owners or introduce a generic
-integration registry. `Plugin.php` instantiates the owners; they register their own
-hooks. Editor adapters may request ACF assets/configuration through its owner, while
-field-specific PHP and browser behavior stays in the compatibility files.
+integration registry. `Plugin.php` instantiates the built-in owners without passing
+compatibility objects into editors. Owners contribute assets/configuration and browser
+behavior through the same WordPress hooks that external plugins and themes can use.
+Compatibility setup is imported by the browser entry points, not the core screen modules.
 
 ### Core Post Excerpt read adaptation
 
@@ -394,8 +419,9 @@ post would repeat that regression.
 It temporarily wraps only the registered `render_block_core_post_excerpt` callback,
 then delegates to that unchanged native function. For the exact original-post ID,
 only the callback's private block copy receives a cloned parent post carrying the
-selected fields. Native `get_the_excerpt()` and `get_the_permalink()` accept that
-`WP_Post`; it retains the parent's ID, post type, slug and other identity fields.
+selected text fields. Native `get_the_excerpt()` and `get_the_permalink()` accept that
+`WP_Post`; it retains the parent's ID, post type, slug, saved author and saved dates.
+Unsaved author/date choices therefore cannot change date- or author-based excerpt URLs.
 The actual block context remains an integer ID. Native excerpt generation, filters,
 formatting, length and read-more processing run once through core's own pipeline.
 
@@ -408,6 +434,169 @@ cleanup must not overwrite a later theme/plugin renderer. Ordinary/rejected requ
 remain inactive, and other-post contexts are never replaced by the global post or
 a revision ID. This exception does not authorize cached-post mutation or a copied
 block renderer.
+
+### Live author selections
+
+Gutenberg's public `author` attribute is captured and observed alongside the other
+live fields. The preview endpoint validates user IDs and the post type's native
+`edit_others_posts` capability before writing. The effective post author is stored
+in `_aflpp_post_author` metadata on the isolated source; its `post_author` continues
+to identify the editor who owns that source. Reused sources reseed the saved author
+when the input is omitted, and author changes invalidate the previous source token.
+
+Frontend post objects and Timber imports overlay that selection only for live
+previews. Core's native author and avatar blocks reload the saved post by ID, so
+`CoreBlocks` delegates their unchanged callbacks with a private parent-post copy,
+using a separate display copy so excerpt routing keeps the saved author/date. This relies on
+those callbacks passing `postId` to `get_post_field()`; it is not a general
+object-valued block-context contract. Custom callbacks are not wrapped. Explicit
+avatar users, comment authors, author archives and unrelated posts remain native.
+Rebinding and shutdown release only owned callbacks.
+
+Saved-history previews retain the current saved post author: a native revision's
+author identifies its editor, not a historical post-author selection. The focused
+regression covers live author rendering, links, permissions, revision ownership,
+isolation, fallback, save/reopen and history on the local WordPress 7.2-beta5 / PHP
+8.3 site, alongside client capture tests. The previous 6.7/7.1.4 browser matrix was
+not repeated for this addition.
+
+### Live publication dates and taxonomy assignments
+
+Gutenberg's public `date` attribute uses WordPress's REST local/UTC conversion,
+including explicit timezone offsets. A null date (or empty ACF form value) means
+publish immediately and displays the current time. Omitted input reseeds the saved
+date. `_aflpp_post_date` stores both display fields on the isolated revision;
+revision creation/modification timestamps, saved post status, scheduling events and
+recovery autosaves are not changed. Last-modified fields remain those of the saved
+post. Frontend post objects and Timber imports receive the selected publication
+date, not the internal revision's creation time. Native Post Date blocks use the
+public `block_bindings_source_value` filter for `core/post-data` on newer core;
+older native callbacks receive a private post/block copy. Their linked dates retain
+the saved-parent URL through object-identity-scoped permalink filters, released in
+`finally` even after errors. Explicit block dates and other-post contexts are
+preserved. Arbitrary saved-post-by-ID reads and general permalink routing are not simulated.
+
+The Block Editor configuration maps each assignable REST-enabled taxonomy to its
+native editor attribute, including custom `rest_base` values. A small JSON `terms`
+map preserves empty lists through both JSON and ACF's native form transport.
+The endpoint validates registered taxonomies, existing term IDs and taxonomy/per-term
+assignment capabilities before writing. It stores the effective lists in
+`_aflpp_terms` metadata, never real term relationships; it does not create terms.
+Omitted taxonomies reseed saved assignments on every refresh.
+
+`FrontendPreview` overlays `get_the_terms` after WordPress has populated its native
+relationship cache. Unchanged assignments retain the native result, including its
+ordering and earlier list filters; changed lists retain registered taxonomy
+ordering. This supports standard term-list functions and Post Terms blocks without
+putting unsaved relationships in shared caches or changing term counts. The optional Timber adapter also supports `post.category`,
+`post.categories()` and `post.terms()` for categories, tags and custom taxonomies.
+It selects a small standard-Post subclass through `timber/post/class` and delegates
+Timber's native `terms()` implementation. Temporary `pre_get_terms` and
+`terms_pre_query` hooks adapt only its matching query and are removed in `finally`,
+including after errors. Native aliases, term objects, links, grouping, include/exclude
+filters, ordering and limits stay native. Empty selections short-circuit that query;
+`include => [0]` is not a safe empty-result sentinel on older WordPress.
+
+**Scope limits:** theme-specific Timber Post subclasses are not replaced.
+Relationship-dependent term query modes (`all_with_object_id`, `term_order` and
+`exclude_tree`) retain saved reads. Direct relationship queries (`wp_get_object_terms`,
+`has_term`, including Timber's `has_term()`, and archive/related-post queries) are not
+intercepted. A theme can naturally use the previewed lists as inputs to its own related
+query; the queried posts' relationships still come from saved data. No shared
+relationship cache is substituted. New terms created through Gutenberg itself remain
+native editor writes.
+
+Saved-history previews retain current saved publication dates and taxonomy
+assignments; native revisions do not record historical selections of these fields.
+Fingerprints include stored term assignments, so external term-only changes expire
+old live sources and require a fresh baseline. They use stored post properties,
+not `WP_Post::to_array()`'s filtered term-list convenience fields.
+
+`tests/date-terms.php` covers date conversions, immediate/reset/omitted values,
+draft/published/scheduled posts, native blocks, term replacement/removal, custom
+taxonomies, permissions, cache/source isolation, counts, scheduling, history,
+conflicts and native save/reopen. It also checks registered non-default taxonomy
+ordering, date/author-based pretty permalinks, nested date reads and exception cleanup.
+`tests/preview-fields.php` rejects failed author/date/term writes on fresh and reused
+sources, accepts unchanged-value updates, rejects post-save corruption and verifies
+retry/recovery isolation. The endpoint reads snapshots back before returning a URL.
+PHP integration checks passed on disposable
+core-only WordPress 6.7 and 7.1.4 sites and the local WordPress 7.2-beta5 ACF/Timber
+site with PHP 8.3. Client regressions cover capture, observation and ACF transport.
+Those PHP/client checks do not by themselves verify authenticated editor behavior;
+the focused local browser coverage is described below.
+
+`tests/timber-terms.php` uses real Timber imports and Twig rendering to check the
+category byline, links, tag loops, custom taxonomies, clearing/rebinding, saved
+fallback, query filtering/grouping, unrelated posts, custom-class preservation,
+nested native reads, term counts, recovery data and hook cleanup after exceptions.
+It skips explicitly without Timber. The focused fixture passed with Timber 2.5.1
+on disposable WordPress 6.7 and 7.1.4 sites, and with Timber 2.4.1 on the local
+WordPress 7.2-beta5 Flynt site. The latter also rendered its actual
+`BlockPostHeader/index.twig` and verified the selected category replaced the saved
+one. This fixture is PHP/Twig coverage; separate authenticated editor checks are
+described below.
+
+### Yoast primary terms and breadcrumbs
+
+`src/compatibility/yoast.js` reads `getPrimaryTaxonomyId()` from Yoast's own
+`yoast-seo/editor` store. It observes primary-only changes and uses the same JSON
+or ACF multipart preview transport. Missing stores, another post context and
+uninitialized controls omit the field and retain saved values. Native unset and
+unassigned selections become `0`; no second primary-category control is added.
+
+`Compatibility/Yoast.php` validates the `yoast_primary_terms` JSON object against
+native, REST-enabled, assignable primary taxonomies, existing terms, the submitted
+or saved assignments, and per-term permissions. It writes directly to the owned
+preview revision and verifies the result. Omitted values are reseeded from saved
+bulk metadata, so rebinding cannot copy a previous live override back into the
+baseline. Selected-post `WPSEO_Primary_Term` / `yoast_get_primary_term_id()` reads
+use the preview selection; bulk metadata and indexed repositories stay native.
+
+The `wpseo_breadcrumb_links` adapter replaces only the configured main-taxonomy
+trail, including term ancestors and native custom breadcrumb titles. A read-only
+`wpseo_breadcrumb_indexables` observer identifies the original ancestry, so custom
+links to other terms in that same taxonomy are not mistaken for the native trail. When no
+primary is selected, it follows Yoast's deepest-term/root-order fallback. It
+updates default post breadcrumb text from the preview title, but preserves explicit
+Yoast breadcrumb titles, other posts, custom crumbs, disabled main taxonomies,
+unchanged baselines and saved-history taxonomy behavior. Parent-post hierarchy
+keeps precedence. Yoast still owns settings, rendering, wrappers and later filters;
+plugin-generated term text follows its HTML-text contract with safe allowed markup.
+
+A scoped `wpseo_should_save_indexable` guard prevents the selected post's native
+lazy builds/upgrades from saving preview-derived fields, permalinks or hierarchy.
+Its primary models are also denied saves. Native primary builders still see saved
+bulk metadata, not preview clears. Missing post models get a read-only taxonomy
+trail or reuse the native parent's breadcrumb surface. Other models retain their
+native save decision. Rebinding and shutdown release the read and write hooks.
+
+**Scope limits:** the theme must already output Yoast breadcrumbs; the adapter
+does not add a breadcrumb UI or enable it. Ordinary Timber `post.category` remains
+a category-list read, not an implicit primary-category lookup. Direct indexed
+reads remain saved. SEO title/meta-description capture and analysis scores are not
+part of this adapter; analysis stays Yoast-owned. No Flynt changes are needed.
+
+`tests/yoast.php` checks real primary getters, breadcrumb generation and native
+`yoast_breadcrumb()` HTML, primary-only edits, assignment replacement/removal,
+custom taxonomies and REST bases, ancestors, fallback, custom titles, earlier
+same-taxonomy custom link filters, parent hierarchy, permissions, failed writes,
+rebinding, history and saved/recovery-data
+isolation. It snapshots Yoast's indexable, primary-term and hierarchy tables and
+exercises stale and missing post models without persisting preview data. The
+fixture passes with Yoast 28.8 on disposable WordPress 7.1.4 (indexing enabled) and
+the local WordPress 7.2-beta5 development installation (indexing disabled), PHP 8.3.
+Yoast 28.8 requires WordPress 7.0+, so WordPress 6.7 only verifies the inert optional
+dependency path. Focused authenticated Gutenberg checks also passed on Flynt's
+local WordPress 7.2-beta5 / Timber 2.4.1 / Yoast 28.8 devstack: native category and
+primary controls, clearing, Save/reopen and later unsaved changes; store-driven
+author/date edits checked actual native blocks and Flynt's author byline. A real
+blocked metadata write produced a retryable error, retained the last good frame
+and recovered through Try again. Saved parent and recovery receipts remained
+unchanged during unsaved previews. The
+browser fixture temporarily output Yoast's native breadcrumbs without changing
+Flynt; it does not claim the theme already outputs them. These checks are not an
+installed-package test or a guarantee across all Yoast versions.
 
 ### Native-first bridge review
 
@@ -470,26 +659,253 @@ The safe simplifications delegate request identification and active form locatio
 to WordPress. They do not change native save URLs/nonces, create another save workflow
 or alter preview isolation.
 
+### Editor integration hooks
+
+Plugins and themes may ship their own adapters. There is no discovery mechanism,
+manifest or integration registry: load PHP normally and register browser setup through
+WordPress hooks. Built-in ACF and Yoast integrations use this same contract. Core
+editors do not import, construct or inspect optional plugin integrations.
+
+#### PHP hook context
+
+PHP filters receive the extendable value first and context second:
+`$value, array $context`. PHP actions receive only `array $context`. Register two
+accepted arguments for filters when your callback needs context.
+
+Every PHP context starts with these core-owned identities, in this documented order:
+
+```php
+[
+    'post' => ['id' => 42],
+    'source' => null, // Or ['id' => 901] when this operation has established a source.
+]
+```
+
+`post` identifies the original post. `source` identifies the prepared or selected
+preview source; it is not a mutable selection instruction. Form-value filters add
+`input` after these identities; script-dependency filters add `config`. Other hooks
+receive identities only. There is no screen/mode discriminator: subscribe to the
+appropriate feature hook. Key order aids readability; callbacks should access keys
+by name, not position.
+
+Context is separate from the filter's returned value. Mutating a callback's context
+does not replace core's post or source identity. Integrations still run as trusted PHP
+code, not inside a security sandbox. Original editor input remains untrusted.
+This context does not restructure native form fields or browser configuration.
+The request's existing `base` key remains its saved-state fingerprint, not a context
+envelope.
+
+#### PHP configuration and assets
+
+Only the selected screen's hooks run:
+
+| Configuration filter | Arguments and contract |
+| --- | --- |
+| `aflpp_classic_editor_preview_config` | `array $config, array $context`. Extend Classic Editor live-preview configuration before JSON encoding. |
+| `aflpp_block_editor_preview_config` | `array $config, array $context`. Extend Block Editor live-preview configuration before JSON encoding. |
+| `aflpp_revision_browser_preview_config` | `array $config, array $context`. Extend read-only revision-browser configuration; this screen does not capture edits or prepare live previews. |
+
+Configuration context contains `post` and a null `source`. Use
+`$context['post']['id']` for core's post identity. Preserve the configuration's core
+identity, endpoint, nonce, baseline and availability values where present, existing
+integration keys and labels. Shared panel labels are merged afterward.
+
+| Script-dependency filter | Arguments and contract |
+| --- | --- |
+| `aflpp_classic_editor_preview_script_dependencies` | `string[] $dependencies, array $context`. Add scripts for Classic Editor preview. |
+| `aflpp_block_editor_preview_script_dependencies` | `string[] $dependencies, array $context`. Add scripts for Block Editor preview. |
+| `aflpp_revision_browser_preview_script_dependencies` | `string[] $dependencies, array $context`. Add scripts for the read-only revision browser. |
+
+Dependency context contains `post`, a null `source` and `config`: that screen's
+already-filtered configuration. Register scripts with `wp_register_script()` and append
+their handles, preserving previous dependencies. Generated WordPress runtime
+dependencies are merged afterward. Register a common callback on multiple screen
+hooks if you support more than one screen; no entry argument or screen check is needed.
+
+Register an external script as an entry dependency so its setup listener exists before
+synchronous editor initialization. The external script must declare `wp-hooks` and any
+other WordPress packages it uses. It must register setup without reading the panel's
+configuration global: dependencies execute before the entry's inline configuration.
+The setup callback receives the complete configuration later. Register it at script
+execution, not in a DOM-ready callback, asynchronous import or timer.
+
+```php
+add_filter('aflpp_classic_editor_preview_script_dependencies', function (
+    array $dependencies,
+    array $context
+): array {
+    wp_register_script(
+        'vendor-preview',
+        plugins_url('preview.js', __FILE__),
+        ['wp-hooks'],
+        '1.0.0',
+        true
+    );
+    $dependencies[] = 'vendor-preview';
+    return $dependencies;
+}, 10, 2);
+```
+
+A theme can use `get_theme_file_uri()` instead of `plugins_url()`. Enqueue integration
+styles through normal WordPress APIs. Do not declare an unavailable optional script
+as a dependency: WordPress will also withhold the dependent entry.
+
+#### Browser setup and lifecycle
+
+Register synchronously with the action for the editor you support:
+
+- `wp.hooks.addAction('aflpp.classicEditor.previewSetup', 'vendor/integration', callback)`
+- `wp.hooks.addAction('aflpp.blockEditor.previewSetup', 'vendor/integration', callback)`
+
+Only that editor's setup action runs, once per live editor session. There is no live
+editor setup action in the read-only revision browser. An adapter supporting both
+editors registers both actions; it does not need to inspect a `screen` discriminator.
+
+Both setup contexts contain:
+
+- `config`: the final configuration for that editor.
+- `hooks`: a native `wp.hooks.createHooks()` instance private to this editor session.
+- `changed()`: notify the core preview that integration inputs or readiness changed;
+  never refresh, save or acquire preview ownership independently.
+- `onDestroy(callback)`: register cleanup immediately after installing listeners or
+  subscriptions. Cleanup runs once, in reverse registration order, on teardown or
+  setup failure; one failed cleanup does not prevent the others.
+
+Classic setup additionally supplies `form`, `watchEditor(tinyMceEditor)` and
+`cancelNativeSave()`. These connect native field editors and validation without
+replacing WordPress saves. Block setup does not supply these form helpers; its local
+observation and value filters receive public editor selectors instead.
+
+Use the context's **local** `hooks`, not global `wp.hooks`, for the hooks below.
+Callbacks are synchronous and use normal WordPress namespaces/priorities. Multiple
+integrations may contribute; preserve earlier results and use distinct payload keys.
+
+##### Classic Editor local hooks
+
+| Local hook | Arguments and contract |
+| --- | --- |
+| `previewFormBody` (filter) | `URLSearchParams body, FormData nativeValues`. Append owned fields to the existing core form body. Preserve repeated keys, empty values and earlier contributors; return the body, never `null`. Core sets the baseline afterward. Do not override core fields. |
+| `previewPauseReason` (filter) | `string reason`. Preserve an existing nonempty reason or return your own waiting message; return an empty string when ready. Call `changed()` when readiness changes. |
+| `nativePreviewHandoffError` (filter) | `Error\|undefined error, boolean saved`. Preserve prior errors. Return an error when an acknowledged native Preview changed the saved baseline in a way that makes retained integration inputs unsafe. Core owns baseline verification. |
+| `nativeSaveValidationPending` (filter) | `boolean validating`. Preserve a previous `true`, or return whether your native validator is still running. This only informs cancellation detection; it must not implement validation or saving. |
+
+##### Block Editor local hooks
+
+| Local hook | Arguments and contract |
+| --- | --- |
+| `additionalPreviewValues` (filter) | `object values, editorSelectors`. Contribute a plain object of strings, finite numbers, booleans or null; omit unavailable keys and JSON-encode structured input so it survives form transport. Called during observation and capture; return stable, cheap values without serializing core content, dispatching store changes or mutating selectors. Adding, changing or removing a key schedules an update. |
+| `previewFormBody` (filter) | `URLSearchParams\|null body, null nativeValues`. Starts with `null` and no native form values: return `null` to keep JSON transport, or a `URLSearchParams` body containing owned form fields. Preserve previous contributions, repeated keys and empty values. Core values, including `additionalPreviewValues`, and the baseline are set afterward. Do not override core fields. |
+| `previewPauseReason` (filter) | `string reason, editorSelectors`. Preserve an existing nonempty reason or return your own waiting message; return an empty string when ready. Call `changed()` when readiness changes. |
+| `observePreviewInputs` (action) | `editorSelectors`. Runs when the selected post is ready, before integration readiness and cheap values are read. Observe public state; do not save or dispatch editor changes. |
+| `nativeMetaboxSaveAcknowledged` (action) | No arguments. Runs only after the native legacy meta-box save has a valid fingerprint acknowledgement. An integration may wait for its own asynchronous refresh before becoming ready again; this action does not prove that refresh finished. |
+
+For example, a classic field integration can contribute without changing any core
+editor file or checking an editor type:
+
+```js
+wp.hooks.addAction('aflpp.classicEditor.previewSetup', 'vendor/note', ({ form, hooks, changed, onDestroy }) => {
+    const input = form.querySelector('[name="vendor_note"]');
+    if (!input) return;
+    input.addEventListener('input', changed);
+    onDestroy(() => input.removeEventListener('input', changed));
+    hooks.addFilter('previewFormBody', 'vendor/note', (body) => {
+        body.append('vendor_note', input.value);
+        return body;
+    });
+});
+```
+
+Capture alone does not make a field previewable: its PHP adapter must validate and
+store the input on the owned preview source through the preview hooks below, then
+adapt only the authorized frontend reads. Never write the saved parent or recovery
+autosave. Check optional capabilities when used; an absent integration should not
+subscribe or contribute assets. If PHP detects an integration but its browser API is
+missing, fail visibly rather than silently dropping its fields.
+
+Thrown setup/lifecycle errors stop preview writes with `aflpp_integration_failed` and
+retain the last frame where available. Invalid capture results, including removed or
+overwritten Classic core fields, fail the same way. Native WordPress saving remains
+independent; in particular, a failed post-save observer must not reject the native
+save response.
+Capture contracts that would discard or misencode form data also fail closed. A known
+integration failure may throw an `Error` with code `aflpp_integration_failed` and a
+translated user-facing message; unexpected exceptions receive the shared explanation.
+Reloading creates a fresh session. Local hook instances are not reused after teardown.
+
+`tests/editor-extensions.php` checks screen-specific configuration/assets, structured
+context and context-mutation isolation, multiple contributors, ordering, JSON escaping
+and revision isolation. `tests/editor-extensions.mjs` checks
+external browser contributions alongside ACF, readiness, repeated/empty form values,
+absent dependencies, failure isolation and per-session cleanup. Screen regressions
+also verify native save responses and contributed-value removal.
+
+The initial extension API was checked with the full JavaScript suite and core PHP
+fixtures on disposable WordPress 6.7 and 7.1.4 installations, PHP 8.3. Additional PHP
+checks passed with ACF PRO 6.8.10 and Yoast 28.8 on 7.1.4, and with Timber 2 on 6.7.
+Native-event and save-cancellation Chromium fixtures also passed using each core
+version's bundled jQuery/Quicktags. These are focused regression checks, not a new
+installed-package or authenticated end-to-end browser compatibility claim.
+
 ### Preview integration hooks
 
-The PHP preview owners expose these narrowly scoped lifecycle hooks:
+These feature hooks share the PHP context convention above. Their names describe the
+extension opportunity, not the temporary storage mechanism.
+
+#### Preparing a live preview from unsaved edits
+
+Classic and Block Editor requests use the same preparation workflow after core has
+authorized the post and checked its saved-state fingerprint. Revision browsing never
+enters this workflow.
 
 | Hook | Arguments and contract |
 | --- | --- |
-| `aflpp_preview_payload` (filter) | `array\|WP_Error $payload, array $input, int $postId`. Runs after core preview permission/conflict checks, before slashing or writing. Extend unslashed native form values or reject with `WP_Error`; preserve any earlier error. |
-| `aflpp_preview_meta_seeded` (action) | `int $revisionId, int $postId`. Runs after saved metadata is seeded into the owned temporary revision and before native save hooks consume submitted values. Integrations can invalidate their revision caches. |
-| `aflpp_preview_save_error` (filter) | `?WP_Error $error, int $revisionId, int $postId`. Release preparation state and report save failures, preserving earlier errors. Runs in `finally` after preparation/save, including rejection or exceptions; ID `0` means no revision was written. A rejected payload passes its `WP_Error`; a thrown exception propagates after cleanup. Core write errors still take precedence. |
-| `aflpp_preview_source` (action) | `int $postId, int $sourceId, bool $readOnly`. Runs only after core authorizes and selects the frontend source and installs its native read overlays. Live previews use `false`; saved revisions and the current saved post use `true`. Bind integration reads only to that post/source pair. |
+| `aflpp_live_preview_form_values` (filter) | `array\|WP_Error $formValues, array $context`. Context contains `post`, null `source` and `input` (the original unslashed editor request). Extend unslashed native form values before slashing/writing, or reject with `WP_Error`; preserve an earlier error. Validate your own input. This is form-save data, not a universal metadata map. |
+| `aflpp_live_preview_custom_fields_initialized` (action) | `array $context`, containing `post` and initialized `source` identities. Saved custom-field values are available as the preview's starting point. Invalidate integration caches or apply previously validated values. Submitted changes and native save hooks still follow; this does not mean the preview is ready. |
+| `aflpp_live_preview_preparation_error` (filter) | `?WP_Error $error, array $context`, containing `post` and the established `source` identity, or null if no source identity was established. Verify contributions and release preparation state, preserving earlier errors. Runs in `finally` after success, rejection or exceptions. Rejected form values pass their `WP_Error`; a thrown exception propagates after cleanup. An established source remains available to cleanup if a later callback throws. Core write errors still take precedence. |
+
+For example, preparation context is:
+
+```php
+[
+    'post' => ['id' => 42],
+    'source' => null,
+    'input' => [
+        'post_title' => 'Unsaved title',
+        'vendor_note' => 'Unsaved note',
+        // Other original editor input; adapters validate their own fields.
+    ],
+]
+```
+
+Core chooses the write target independently of context or the form's `post_ID`.
+Native WordPress saving remains independent of this preparation/error lifecycle.
+
+#### Selecting a source for frontend rendering
+
+Both actions run only after core authorizes and selects the source and installs its
+native read overlays. They receive `array $context` with `post` and `source`
+identities only. There is no read-only boolean: the action identifies the mode.
+
+| Action | Contract |
+| --- | --- |
+| `aflpp_frontend_live_preview_source_selected` | Bind reads for the original post to the authorized source containing unsaved edits. |
+| `aflpp_frontend_saved_preview_source_selected` | Bind read-only reads for the original post to the selected saved version or current saved post. |
+
+For example, `['post' => ['id' => 42], 'source' => ['id' => 901]]` identifies the
+post and its selected source. These are identities, not a mutable preview object or
+authorization token. Supporting both modes means subscribing to both actions;
+adapters may share their internal read-binding implementation.
 
 These are trusted PHP integration points, not authorization APIs. Adapters must not
-select a different revision, modify the parent/recovery autosave, broaden permissions
-or affect unrelated objects. The source action passes IDs, not a mutable core preview
-object or its authorization token.
+select another source, modify the saved parent/recovery autosave, broaden permissions
+or affect unrelated objects. Historical preview storage uses WordPress revisions;
+metadata writes must not use helpers that redirect revision IDs to the saved parent.
 
 Hook lifetime is part of each compatibility owner's contract:
 
-- Lifecycle subscriptions (`aflpp_preview_*`) remain registered for the PHP request so
-  the owner can handle later operations. Registering these does not call optional APIs.
+- Lifecycle subscriptions (`aflpp_live_preview_*` and `aflpp_frontend_*_preview_source_selected`)
+  remain registered for the PHP request so the owner can handle later operations.
+  Registering these does not call optional APIs.
 - ACF's `acf/save_post` monitor exists only for a prepared write. The coordinator's
   `finally` block triggers cleanup after success, rejection or exceptions, including
   exceptions during payload preparation.

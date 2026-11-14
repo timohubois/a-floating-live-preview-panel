@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
 import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
+import { editorExtensionsFixture } from './helpers/editor-extensions.mjs';
 
 const source = await previewSourceForVm(new URL('../src/screens/classic-editor.js', import.meta.url));
 const flush = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
@@ -22,7 +23,7 @@ async function fixture({ visible = true, pending = true } = {}) {
     const context = {
         console, URLSearchParams,
         document: { getElementById: (id) => id === 'post' ? form : null },
-        window: { isSecureContext: true, jQuery: () => ({ on() {} }) },
+        window: { isSecureContext: true, jQuery: () => ({ on() {} }), addEventListener() {} },
         navigator: { locks: { request: (name, options, callback) => callback({}) } },
         setTimeout(callback) { timers.set(++nextTimer, callback); return nextTimer; },
         clearTimeout: (id) => timers.delete(id),
@@ -30,7 +31,7 @@ async function fixture({ visible = true, pending = true } = {}) {
         fetch: () => { requests++; return new Promise((resolve) => { finishRequest = resolve; }); },
     };
     context.imports = {
-        '../compatibility/acf-fields.js': { initAcf() { throw new Error('ACF is disabled.'); } },
+        './editor-extensions.js': editorExtensionsFixture(context),
         '../panel/window.js': { createPreviewPanel: (strings, callbacks) => { options = callbacks; return view; } },
         '../preview/scroll.js': { createPreviewScroll: () => ({ remember() {} }) },
     };

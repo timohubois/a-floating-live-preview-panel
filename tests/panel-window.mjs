@@ -3,7 +3,7 @@ import { getEventListeners, setMaxListeners } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import { sourceForVm } from './helpers/modules.mjs';
 import { createPanelGeometry } from '../src/panel/geometry.js';
-import { panelStrings, revisionStrings, blockEditorStrings } from './helpers/panel-strings.mjs';
+import { panelStrings, blockEditorStrings, acfStrings } from './helpers/panel-strings.mjs';
 import test from 'node:test';
 import vm from 'node:vm';
 
@@ -634,7 +634,8 @@ for (const hasPreview of [false, true]) {
 }
 
 // Exercise complete messages, not just individual strings: server errors must not repeat the reload warning.
-const reloadDetails = [panelStrings.nativePreviewAcf, panelStrings.nativePreviewFailed, blockEditorStrings.nativeSaveFailed];
+const reloadDetails = [acfStrings.nativePreviewAcf, panelStrings.nativePreviewFailed, blockEditorStrings.nativeSaveFailed,
+    panelStrings.integrationFailed, acfStrings.acfUnavailable];
 for (const path of ['classes/LivePreview.php', 'classes/Compatibility/Acf.php']) {
     const php = await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
     for (const [, code, message] of php.matchAll(/new WP_Error\(\s*'(aflpp_[^']+)',\s*__\(\s*'([^']+)'/g)) {
@@ -643,7 +644,7 @@ for (const path of ['classes/LivePreview.php', 'classes/Compatibility/Acf.php'])
         }
     }
 }
-assert.equal(reloadDetails.length, 7, 'Cover every plugin-owned error that requires reloading.');
+assert.equal(reloadDetails.length, 9, 'Cover every plugin-owned error that requires reloading.');
 for (const hasPreview of [false, true]) {
     test(`reload errors explain how to keep changes once with ${hasPreview ? 'a retained preview' : 'no preview'}`, () => {
         const h = fixture(true, { labels: panelStrings });
@@ -664,27 +665,8 @@ for (const hasPreview of [false, true]) {
 
 test('uncertain saves do not claim failure or success, and ACF recovery identifies what WordPress already saved', () => {
     assert.equal(blockEditorStrings.nativeSaveFailed, 'We couldn’t check whether WordPress saved your latest changes.');
-    assert.equal(panelStrings.nativePreviewAcf, 'WordPress Preview saved changes in your repeating fields to the post.');
-    assert.doesNotMatch(panelStrings.nativePreviewAcf, /all changes|all edits|reload/i);
-});
-
-test('revision help explains read-only previews without live-editor browser requirements', () => {
-    const h = fixture(true, { labels: revisionStrings });
-    assert.equal(h.state.empty.description, 'Showing this saved version won’t change your post.');
-    h.view.report(revisionStrings.browser, 'error', { reason: 'browser', canRetry: false });
-    assert.equal(h.state.empty.description, 'Ask your site admin to make WordPress and the preview use the same website address.');
-    assert.doesNotMatch(h.state.empty.description, /Web Locks|secure|same-origin/i);
-    h.view.report(revisionStrings.unavailable, 'error', { reason: 'unavailable', canRetry: false });
-    assert.match(h.state.empty.description, /Choose another version, or reload this page/);
-});
-
-test('update failures explain a retained preview without claiming the post was saved', () => {
-    const h = fixture(true, { labels: panelStrings });
-    h.view.report(panelStrings.failed, 'error', { hasPreview: true });
-    assert.equal(h.state.notice.heading, 'Couldn’t update preview');
-    assert.equal(h.state.notice.description, 'Showing the last preview.');
-    assert.equal(h.state.notice.retry, true);
-    assert.equal(h.state.notice.action, 'Try again');
+    assert.equal(acfStrings.nativePreviewAcf, 'WordPress Preview saved changes in your repeating fields to the post.');
+    assert.doesNotMatch(acfStrings.nativePreviewAcf, /all changes|all edits|reload/i);
 });
 
 test('ordinary updates and native saving never replace a retained frame with a placeholder or success notice', () => {

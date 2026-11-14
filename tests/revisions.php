@@ -40,10 +40,18 @@ foreach ($previewHooks as $hook) {
 $livePreview = new LivePreview();
 $preview = new FrontendPreview(dirname(__DIR__) . '/a-floating-live-preview-panel.php', $livePreview);
 $sources = [];
-$observeSource = static function (int $postId, int $sourceId, bool $readOnly) use (&$sources): void {
-    $sources[] = [$postId, $sourceId, $readOnly];
+$observeSource = static function (array $context, bool $readOnly) use ($check, &$sources): void {
+    $check(
+        array_keys($context) === ['post', 'source']
+        && array_keys($context['post']) === ['id'] && array_keys($context['source']) === ['id'],
+        'Source events must expose identities only; the hook name identifies live versus saved preview.'
+    );
+    $sources[] = [$context['post']['id'], $context['source']['id'], $readOnly];
 };
-add_action('aflpp_preview_source', $observeSource, 20, 3);
+$observeLiveSource = static fn (array $context) => $observeSource($context, false);
+$observeSavedSource = static fn (array $context) => $observeSource($context, true);
+add_action('aflpp_frontend_live_preview_source_selected', $observeLiveSource, 20);
+add_action('aflpp_frontend_saved_preview_source_selected', $observeSavedSource, 20);
 $dieHandler = static fn () => static function ($message, $title, $args): void {
     throw new RuntimeException('aflpp_denied_' . (int) ($args['response'] ?? 0));
 };
@@ -67,8 +75,9 @@ $query = static function (string $url): array {
 
 try {
     // Inspect the real rendered view, not PHP source formatting or obsolete CSS class names.
+    $panelTitle = 'Preview "<strong>literal text</strong>" & more';
     ob_start();
-    (new Panel(dirname(__DIR__) . '/a-floating-live-preview-panel.php'))->render();
+    (new Panel(dirname(__DIR__) . '/a-floating-live-preview-panel.php'))->render($panelTitle);
     $document = new DOMDocument();
     $document->loadHTML(ob_get_clean(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
     $xpath = new DOMXPath($document);
@@ -79,15 +88,27 @@ try {
         $check($byClass($class)->length === 1, 'The rendered panel needs one ' . $class . ' binding.');
     }
     $panel = $document->getElementById('aflpp-panel');
+    $launcher = $document->getElementById('aflpp-toggle');
+    $check(
+        $launcher && $launcher->tagName === 'div' && $launcher->hasAttribute('hidden')
+        && $launcher->getAttribute('data-title') === $panelTitle
+        && $launcher->getAttribute('data-move-help') !== '' && !$launcher->getElementsByTagName('button')->length,
+        'The escaped launcher mount must wait for native controls, not render its own button.'
+    );
     $caption = $byClass('aflpp-caption')->item(0);
     $check(
-        $caption->tagName === 'h2' && trim($caption->textContent) !== ''
+        $caption->tagName === 'h2' && $caption->textContent === $panelTitle && !$caption->childElementCount
         && $caption->getAttribute('id') !== '' && $panel
         && $panel->getAttribute('aria-labelledby') === $caption->getAttribute('id')
         && !$panel->hasAttribute('aria-label'),
         'The panel must be labelled by its visible heading, including before JavaScript initializes.'
     );
     $header = $byClass('aflpp-header')->item(0);
+    $check(
+        $xpath->query('.//header//*[@class="aflpp-controls"]', $panel)->length === 1
+        && $xpath->query('.//footer//*[@class="aflpp-device-controls"]', $panel)->length === 1,
+        'Header and viewport controls must remain scoped to the labelled panel.'
+    );
     $check(
         $header && $xpath->query('.//button | .//*[@tabindex >= 0]', $header)->length === 0,
         'The initial titlebar must not contain keyboard resize controls or interactive title buttons.'
@@ -476,7 +497,8 @@ try {
     }
     $_GET = $originalGet;
     remove_filter('wp_die_handler', $dieHandler, PHP_INT_MAX);
-    remove_action('aflpp_preview_source', $observeSource, 20);
+    remove_action('aflpp_frontend_live_preview_source_selected', $observeLiveSource, 20);
+    remove_action('aflpp_frontend_saved_preview_source_selected', $observeSavedSource, 20);
     remove_action('init', [$preview, 'authorizePreview'], 20);
     remove_action('template_redirect', [$preview, 'checkPreviewTarget'], -1);
     foreach ($originalHooks as $hook => $callbacks) {

@@ -2,7 +2,6 @@
 
 namespace AFloatingLivePreviewPanel;
 
-use AFloatingLivePreviewPanel\Compatibility\Acf;
 use WP_Post;
 
 /** Connect only the post block editor, not the Site Editor or its separate entities. */
@@ -10,7 +9,6 @@ final class BlockEditor
 {
     public function __construct(
         private readonly LivePreview $preview,
-        private readonly Acf $acf,
         private readonly Panel $panel
     ) {
         add_action('enqueue_block_editor_assets', [$this, 'enqueueEditor']);
@@ -42,11 +40,12 @@ final class BlockEditor
         $config['postRoute'] = rest_get_route_for_post($post);
         $config['restRoot'] = rest_url();
         $config['postFormUrl'] = admin_url('post.php');
-        $config['acfEnabled'] = $this->acf->isAvailable();
-        $config['strings']['acfRefreshing'] = __(
-            'Waiting for ACF to reload repeating fields. If the fields don’t finish loading, reload the editor.',
-            'a-floating-live-preview-panel'
-        );
+        $config['taxonomies'] = [];
+        foreach (get_object_taxonomies($post->post_type, 'objects') as $taxonomy) {
+            if ($taxonomy->show_in_rest && current_user_can($taxonomy->cap->assign_terms)) {
+                $config['taxonomies'][$taxonomy->name] = $taxonomy->rest_base ?: $taxonomy->name;
+            }
+        }
         $config['strings']['nativeSaveFailed'] = __(
             'We couldn’t check whether WordPress saved your latest changes.',
             'a-floating-live-preview-panel'
@@ -55,7 +54,7 @@ final class BlockEditor
             'Return to editing this post to resume its live preview.',
             'a-floating-live-preview-panel'
         );
-        $this->panel->enqueue('block-editor', $config, array_merge(['wp-editor'], $this->acf->editorDependencies()));
+        $this->panel->enqueue('block-editor', $config, ['wp-editor']);
     }
 
     public function renderPanel(): void

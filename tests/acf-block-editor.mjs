@@ -48,7 +48,7 @@ function fixture({ locations = ['normal', 'side'], nativeLocations = true } = {}
             disconnect() { disconnected++; }
         },
     };
-    const initAcf = vm.runInNewContext(`${shared}\ninitAcf`, context);
+    const initAcf = vm.runInNewContext(`(() => { ${shared}\nreturn initAcf; })()`, context);
     context.imports = {
         './acf-fields.js': { initAcf },
         '@wordpress/data': { select: (name) => name === 'core/edit-post'

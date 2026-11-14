@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
 import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
+import { editorExtensionsFixture } from './helpers/editor-extensions.mjs';
 import test from 'node:test';
 import vm from 'node:vm';
 
@@ -276,11 +277,14 @@ for (const [saved, structural, blocked] of [[true, true, true], [false, true, fa
         const context = {
             console, setTimeout, clearTimeout,
             document: { getElementById: (id) => id === 'post' ? { addEventListener() {} } : null },
-            window: { isSecureContext: true, jQuery: () => ({ on() {} }) },
+            window: { isSecureContext: true, jQuery: () => ({ on() {} }), addEventListener() {},
+                acf: { addAction() {}, removeAction() {} } },
             navigator: { locks: { request: () => { requests++; return new Promise(() => {}); } } },
         };
         context.imports = {
-            '../compatibility/acf-fields.js': { initAcf: () => ({ hasStructuralPaginationChanges: () => structural }) },
+            './editor-extensions.js': editorExtensionsFixture(context, {
+                initAcf: () => ({ hasStructuralPaginationChanges: () => structural, destroy() {} }),
+            }),
             '../panel/window.js': { createPreviewPanel: (strings, options) => { callbacks = options; return view; } },
             '../preview/scroll.js': { createPreviewScroll: () => ({ remember() {} }) },
         };

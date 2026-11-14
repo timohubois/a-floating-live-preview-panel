@@ -2,32 +2,46 @@
 
 namespace AFloatingLivePreviewPanel\Compatibility;
 
+use AFloatingLivePreviewPanel\LivePreview;
 use WP_Block;
 use WP_Block_Type;
 use WP_Block_Type_Registry;
 use WP_Post;
 
-/** Adapt core's ID-based excerpt reads without replacing its renderer or changing block identity. */
+/** Supply selected fields to native ID-based renderers without changing real block/post identity. */
 final class CoreBlocks
 {
+    private const AUTHOR_BLOCKS = [
+        'core/post-author' => 'render_block_core_post_author',
+        'core/post-author-name' => 'render_block_core_post_author_name',
+        'core/post-author-biography' => 'render_block_core_post_author_biography',
+        'core/avatar' => 'render_block_core_avatar',
+    ];
+
     private ?WP_Block_Type $excerptBlock = null;
+    private ?WP_Block_Type $dateBlock = null;
+    private array $authorBlocks = [];
     private ?WP_Post $post = null;
+    private ?WP_Post $displayPost = null;
 
     public function __construct()
     {
-        add_action('aflpp_preview_source', [$this, 'bindPreview'], 10, 2);
+        add_action('aflpp_frontend_live_preview_source_selected', fn (array $context) => $this->bindPreview(
+            $context['post']['id'],
+            $context['source']['id']
+        ));
+        add_action('aflpp_frontend_saved_preview_source_selected', fn (array $context) => $this->bindPreview(
+            $context['post']['id'],
+            $context['source']['id'],
+            true
+        ));
     }
 
     /** Source selection and authorization belong to FrontendPreview, not block rendering. */
-    public function bindPreview(int $postId, int $sourceId): void
+    public function bindPreview(int $postId, int $sourceId, bool $saved = false): void
     {
         $this->unbindPreview();
-        $type = WP_Block_Type_Registry::get_instance()->get_registered('core/post-excerpt');
-        if (
-            $postId < 1 || $sourceId < 1 || !$type
-            || $type->render_callback !== 'render_block_core_post_excerpt'
-            || !function_exists('render_block_core_post_excerpt')
-        ) {
+        if ($postId < 1 || $sourceId < 1) {
             return;
         }
         $post = get_post($postId);
@@ -41,9 +55,90 @@ final class CoreBlocks
         foreach (['post_title', 'post_content', 'post_excerpt'] as $field) {
             $this->post->$field = $source->$field;
         }
-        $this->excerptBlock = $type;
-        $type->render_callback = [$this, 'renderExcerpt'];
+        $registry = WP_Block_Type_Registry::get_instance();
+        $type = $registry->get_registered('core/post-excerpt');
+        if (
+            $type && $type->render_callback === 'render_block_core_post_excerpt'
+            && function_exists('render_block_core_post_excerpt')
+        ) {
+            $this->excerptBlock = $type;
+            $type->render_callback = [$this, 'renderExcerpt'];
+        }
+        $fields = $saved ? [] : LivePreview::livePostFields($sourceId);
+        // Excerpt reads need only text overrides; their native links must retain saved dates and author.
+        $this->displayPost = clone $this->post;
+        foreach ($fields as $field => $value) {
+            $this->displayPost->$field = $value;
+        }
+        if (array_key_exists('post_author', $fields)) {
+            foreach (self::AUTHOR_BLOCKS as $name => $callback) {
+                $type = $registry->get_registered($name);
+                if ($type && $type->render_callback === $callback && function_exists($callback)) {
+                    $this->authorBlocks[$name] = $type;
+                    $type->render_callback = [$this, 'renderAuthor'];
+                }
+            }
+        }
+        if (isset($fields['post_date'])) {
+            // Modern Post Date blocks use the public post-data binding. Older versions
+            // delegate directly to object-aware date/permalink functions instead.
+            add_filter('block_bindings_source_value', [$this, 'readDateBinding'], 10, 4);
+            $type = $registry->get_registered('core/post-date');
+            if (
+                !get_block_bindings_source('core/post-data') && $type
+                && $type->render_callback === 'render_block_core_post_date'
+                && function_exists('render_block_core_post_date')
+            ) {
+                $this->dateBlock = $type;
+                $type->render_callback = [$this, 'renderDate'];
+            }
+        }
         add_action('shutdown', [$this, 'unbindPreview'], PHP_INT_MAX);
+    }
+
+    public function readDateBinding($value, string $name, array $args, WP_Block $block)
+    {
+        if (
+            $value === null || $name !== 'core/post-data' || !$this->post
+            || ($block->context['postId'] ?? null) !== $this->post->ID
+        ) {
+            return $value;
+        }
+        $field = $args['field'] ?? $args['key'] ?? '';
+        if ($field === 'date') {
+            return esc_attr(get_the_date('c', clone $this->displayPost));
+        }
+        if ($field === 'modified') {
+            return get_the_modified_date('U', $this->displayPost) > get_the_date('U', $this->displayPost)
+                ? esc_attr(get_the_modified_date('c', clone $this->displayPost)) : '';
+        }
+        return $value;
+    }
+
+    public function renderDate(array $attributes, string $content, WP_Block $block): string
+    {
+        if (!$this->displayPost || ($block->context['postId'] ?? null) !== $this->displayPost->ID) {
+            return render_block_core_post_date($attributes, $content, $block);
+        }
+        $block = clone $block;
+        $post = clone $this->displayPost;
+        $block->context['postId'] = $post;
+        if (empty($attributes['isLink'])) {
+            return render_block_core_post_date($attributes, $content, $block);
+        }
+        // Older core uses the same object for date formatting and permalinks. Only that private copy gets this URL.
+        $permalink = get_permalink($this->post);
+        $link = static fn ($url, WP_Post $candidate) => $candidate === $post ? $permalink : $url;
+        foreach (['post_link', 'post_type_link'] as $hook) {
+            add_filter($hook, $link, PHP_INT_MAX, 2);
+        }
+        try {
+            return render_block_core_post_date($attributes, $content, $block);
+        } finally {
+            foreach (['post_link', 'post_type_link'] as $hook) {
+                remove_filter($hook, $link, PHP_INT_MAX);
+            }
+        }
     }
 
     public function renderExcerpt(array $attributes, string $content, WP_Block $block): string
@@ -58,14 +153,37 @@ final class CoreBlocks
         return render_block_core_post_excerpt($attributes, $content, $block);
     }
 
+    public function renderAuthor(array $attributes, string $content, WP_Block $block): string
+    {
+        if ($this->post && ($block->context['postId'] ?? null) === $this->post->ID) {
+            // These native callbacks use object-aware get_post_field(). Explicit avatar
+            // users, comment authors and author-archive contexts remain core-owned.
+            $block = clone $block;
+            $block->context['postId'] = clone $this->displayPost;
+        }
+        return (self::AUTHOR_BLOCKS[$block->name])($attributes, $content, $block);
+    }
+
     /** Do not overwrite a later theme/plugin renderer when releasing our own binding. */
     public function unbindPreview(): void
     {
         if ($this->excerptBlock && $this->excerptBlock->render_callback === [$this, 'renderExcerpt']) {
             $this->excerptBlock->render_callback = 'render_block_core_post_excerpt';
         }
+        if ($this->dateBlock && $this->dateBlock->render_callback === [$this, 'renderDate']) {
+            $this->dateBlock->render_callback = 'render_block_core_post_date';
+        }
+        remove_filter('block_bindings_source_value', [$this, 'readDateBinding'], 10);
+        foreach ($this->authorBlocks as $name => $type) {
+            if ($type->render_callback === [$this, 'renderAuthor']) {
+                $type->render_callback = self::AUTHOR_BLOCKS[$name];
+            }
+        }
         remove_action('shutdown', [$this, 'unbindPreview'], PHP_INT_MAX);
+        $this->authorBlocks = [];
         $this->excerptBlock = null;
+        $this->dateBlock = null;
         $this->post = null;
+        $this->displayPost = null;
     }
 }

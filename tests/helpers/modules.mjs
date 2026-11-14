@@ -10,6 +10,7 @@ export async function sourceForVm(url) {
             return `const { ${bindings} } = imports[${JSON.stringify(path)}];`;
         })
         .replace(/^import ['"][^'"]+\.css['"];$/gm, '')
+        .replace(/^import ['"]([^'"]+)['"];$/gm, (_, path) => `void imports[${JSON.stringify(path)}];`)
         .replace(/^export (function|const) /gm, '$1 ');
 }
 

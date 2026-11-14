@@ -10,5 +10,5 @@ async function stringsFrom(path) {
 }
 
 export const panelStrings = await stringsFrom('classes/Panel.php');
-export const revisionStrings = { ...panelStrings, ...await stringsFrom('classes/RevisionBrowser.php') };
+export const acfStrings = await stringsFrom('classes/Compatibility/Acf.php');
 export const blockEditorStrings = { ...panelStrings, ...await stringsFrom('classes/BlockEditor.php') };

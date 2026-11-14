@@ -12,6 +12,9 @@ use WP_REST_Server;
 final class LivePreview
 {
     private const POST_STATUS = 'aflpp-preview';
+    public const AUTHOR_META = '_aflpp_post_author';
+    public const DATE_META = '_aflpp_post_date';
+    public const TERMS_META = '_aflpp_terms';
 
     private int $autosavePostId = 0;
 
@@ -56,6 +59,10 @@ final class LivePreview
                 'post_title' => ['type' => 'string'],
                 'content' => ['type' => 'string'],
                 'excerpt' => ['type' => 'string'],
+                'author' => ['type' => 'integer', 'minimum' => 1],
+                'date' => ['type' => ['string', 'null'], 'validate_callback' => [$this, 'validateDate']],
+                // JSON preserves empty selections through both JSON and native ACF form requests.
+                'terms' => ['type' => 'string'],
                 'featured_media' => ['type' => 'integer', 'minimum' => 0],
             ],
         ]);
@@ -77,7 +84,7 @@ final class LivePreview
         return true;
     }
 
-    /** Content and metadata only; editor locks and asynchronous core queue flags are not content. */
+    /** Saved fields, metadata and terms; editor locks and asynchronous queue flags are not content. */
     public function fingerprint(int $postId): string
     {
         $meta = get_post_meta($postId);
@@ -85,7 +92,13 @@ final class LivePreview
         unset($meta['_edit_lock'], $meta['_edit_last'], $meta['_encloseme'], $meta['_pingme']);
         ksort($meta);
 
-        return hash('sha256', (string) wp_json_encode([get_post($postId, ARRAY_A), $meta]));
+        $taxonomies = get_object_taxonomies(get_post_type($postId));
+        $terms = $taxonomies ? wp_get_object_terms($postId, $taxonomies, [
+            'fields' => 'tt_ids', 'orderby' => 'term_taxonomy_id',
+        ]) : [];
+        // WP_Post::to_array() also reads filtered term lists; fingerprint stored fields instead.
+        $post = get_post($postId);
+        return hash('sha256', (string) wp_json_encode([$post ? get_object_vars($post) : null, $meta, $terms]));
     }
 
     /** Only the same editor's successful native autosave may advance its known saved state. */
@@ -222,6 +235,108 @@ final class LivePreview
             . ($revisionId ? $this->fingerprint($revisionId) : '');
     }
 
+    /** Read display fields only after the caller has authorized a live source. */
+    public static function livePostFields(int $sourceId): array
+    {
+        $fields = [];
+        if (metadata_exists('post', $sourceId, self::AUTHOR_META)) {
+            $fields['post_author'] = (int) get_post_meta($sourceId, self::AUTHOR_META, true);
+        }
+        $dates = get_post_meta($sourceId, self::DATE_META, true);
+        if (is_array($dates)) {
+            foreach (['post_date', 'post_date_gmt'] as $field) {
+                if (isset($dates[$field]) && is_string($dates[$field])) {
+                    $fields[$field] = $dates[$field];
+                }
+            }
+        }
+        return $fields;
+    }
+
+    /** Native REST dates, plus an empty form value for Gutenberg's null/immediate selection. */
+    public function validateDate($value): bool|WP_Error
+    {
+        if ($value === null || $value === '') {
+            return true;
+        }
+        $valid = rest_validate_value_from_schema($value, ['type' => 'string', 'format' => 'date-time'], 'date');
+        if (is_wp_error($valid)) {
+            return $valid;
+        }
+        $parts = date_parse($value);
+        if ($parts['error_count'] || $parts['warning_count']) {
+            return new WP_Error('rest_invalid_date', __('Invalid date.', 'default'), ['status' => 400]);
+        }
+        return true;
+    }
+
+    /** Snapshot post-local assignments without writing term relationships or creating terms. */
+    private function previewTerms(WP_Post $post, ?string $value): array|WP_Error
+    {
+        $input = $value === null ? new \stdClass() : json_decode($value);
+        if (!$input instanceof \stdClass) {
+            return new WP_Error(
+                'rest_invalid_param',
+                __('The preview can’t read your taxonomy selections.', 'a-floating-live-preview-panel'),
+                ['status' => 400]
+            );
+        }
+        $taxonomies = get_object_taxonomies($post->post_type, 'objects');
+        $result = [];
+        foreach ((array) $input as $name => $ids) {
+            $taxonomy = $taxonomies[$name] ?? null;
+            if (!$taxonomy || !$taxonomy->show_in_rest) {
+                return new WP_Error('rest_invalid_taxonomy', __('Invalid taxonomy.', 'default'), ['status' => 400]);
+            }
+            if (!is_array($ids) || !array_is_list($ids)) {
+                return new WP_Error(
+                    'rest_invalid_param',
+                    __('The preview can’t read your taxonomy selections.', 'a-floating-live-preview-panel'),
+                    ['status' => 400]
+                );
+            }
+            $schema = ['type' => 'array', 'items' => ['type' => 'integer', 'minimum' => 1]];
+            $valid = rest_validate_value_from_schema($ids, $schema, 'terms.' . $name);
+            if (is_wp_error($valid)) {
+                $valid->add_data(['status' => 400]);
+                return $valid;
+            }
+            if (!current_user_can($taxonomy->cap->assign_terms)) {
+                return new WP_Error(
+                    'rest_cannot_assign_term',
+                    __('Sorry, you are not allowed to assign terms.', 'default'),
+                    ['status' => 403]
+                );
+            }
+            $ids = rest_sanitize_value_from_schema($ids, $schema);
+            foreach ($ids as $id) {
+                $term = get_term($id, $name);
+                if (!$term || is_wp_error($term)) {
+                    return new WP_Error('rest_invalid_term', __('Invalid term ID.', 'default'), ['status' => 400]);
+                }
+                if (!current_user_can('assign_term', $id)) {
+                    return new WP_Error(
+                        'rest_cannot_assign_term',
+                        __('Sorry, you are not allowed to assign terms.', 'default'),
+                        ['status' => 403]
+                    );
+                }
+            }
+            $result[$name] = array_values(array_unique($ids));
+        }
+        // Omitted taxonomies are seeded anew, so a reused source cannot retain old selections.
+        foreach ($taxonomies as $name => $taxonomy) {
+            if ($taxonomy->show_in_rest && !array_key_exists($name, $result)) {
+                $ids = wp_get_object_terms($post->ID, $name, ['fields' => 'ids']);
+                if (is_wp_error($ids)) {
+                    return $ids;
+                }
+                $result[$name] = $ids;
+            }
+        }
+        return $result;
+    }
+
     public function preparePreview(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
         // Editor writes require their REST nonce, including internal or alternative-auth requests.
@@ -253,6 +368,35 @@ final class LivePreview
             );
         }
         $base = $this->fingerprint($postId);
+        $dates = ['post_date' => $post->post_date, 'post_date_gmt' => $post->post_date_gmt];
+        if (array_key_exists('date', $input)) {
+            $date = $input['date'];
+            $now = current_time('mysql');
+            $parsed = $date === null || $date === ''
+                ? [$now, get_gmt_from_date($now)] : rest_get_date_with_gmt($date);
+            if (!$parsed) {
+                return new WP_Error('rest_invalid_date', __('Invalid date.', 'default'), ['status' => 400]);
+            }
+            $dates = array_combine(['post_date', 'post_date_gmt'], $parsed);
+        }
+        $terms = $this->previewTerms($post, $input['terms'] ?? null);
+        if (is_wp_error($terms)) {
+            return $terms;
+        }
+        $authorId = $input['author'] ?? (int) $post->post_author;
+        if (isset($input['author'])) {
+            if (!get_userdata($authorId)) {
+                return new WP_Error('rest_invalid_author', __('Invalid author ID.', 'default'), ['status' => 400]);
+            }
+            $type = get_post_type_object($post->post_type);
+            if ($authorId !== get_current_user_id() && !current_user_can($type->cap->edit_others_posts)) {
+                return new WP_Error(
+                    'rest_cannot_edit_others',
+                    __('Sorry, you are not allowed to edit posts as this user.', 'default'),
+                    ['status' => 403]
+                );
+            }
+        }
         // Match the native featured-image contract, without calling parent-redirecting post-meta writers.
         $imageId = $input['featured_media'] ?? null;
         if (
@@ -273,7 +417,7 @@ final class LivePreview
             'post_ID' => $postId,
             'post_type' => $post->post_type,
             'post_status' => $post->post_status,
-            'post_author' => $post->post_author,
+            'post_author' => $authorId,
             'post_title' => $post->post_title,
             'content' => $post->post_content,
             'excerpt' => $post->post_excerpt,
@@ -289,24 +433,35 @@ final class LivePreview
         $revisionId = 0;
         $seed = null;
         $preparationError = null;
+        $context = ['post' => ['id' => $postId], 'source' => null];
         try {
             /**
-             * Extend the authorized, unslashed form payload, or reject it with WP_Error.
-             * Existing errors must be preserved by subsequent callbacks.
+             * Extend unslashed native form values, or reject them with WP_Error.
+             * Preserve earlier errors. Context identities do not select the write target.
              *
-             * @param array|WP_Error $payload Native revision-save form values or a prior error.
-             * @param array          $input   Unslashed editor input.
-             * @param int            $postId  Authorized parent post ID.
+             * @param array|WP_Error $payload Native form values or a prior error.
+             * @param array          $context Post identity, null source and untrusted unslashed input.
              */
-            $payload = apply_filters('aflpp_preview_payload', $payload, $input, $postId);
+            $payload = apply_filters('aflpp_live_preview_form_values', $payload, $context + ['input' => $input]);
             if (is_wp_error($payload)) {
                 $preparationError = $payload;
                 return $payload;
             }
             $payload = wp_slash($payload);
-            $seed = function (int $revisionId) use ($postId, $imageId): void {
+            $seed = function (int $revisionId) use ($postId, $imageId, $authorId, $dates, $terms, &$context): void {
+                // Remember the owned source before initialization or later save callbacks can throw.
+                if ($this->ownsRevision($postId, $revisionId)) {
+                    $context['source'] = ['id' => $revisionId];
+                }
                 $this->seedPreviewMeta($postId, $revisionId);
-                if ($imageId !== null && $this->ownsRevision($postId, $revisionId)) {
+                if (!$this->ownsRevision($postId, $revisionId)) {
+                    return;
+                }
+                // Revision authors identify the editor/owner, not the post's selected author.
+                update_metadata('post', $revisionId, self::AUTHOR_META, $authorId);
+                update_metadata('post', $revisionId, self::DATE_META, $dates);
+                update_metadata('post', $revisionId, self::TERMS_META, $terms);
+                if ($imageId !== null) {
                     if ($imageId) {
                         update_metadata('post', $revisionId, '_thumbnail_id', $imageId);
                     } else {
@@ -327,18 +482,15 @@ final class LivePreview
             $_POST = $originalPost;
             /**
              * Release save state and report integration failures; preserve any earlier error.
-             * Also runs with source ID 0 when preparation is rejected or throws.
+             * Also runs after rejection or exceptions; a null source means none was established.
              *
-             * @param WP_Error|null $error      A prior integration error, or null.
-             * @param int           $revisionId Written revision ID, or 0 if no revision was written.
-             * @param int           $postId     Authorized parent post ID.
+             * @param WP_Error|null $error   A prior integration error, or null.
+             * @param array         $context Post identity and established source, or null when none was established.
              */
-            $saveError = apply_filters(
-                'aflpp_preview_save_error',
-                $preparationError,
-                is_wp_error($revisionId) ? 0 : (int) $revisionId,
-                $postId
-            );
+            if (!is_wp_error($revisionId) && $revisionId) {
+                $context['source'] = ['id' => (int) $revisionId];
+            }
+            $saveError = apply_filters('aflpp_live_preview_preparation_error', $preparationError, $context);
         }
         if (is_wp_error($revisionId)) {
             return new WP_Error('aflpp_preview_failed', $revisionId->get_error_message(), ['status' => 400]);
@@ -355,6 +507,18 @@ final class LivePreview
             );
         }
 
+        // Metadata writers can fail or be short-circuited; a source ID alone does not prove the snapshot was saved.
+        if (
+            get_post_meta($revisionId, self::AUTHOR_META, true) !== (string) $authorId
+            || get_post_meta($revisionId, self::DATE_META, true) !== $dates
+            || get_post_meta($revisionId, self::TERMS_META, true) !== $terms
+        ) {
+            return new WP_Error(
+                'aflpp_preview_fields_not_saved',
+                __('Some preview fields couldn’t be prepared. Please try again.', 'a-floating-live-preview-panel'),
+                ['status' => 409]
+            );
+        }
         if (!hash_equals($base, $this->fingerprint($postId))) {
             return new WP_Error(
                 'aflpp_source_changed',
@@ -444,17 +608,21 @@ final class LivePreview
             }
             // Use metadata APIs directly: post-meta write helpers redirect revisions to their parent.
             delete_metadata('post', $revisionId, $key);
-            foreach (isset($source[$key]) ? get_post_meta($postId, $key) : [] as $value) {
-                add_metadata('post', $revisionId, $key, wp_slash($value));
+            // Individual parent-key reads may be overlaid by an already-bound preview.
+            foreach ($source[$key] ?? [] as $value) {
+                add_metadata('post', $revisionId, $key, wp_slash(maybe_unserialize($value)));
             }
         }
         /**
-         * Invalidate integration caches after seeding the owned revision, before native save hooks run.
+         * Saved custom-field values are available as the preview's starting point.
+         * Submitted changes and native save hooks still follow; this is not preview-ready.
          *
-         * @param int $revisionId Owned preview revision ID.
-         * @param int $postId     Authorized parent post ID.
+         * @param array $context Core-owned post and initialized source identities.
          */
-        do_action('aflpp_preview_meta_seeded', $revisionId, $postId);
+        do_action('aflpp_live_preview_custom_fields_initialized', [
+            'post' => ['id' => $postId],
+            'source' => ['id' => $revisionId],
+        ]);
     }
 
     private function ownsRevision(int $postId, int $revisionId): bool

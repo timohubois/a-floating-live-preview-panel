@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
 import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
+import { editorExtensionsFixture } from './helpers/editor-extensions.mjs';
 
 // ES modules are strict in production, including receipt cleanup on rejected native saves.
 const source = `"use strict";\n${await sourceForVm(new URL('../src/screens/block-editor.js', import.meta.url))}`;
@@ -14,11 +15,14 @@ const deferred = () => {
     return { promise, resolve, reject };
 };
 
-function fixture({ ready = true, loaded = true, available = true, route = '/wp/v2/posts/123', acfEnabled = false } = {}) {
+function fixture({ ready = true, loaded = true, available = true, route = '/wp/v2/posts/123', acfEnabled = false, taxonomies = {}, yoastPrimaryTaxonomies = [], extend, browserAcf = true } = {}) {
     const calls = { pauses: [], pauseStates: [], resumes: [], titles: [], changes: 0, requests: [], contentReads: 0 };
     const acfFields = { ready: true, saved: 0, destroyed: false, waitAfterSave: false };
     let acfChanged;
-    const state = { id: ready ? 123 : 0, loaded, type: 'post', saving: false, previewing: false, title: 'Title', content: '<!-- wp:paragraph --><p>Unsaved</p><!-- /wp:paragraph -->', excerpt: 'Excerpt', blocks: [], savedContent: 'Saved content' };
+    const state = { id: ready ? 123 : 0, loaded, type: 'post', saving: false, previewing: false, author: 7, title: 'Title', content: '<!-- wp:paragraph --><p>Unsaved</p><!-- /wp:paragraph -->', excerpt: 'Excerpt', blocks: [], savedContent: 'Saved content' };
+    state.yoastPostId = 123;
+    state.primary = {};
+    state.yoastAvailable = true;
     const cookies = new Map();
     let subscription, filter, middleware, pending;
     const apiFetch = async (options) => { calls.requests.push(options); return { url: '/preview' }; };
@@ -37,7 +41,7 @@ function fixture({ ready = true, loaded = true, available = true, route = '/wp/v
         postId: 123, postType: 'post', postRoute: route, restRoot: 'http://site.test/wp-json/',
         postFormUrl: 'http://site.test/wp-admin/post.php',
         endpoint: 'http://site.test/wp-json/a-floating-live-preview-panel/v1/posts/123/preview',
-        base: 'a'.repeat(64), available, acfEnabled, adminCookiePath: '/wp-admin/', strings: { loading: 'Loading preview…', nativeSaveFailed: 'Reload editor', postOnly: 'Return to post', acfRefreshing: 'Waiting for ACF fields' },
+        base: 'a'.repeat(64), available, acfEnabled, taxonomies, yoastPrimaryTaxonomies, adminCookiePath: '/wp-admin/', strings: { loading: 'Loading preview…', nativeSaveFailed: 'Reload editor', postOnly: 'Return to post', acfRefreshing: 'Waiting for ACF fields', integrationFailed: 'Integration failed', acfUnavailable: 'ACF unavailable' },
     };
     const document = {
         get cookie() { return [...cookies].map(([key, value]) => `${key}=${value}`).join('; '); },
@@ -45,22 +49,28 @@ function fixture({ ready = true, loaded = true, available = true, route = '/wp/v
     };
     const context = {
         URL, URLSearchParams, FormData, queueMicrotask, document,
-        window: { crypto: webcrypto, location: new URL('http://site.test/wp-admin/post.php'), addEventListener() {} },
+        window: { crypto: webcrypto, location: new URL('http://site.test/wp-admin/post.php'), addEventListener() {},
+            ...(browserAcf ? { acf: { addAction() {}, removeAction() {} } } : {}), jQuery() {} },
         imports: {
-            '../compatibility/acf-block-editor.js': { createBlockEditorAcf(changed) {
-                acfChanged = changed;
-                return {
-                    get ready() { return acfFields.ready; }, observe() {},
-                    saved() { acfFields.saved++; acfFields.ready = !acfFields.waitAfterSave; },
-                    capture: () => new URLSearchParams({ 'acf[field_test]': 'Unsaved ACF', _acf_nonce: 'acf-nonce' }),
-                    destroy: () => { acfFields.destroyed = true; },
-                };
-            } },
             '@wordpress/api-fetch': { default: apiFetch },
-            '@wordpress/data': { select: () => selectors, subscribe: (callback) => { subscription = callback; return () => { subscription = null; }; } },
+            '@wordpress/data': { select: (store) => store === 'yoast-seo/editor' ? (state.yoastAvailable ? {
+                getPostId: () => state.yoastPostId, getPrimaryTaxonomyId: (name) => state.primary[name],
+            } : undefined) : selectors, subscribe: (callback) => { subscription = callback; return () => { subscription = null; }; } },
             '@wordpress/hooks': { addFilter: (name, scope, callback) => { assert.equal(name, 'editor.preSavePost'); filter = callback; }, removeFilter: () => { filter = null; } },
         },
     };
+    context.imports['./editor-extensions.js'] = editorExtensionsFixture(context, {
+        createBlockEditorAcf(changed) {
+            acfChanged = changed;
+            return {
+                get ready() { return acfFields.ready; }, observe() {},
+                saved() { acfFields.saved++; acfFields.ready = !acfFields.waitAfterSave; },
+                capture: () => new URLSearchParams({ 'acf[field_test]': 'Unsaved ACF', _acf_nonce: 'acf-nonce' }),
+                destroy: () => { acfFields.destroyed = true; },
+            };
+        },
+    });
+    extend?.(context.imports['./editor-extensions.js'].hooks);
     const native = vm.runInNewContext(`${source}\ncreateBlockEditor`, context)(config);
     native.connect({
         pause: (text, state) => { calls.pauses.push(text); calls.pauseStates.push(state); return pending; },
@@ -81,6 +91,111 @@ function fixture({ ready = true, loaded = true, available = true, route = '/wp/v
     };
 }
 
+test('external snapshot contributors refresh on changes and removal without serializing core content', async () => {
+    const h = fixture({ extend(hooks) {
+        hooks.addAction('aflpp.blockEditor.previewSetup', 'vendor/snapshot', ({ hooks }) => {
+            hooks.addFilter('additionalPreviewValues', 'vendor/snapshot', (values, state) => state.getEditedPostAttribute('vendor') === undefined
+                ? values : { ...values, vendor: state.getEditedPostAttribute('vendor') });
+        });
+    } });
+    const before = h.calls.changes;
+    h.state.vendor = 'Unsaved';
+    await h.emit();
+    assert.equal(h.calls.changes, before + 1);
+    assert.equal(h.calls.contentReads, 0);
+    await h.native.preparePreview();
+    assert.equal(h.calls.requests.at(-1).data.vendor, 'Unsaved');
+    delete h.state.vendor;
+    await h.emit();
+    assert.equal(h.calls.changes, before + 2, 'a disappearing contributed key must also refresh');
+    await h.native.preparePreview();
+    assert.equal(h.calls.requests.at(-1).data.vendor, undefined);
+});
+
+test('an integration failure after an acknowledged meta-box save never rejects WordPress saving', async () => {
+    let cleaned = 0;
+    const h = fixture({ extend(hooks) {
+        hooks.addAction('aflpp.blockEditor.previewSetup', 'vendor/failure', ({ hooks, onDestroy }) => {
+            hooks.addAction('nativeMetaboxSaveAcknowledged', 'vendor/failure', () => { throw new Error('Adapter save observer failed'); });
+            onDestroy(() => cleaned++);
+        });
+    } });
+    const response = {};
+    const result = await h.request({ url: 'http://site.test/wp-admin/post.php?meta-box-loader=1', method: 'POST', body: h.metaBody() }, async (options) => {
+        h.cookies.set(`aflpp_preview_${options.body.get('aflpp_preview')}`, `${h.config.base}.${'c'.repeat(64)}`);
+        return response;
+    });
+    await flush();
+    assert.equal(result, response, 'preserve the original native response');
+    assert.equal(h.config.base, 'c'.repeat(64));
+    assert.equal(h.native.ready, false);
+    assert.equal(h.calls.resumes.at(-1).code, 'aflpp_integration_failed');
+    h.native.destroy(); h.native.destroy();
+    assert.equal(cleaned, 1);
+});
+
+test('missing browser ACF APIs leave a controlled preview error and native saves intact', async () => {
+    const h = fixture({ acfEnabled: true, browserAcf: false });
+    assert.equal(h.native.ready, false);
+    assert.equal(h.calls.resumes.at(-1).message, 'ACF unavailable');
+    assert.throws(() => h.native.preparePreview(), (error) => error.code === 'aflpp_integration_failed');
+    assert.equal(h.calls.requests.length, 0);
+    const edits = { id: 123, content: 'Native save' };
+    assert.equal(await h.beforeSave(edits), edits);
+    h.native.destroy();
+});
+
+test('Yoast primary changes are observed and captured through native store selectors', async () => {
+    const h = fixture({ taxonomies: { category: 'categories' }, yoastPrimaryTaxonomies: ['category'] });
+    h.state.categories = [41, 42];
+    h.state.primary.category = '41';
+    await h.emit();
+    await h.native.preparePreview();
+    assert.deepEqual(JSON.parse(h.calls.requests.at(-1).data.yoast_primary_terms), { category: 41 });
+    const before = h.calls.changes;
+    const serialized = h.calls.contentReads;
+    h.state.primary.category = 42;
+    await h.emit();
+    assert.equal(h.calls.changes, before + 1, 'primary-only changes refresh the frame');
+    assert.equal(h.calls.contentReads, serialized, 'observation never serializes content');
+    await h.native.preparePreview();
+    assert.deepEqual(JSON.parse(h.calls.requests.at(-1).data.yoast_primary_terms), { category: 42 });
+    h.state.categories = [41];
+    await h.emit();
+    await h.native.preparePreview();
+    assert.deepEqual(JSON.parse(h.calls.requests.at(-1).data.yoast_primary_terms), { category: 0 });
+    assert.equal(h.state.primary.category, 42, 'capture never mutates Yoast state');
+});
+
+test('Yoast absence, uninitialized controls and other post contexts retain the saved fallback', async () => {
+    const h = fixture({ yoastPrimaryTaxonomies: ['category'], taxonomies: { category: 'categories' } });
+    h.state.categories = [41];
+    await h.native.preparePreview();
+    assert.equal(h.calls.requests.at(-1).data.yoast_primary_terms, undefined);
+    h.state.primary.category = 41;
+    h.state.yoastPostId = 999;
+    await h.native.preparePreview();
+    assert.equal(h.calls.requests.at(-1).data.yoast_primary_terms, undefined);
+    h.state.yoastPostId = 123;
+    h.state.yoastAvailable = false;
+    await h.native.preparePreview();
+    assert.equal(h.calls.requests.at(-1).data.yoast_primary_terms, undefined);
+});
+
+test('Yoast primary clearing and custom rest-base transport work with ACF forms', async () => {
+    const h = fixture({ acfEnabled: true, taxonomies: { topic: 'topics_v2' }, yoastPrimaryTaxonomies: ['topic'] });
+    h.state.topics_v2 = [41];
+    h.state.primary.topic = 41;
+    await h.native.preparePreview();
+    assert.deepEqual(JSON.parse(h.calls.requests.at(-1).body.get('yoast_primary_terms')), { topic: 41 });
+    for (const cleared of [-1, '', 0]) {
+        h.state.primary.topic = cleared;
+        await h.emit();
+        await h.native.preparePreview();
+        assert.deepEqual(JSON.parse(h.calls.requests.at(-1).body.get('yoast_primary_terms')), { topic: 0 });
+    }
+});
+
 test('wait for the intended post and capture only supported unsaved editor values', async () => {
     const h = fixture({ ready: false });
     assert.equal(h.native.ready, false);
@@ -89,7 +204,7 @@ test('wait for the intended post and capture only supported unsaved editor value
     assert.equal(h.native.ready, true);
     await h.native.preparePreview();
     assert.deepEqual(JSON.parse(JSON.stringify(h.calls.requests[0].data)), {
-        post_title: h.state.title, content: h.state.content, excerpt: h.state.excerpt, featured_media: 0, base: h.config.base,
+        author: 7, post_title: h.state.title, content: h.state.content, excerpt: h.state.excerpt, featured_media: 0, base: h.config.base,
     });
     const changes = h.calls.changes;
     await h.emit();
@@ -155,6 +270,78 @@ test('featured-image additions, replacements and removal are live inputs without
     }
 });
 
+test('author changes and reverting to the saved author refresh without serializing blocks', async () => {
+    const h = fixture();
+    const changes = h.calls.changes;
+    for (const [i, author] of [8, 9, 7].entries()) {
+        h.state.author = author;
+        await h.emit();
+        assert.equal(h.calls.changes, changes + i + 1);
+        assert.equal(h.calls.contentReads, i);
+        await h.native.preparePreview();
+        assert.equal(h.calls.requests.at(-1).data.author, author);
+    }
+});
+
+test('post types without an author attribute omit the author input', async () => {
+    const h = fixture();
+    h.state.author = undefined;
+    await h.native.preparePreview();
+    assert.equal(Object.hasOwn(h.calls.requests.at(-1).data, 'author'), false);
+});
+
+test('publication dates, resets and omitted dates use the native editor attribute', async () => {
+    const h = fixture();
+    const changes = h.calls.changes;
+    for (const [i, date] of ['2024-07-15T13:45:00', '2035-01-10T09:00:00+01:00', null].entries()) {
+        h.state.date = date;
+        await h.emit();
+        assert.equal(h.calls.changes, changes + i + 1);
+        assert.equal(h.calls.contentReads, i);
+        await h.native.preparePreview();
+        assert.equal(h.calls.requests.at(-1).data.date, date);
+    }
+    h.state.date = undefined;
+    await h.native.preparePreview();
+    assert.equal(Object.hasOwn(h.calls.requests.at(-1).data, 'date'), false);
+});
+
+test('taxonomy assignments use configured native REST attributes, including custom bases and clearing', async () => {
+    const h = fixture({ taxonomies: { category: 'categories', post_tag: 'tags', aflpp_topic: 'topics' } });
+    h.state.categories = [11];
+    h.state.tags = [12];
+    h.state.topics = [13];
+    await h.emit();
+    const changes = h.calls.changes;
+    await h.emit();
+    assert.equal(h.calls.changes, changes);
+    assert.equal(h.calls.contentReads, 0);
+    await h.native.preparePreview();
+    assert.deepEqual(JSON.parse(h.calls.requests.at(-1).data.terms), {
+        category: [11], post_tag: [12], aflpp_topic: [13],
+    });
+    h.state.categories = [];
+    h.state.topics = [14];
+    await h.emit();
+    assert.equal(h.calls.changes, changes + 1);
+    await h.native.preparePreview();
+    assert.deepEqual(JSON.parse(h.calls.requests.at(-1).data.terms), {
+        category: [], post_tag: [12], aflpp_topic: [14],
+    });
+    delete h.state.tags;
+    await h.native.preparePreview();
+    assert.equal(Object.hasOwn(JSON.parse(h.calls.requests.at(-1).data.terms), 'post_tag'), false);
+});
+
+test('date resets and empty term assignments survive the ACF form transport', async () => {
+    const h = fixture({ acfEnabled: true, taxonomies: { category: 'categories' } });
+    h.state.date = null;
+    h.state.categories = [];
+    await h.native.preparePreview();
+    assert.equal(h.calls.requests.at(-1).body.get('date'), '');
+    assert.deepEqual(JSON.parse(h.calls.requests.at(-1).body.get('terms')), { category: [] });
+});
+
 test('ACF capture shares the Gutenberg snapshot without sending native save controls', async () => {
     const h = fixture({ acfEnabled: true });
     const changes = h.calls.changes;
@@ -167,6 +354,7 @@ test('ACF capture shares the Gutenberg snapshot without sending native save cont
     assert.equal(body.get('acf[field_test]'), 'Unsaved ACF');
     assert.equal(body.get('_acf_nonce'), 'acf-nonce');
     assert.equal(body.get('featured_media'), '42');
+    assert.equal(body.get('author'), '7');
     assert.equal(body.get('content'), h.state.content);
     assert.equal(body.get('base'), h.config.base);
     h.native.destroy();
@@ -650,7 +838,7 @@ for (const fail of [false, true]) {
         vm.runInNewContext(entry, {
             window: { aFloatingLivePreviewPanel: { strings: { bootFailed: 'Unavailable' } } },
             imports: {
-                './screens/block-editor.js': { createBlockEditor: () => { calls.push('observe'); return native; } },
+                './screens/block-editor.js': { createBlockEditor: () => { calls.push('observePreviewInputs'); return native; } },
                 './preview/live-preview.js': { createLivePreview: (config, editor) => {
                     assert.equal(editor, native);
                     calls.push('preview');
@@ -660,7 +848,7 @@ for (const fail of [false, true]) {
                 './panel/startup-error.js': { showStartupError: () => calls.push('notice') },
             },
         });
-        assert.deepEqual(calls, fail ? ['observe', 'preview', 'destroy', 'notice'] : ['observe', 'preview', 'connect']);
+        assert.deepEqual(calls, fail ? ['observePreviewInputs', 'preview', 'destroy', 'notice'] : ['observePreviewInputs', 'preview', 'connect']);
     });
 }
 

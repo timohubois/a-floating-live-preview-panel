@@ -27,7 +27,7 @@ function fixture(screen, { configured = true, formAvailable = true, modelAvailab
         },
         console: { error: (...args) => errors.push(args) },
     };
-    const showStartupError = vm.runInNewContext(`${failureSource}\nshowStartupError`, context);
+    const showStartupError = vm.runInNewContext(`(() => { ${failureSource}\nreturn showStartupError; })()`, context);
     context.imports = {
         './screens/classic-native-editor.js': { createNativeEditor(received, target) {
             assert.equal(received, config);

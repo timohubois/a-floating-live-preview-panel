@@ -15,16 +15,55 @@ final class Acf
 
     public function __construct()
     {
-        add_filter('aflpp_preview_payload', [$this, 'preparePayload'], 10, 2);
-        add_action('aflpp_preview_meta_seeded', [$this, 'clearRevisionCache']);
-        add_filter('aflpp_preview_save_error', [$this, 'verifySave'], 10, 2);
-        add_action('aflpp_preview_source', [$this, 'bindPreview'], 10, 3);
+        add_filter('aflpp_classic_editor_preview_config', [$this, 'configureEditor']);
+        add_filter('aflpp_block_editor_preview_config', [$this, 'configureEditor']);
+        add_filter('aflpp_classic_editor_preview_script_dependencies', [$this, 'addEditorDependencies']);
+        add_filter('aflpp_block_editor_preview_script_dependencies', [$this, 'addEditorDependencies']);
+        add_filter('aflpp_live_preview_form_values', [$this, 'preparePayload'], 10, 2);
+        add_action('aflpp_live_preview_custom_fields_initialized', fn (array $context) =>
+            $this->clearRevisionCache($context['source']['id']));
+        add_filter('aflpp_live_preview_preparation_error', [$this, 'verifySave'], 10, 2);
+        add_action('aflpp_frontend_live_preview_source_selected', fn (array $context) => $this->bindPreview(
+            $context['post']['id'],
+            $context['source']['id']
+        ));
+        add_action('aflpp_frontend_saved_preview_source_selected', fn (array $context) => $this->bindPreview(
+            $context['post']['id'],
+            $context['source']['id'],
+            true
+        ));
+    }
+
+    public function configureEditor(array $config): array
+    {
+        if (!$this->isAvailable()) {
+            return $config;
+        }
+        $config['acfEnabled'] = true;
+        $config['strings']['acfRefreshing'] = __(
+            'Waiting for ACF to reload repeating fields. If the fields don’t finish loading, reload the editor.',
+            'a-floating-live-preview-panel'
+        );
+        $config['strings']['nativePreviewAcf'] = __(
+            'WordPress Preview saved changes in your repeating fields to the post.',
+            'a-floating-live-preview-panel'
+        );
+        $config['strings']['acfUnavailable'] = __(
+            'The preview can’t read your custom fields.',
+            'a-floating-live-preview-panel'
+        );
+        return $config;
+    }
+
+    public function addEditorDependencies(array $dependencies): array
+    {
+        return array_merge($dependencies, $this->editorDependencies());
     }
 
     /** Load ACF's field JavaScript API before either editor entry point. */
     public function editorDependencies(): array
     {
-        return $this->isAvailable() ? ['acf-input'] : [];
+        return $this->isAvailable() && wp_script_is('acf-input', 'registered') ? ['acf-input'] : [];
     }
 
     public function isAvailable(): bool
@@ -33,12 +72,13 @@ final class Acf
     }
 
     /** Extend an authorized, unslashed REST payload using ACF's normal form context. */
-    public function preparePayload(array|WP_Error $payload, array $input): array|WP_Error
+    public function preparePayload(array|WP_Error $payload, array $context): array|WP_Error
     {
         $this->resetSave();
         if (is_wp_error($payload)) {
             return $payload;
         }
+        $input = $context['input'];
         $this->saving = array_key_exists('acf', $input);
         if (!$this->saving) {
             return $payload;
@@ -98,8 +138,9 @@ final class Acf
     }
 
     /** The coordinator still owns and verifies the exact preview revision. */
-    public function verifySave(?WP_Error $error, int $revisionId): ?WP_Error
+    public function verifySave(?WP_Error $error, array $context): ?WP_Error
     {
+        $revisionId = $context['source']['id'] ?? 0;
         try {
             if ($error || !$this->saving) {
                 return $error;

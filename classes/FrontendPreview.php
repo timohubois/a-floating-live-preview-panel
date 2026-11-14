@@ -105,16 +105,22 @@ final class FrontendPreview
         remove_filter('the_preview', '_set_preview');
         add_filter('the_preview', [$this, 'readPost']);
         add_filter('get_post_metadata', [$this, 'readRevisionMeta'], 10, 4);
+        add_filter('get_the_terms', [$this, 'readTerms'], 10, 3);
         add_action('template_redirect', [$this, 'checkPreviewTarget'], -1);
 
         /**
          * Bind optional reads only after core has authorized and selected the preview source.
          *
-         * @param int  $postId   Original post identity; unrelated posts must remain untouched.
-         * @param int  $sourceId Authorized post or revision ID, not the latest revision.
-         * @param bool $saved    Whether this is a read-only saved-source preview.
+         * Live and saved previews have separate actions; neither can select another source.
+         *
+         * @param array $context Original post and authorized source identities; unrelated posts stay untouched.
          */
-        do_action('aflpp_preview_source', $postId, $this->source->ID, $saved);
+        do_action($saved
+            ? 'aflpp_frontend_saved_preview_source_selected'
+            : 'aflpp_frontend_live_preview_source_selected', [
+                'post' => ['id' => $postId],
+                'source' => ['id' => $this->source->ID],
+            ]);
     }
 
     /** History uses revision-enabled keys; live reads overlay only the supported featured-image input. */
@@ -134,11 +140,42 @@ final class FrontendPreview
         return $single && !$values ? '' : $values;
     }
 
+    /** Overlay lists after native relationship caching; never cache unsaved assignments on the parent. */
+    public function readTerms($terms, int $postId, string $taxonomy)
+    {
+        if ($this->saved || !$this->source || $postId !== $this->previewPostId || is_wp_error($terms)) {
+            return $terms;
+        }
+        $selection = get_post_meta($this->source->ID, LivePreview::TERMS_META, true);
+        if (!is_array($selection) || !array_key_exists($taxonomy, $selection)) {
+            return $terms;
+        }
+        $ids = $selection[$taxonomy];
+        $saved = wp_get_object_terms($postId, $taxonomy, ['fields' => 'ids']);
+        $selected = $ids;
+        if (is_array($saved)) {
+            sort($saved);
+            sort($selected);
+            if ($saved === $selected) {
+                // Preserve native ordering and earlier list filters when the assignment has not changed.
+                return $terms;
+            }
+        }
+        $args = get_taxonomy($taxonomy)->args ?? [];
+        return $ids ? get_terms(array_merge(is_array($args) ? $args : [], [
+            'taxonomy' => $taxonomy, 'include' => $ids, 'hide_empty' => false,
+        ])) : false;
+    }
+
     public function readPost(WP_Post $post): WP_Post
     {
         if ($post->ID === $this->previewPostId && $this->source) {
             foreach (['post_title', 'post_content', 'post_excerpt'] as $field) {
                 $post->$field = $this->source->$field;
+            }
+            // Revision authors/dates describe the revision, not historical post selections.
+            foreach ($this->saved ? [] : LivePreview::livePostFields($this->source->ID) as $field => $value) {
+                $post->$field = $value;
             }
         }
         return $post;

@@ -13,6 +13,33 @@ final class Panel
 
     public function enqueue(string $entry, array $config, array $dependencies = []): void
     {
+        $screen = match ($entry) {
+            'classic-editor' => 'classic_editor',
+            'block-editor' => 'block_editor',
+            'revision-browser' => 'revision_browser',
+        };
+        $context = ['post' => ['id' => (int) $config['postId']], 'source' => null];
+        /**
+         * Extend this screen's configuration; preserve core identity and integrity values.
+         *
+         * The hooks are aflpp_classic_editor_preview_config, aflpp_block_editor_preview_config
+         * and aflpp_revision_browser_preview_config. Only the selected screen's filter runs.
+         *
+         * @param array $config  Screen configuration, including postId and strings.
+         * @param array $context Core-owned post identity; no source has been selected.
+         */
+        $config = apply_filters("aflpp_{$screen}_preview_config", $config, $context);
+        /**
+         * Register integration scripts and add their handles so setup runs before the panel entry.
+         *
+         * @param string[] $dependencies Additional script dependencies; preserve existing handles.
+         * @param array    $context      Post identity, null source and filtered screen config.
+         */
+        $dependencies = apply_filters(
+            "aflpp_{$screen}_preview_script_dependencies",
+            $dependencies,
+            $context + ['config' => $config]
+        );
         $asset = require dirname($this->file) . '/build/' . $entry . '.asset.php';
         wp_enqueue_style(
             'a-floating-live-preview-panel',
@@ -109,8 +136,8 @@ final class Panel
                 ),
                 'saving' => __('Saving in WordPress…', 'a-floating-live-preview-panel'),
                 'nativePreview' => __('Preparing WordPress Preview…', 'a-floating-live-preview-panel'),
-                'nativePreviewAcf' => __(
-                    'WordPress Preview saved changes in your repeating fields to the post.',
+                'integrationFailed' => __(
+                    'A preview integration could not read your edits.',
                     'a-floating-live-preview-panel'
                 ),
                 'nativePreviewFailed' => __(

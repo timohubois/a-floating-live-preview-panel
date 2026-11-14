@@ -65,7 +65,7 @@ export function createLivePreview(config, nativeEditor) {
         const code = error?.code;
         const reload = [
             'aflpp_invalid_nonce', 'rest_cookie_invalid_nonce', 'aflpp_preview_conflict',
-            'aflpp_source_changed', 'aflpp_acf_unavailable',
+            'aflpp_source_changed', 'aflpp_acf_unavailable', 'aflpp_integration_failed',
         ].includes(code);
         const reason = reload ? 'reload'
             : ['aflpp_cannot_preview', 'rest_forbidden', 'rest_cannot_edit'].includes(code) ? 'permission'

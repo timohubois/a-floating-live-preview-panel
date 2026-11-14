@@ -1,7 +1,7 @@
 import apiFetch from '@wordpress/api-fetch';
 import { select, subscribe } from '@wordpress/data';
 import { addFilter, removeFilter } from '@wordpress/hooks';
-import { createBlockEditorAcf } from '../compatibility/acf-block-editor.js';
+import { createEditorExtensions } from './editor-extensions.js';
 
 const scope = 'a-floating-live-preview-panel';
 const fingerprint = /^[a-f0-9]{64}$/;
@@ -16,10 +16,10 @@ export function createBlockEditor(config) {
     let requests = 0;
     let failure;
     let settleQueued = false;
-    const acf = config.acfEnabled ? createBlockEditorAcf(() => {
-        preview?.changed();
-        scheduleObserve();
-    }) : null;
+    const extensions = createEditorExtensions('aflpp.blockEditor.previewSetup', {
+        config,
+        changed() { preview?.changed(); scheduleObserve(); },
+    });
     const editor = () => select('core/editor');
     const ownsPost = () => Number(editor()?.getCurrentPostId()) === config.postId
         && editor()?.getCurrentPostType() === config.postType;
@@ -29,7 +29,18 @@ export function createBlockEditor(config) {
 
     function values() {
         const state = editor();
+        const author = state.getEditedPostAttribute('author');
+        const date = state.getEditedPostAttribute('date');
+        const terms = {};
+        for (const [taxonomy, attribute] of Object.entries(config.taxonomies || {})) {
+            const ids = state.getEditedPostAttribute(attribute);
+            if (Array.isArray(ids)) terms[taxonomy] = ids;
+        }
         return {
+            ...extensions.filter('additionalPreviewValues', {}, state),
+            ...(author ? { author } : {}),
+            ...(date !== undefined ? { date } : {}),
+            ...(Object.keys(terms).length ? { terms: JSON.stringify(terms) } : {}),
             post_title: state.getEditedPostAttribute('title') ?? '',
             content: state.getEditedPostContent(),
             excerpt: state.getEditedPostAttribute('excerpt') ?? '',
@@ -43,14 +54,20 @@ export function createBlockEditor(config) {
         // An empty editor store is still initializing, not an unsupported editing context.
         const postLoaded = !!state?.getCurrentPost()?.id;
         const postReady = postLoaded && ownsPost();
-        acf?.observe();
-        const ready = postReady && (acf?.ready ?? true);
-        native.notReady = !postLoaded ? config.strings.loading : postReady ? config.strings.acfRefreshing : config.strings.postOnly;
+        if (postReady) extensions.action('observePreviewInputs', state);
+        const pauseReason = extensions.filter('previewPauseReason', '', state);
+        const ready = postReady && !pauseReason && !extensions.error;
+        native.notReady = !postLoaded ? config.strings.loading : !postReady ? config.strings.postOnly
+            : extensions.error?.message || pauseReason;
         native.notReadyState = postLoaded ? 'paused' : 'loading';
         const saving = postReady && (state.isSavingPost() || requests > 0);
         const becameReady = ready && !native.ready;
         native.ready = ready;
         native.saving = saving;
+        if (extensions.error) {
+            preview.resume(extensions.error);
+            return;
+        }
         if (!ready) {
             preview.pause(native.notReady, native.notReadyState);
             return;
@@ -62,17 +79,28 @@ export function createBlockEditor(config) {
         wasSaving = saving;
         // Track cheap raw values and immutable block references; serialize only when capturing a preview.
         const current = {
+            ...extensions.filter('additionalPreviewValues', {}, state),
             post_title: state.getEditedPostAttribute('title') ?? '',
             excerpt: state.getEditedPostAttribute('excerpt') ?? '',
             content: state.getPostEdits().content ?? state.getCurrentPost().content,
             blocks: state.getEditedPostAttribute('blocks'),
+            author: state.getEditedPostAttribute('author'),
+            date: state.getEditedPostAttribute('date'),
+            ...Object.fromEntries(Object.entries(config.taxonomies || {}).map(([taxonomy, attribute]) =>
+                [`terms:${taxonomy}`, state.getEditedPostAttribute(attribute)])),
             featured_media: state.getEditedPostAttribute('featured_media') ?? 0,
         };
+        if (extensions.error) {
+            native.ready = false;
+            preview.resume(extensions.error);
+            return;
+        }
         if (native.title !== current.post_title) {
             native.title = current.post_title;
             preview.setTitle(native.title);
         }
-        if (!lastValues || Object.keys(current).some((key) => current[key] !== lastValues[key])) {
+        if (!lastValues || Object.keys(current).length !== Object.keys(lastValues).length
+            || Object.keys(current).some((key) => current[key] !== lastValues[key])) {
             lastValues = current;
             preview.changed();
         }
@@ -169,7 +197,7 @@ export function createBlockEditor(config) {
             const cookie = document.cookie.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${cookieName}=`));
             const receipt = cookie?.slice(cookieName.length + 1);
             accept({ request, before: base, after: receipt?.startsWith(`${base}.`) ? receipt.slice(65) : '', available: config.available }, request, base);
-            if (!failure) acf?.saved();
+            if (!failure) extensions.action('nativeMetaboxSaveAcknowledged');
             return response;
         } catch (error) {
             // Even a REST 4xx can follow wp_update_post(). Retry preview only when the server
@@ -196,9 +224,9 @@ export function createBlockEditor(config) {
 
     native.preparePreview = () => {
         const data = { ...values(), base: config.base };
-        if (!acf) return apiFetch({ url: config.endpoint, method: 'POST', data });
-        const body = acf.capture();
-        for (const [key, value] of Object.entries(data)) body.set(key, value);
+        const body = extensions.capture(null);
+        if (body === null) return apiFetch({ url: config.endpoint, method: 'POST', data });
+        for (const [key, value] of Object.entries(data)) body.set(key, value ?? '');
         return apiFetch({ url: config.endpoint, method: 'POST', body });
     };
     const unsubscribe = subscribe(scheduleObserve);
@@ -206,9 +234,10 @@ export function createBlockEditor(config) {
     apiFetch.use(middleware);
     native.connect = (session) => { preview = session; observe(); };
     native.destroy = () => {
+        if (destroyed) return;
         destroyed = true;
         unsubscribe();
-        acf?.destroy();
+        extensions.destroy();
         removeFilter('editor.preSavePost', scope);
     };
     window.addEventListener('pagehide', (event) => { if (!event.persisted) native.destroy(); });

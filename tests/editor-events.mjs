@@ -3,8 +3,10 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { runChromiumTests } from './helpers/chromium.mjs';
 import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
+import { browserEditorExtensionsSource } from './helpers/editor-extensions.mjs';
 
-async function browserTests(editorSource, initAcf, nativeSource) {
+async function browserTests(editorSource, initAcf, nativeSource, extensionSource) {
+    const createEditorExtensions = new Function('initAcf', `return (${extensionSource})(initAcf);`)(initAcf);
     const realJQuery = window.jQuery;
     const results = [];
     const equal = (actual, expected) => {
@@ -27,7 +29,7 @@ async function browserTests(editorSource, initAcf, nativeSource) {
         const editorEvents = new Map();
         const editor = { on: (events, callback) => {
             for (const event of events.split(' ')) editorEvents.set(event, callback);
-        } };
+        }, off() {} };
         let addEditor;
         let options;
         let finishNative;
@@ -38,7 +40,7 @@ async function browserTests(editorSource, initAcf, nativeSource) {
         window.fetch = (url, request) => { requests.push(request); return new Promise(() => {}); };
         window.tinymce = {
             editors: [editor],
-            on: (event, callback) => { addEditor = callback; },
+            on: (event, callback) => { addEditor = callback; }, off() {},
             triggerSave: () => {
                 editorEvents.get('SetContent')();
                 if (withWordPress) window.jQuery(form.querySelector('[name="content"]')).trigger('change');
@@ -47,7 +49,10 @@ async function browserTests(editorSource, initAcf, nativeSource) {
         const handlers = new Map();
         const jqueryListeners = [];
         delete window.jQuery;
-        if (withAcf) window.acf = { addAction: (name, callback) => actions.set(name, callback) };
+        if (withAcf) window.acf = {
+            addAction: (name, callback) => actions.set(name, callback),
+            removeAction: (name) => actions.delete(name),
+        };
         if (withAcf || withWordPress) {
             // Use real WordPress assets when supplied; otherwise model only the jQuery event boundary.
             window.jQuery = realJQuery || ((target) => ({
@@ -87,7 +92,7 @@ async function browserTests(editorSource, initAcf, nativeSource) {
         const createPanel = (strings, callbacks) => { options = callbacks; return view; };
         const createScroll = () => ({ remember() {} });
         const initPreview = new Function('imports', `${editorSource}\nreturn initLivePreview;`)({
-            '../compatibility/acf-fields.js': { initAcf },
+            './editor-extensions.js': { createEditorExtensions },
             '../panel/window.js': { createPreviewPanel: createPanel },
             '../preview/scroll.js': { createPreviewScroll: createScroll },
         });
@@ -247,7 +252,7 @@ async function browserTests(editorSource, initAcf, nativeSource) {
         for (const event of ['input', 'change', 'undo', 'redo', 'SetContent']) context.editorEvents.get(event)();
         equal(context.stale(), 5);
         let registrations = 0;
-        const editor = { on: () => registrations++ };
+        const editor = { on: () => registrations++, off() {} };
         context.addEditor(editor);
         context.addEditor(editor);
         equal(registrations, 1);
@@ -278,7 +283,7 @@ async function browserTests(editorSource, initAcf, nativeSource) {
         for (const action of ['append', 'remove', 'sortstop', 'change_field']) context.actions.get(action)();
         equal(context.stale(), 4);
         let registrations = 0;
-        context.actions.get('wysiwyg_tinymce_init')({ on: () => registrations++ });
+        context.actions.get('wysiwyg_tinymce_init')({ on: () => registrations++, off() {} });
         equal(registrations, 1);
     }, true);
     await check('capture still synchronizes TinyMCE and preserves the payload allowlist', async (context) => {
@@ -309,7 +314,7 @@ test('native editor events and ACF compatibility boundaries in Chromium', async 
     })) : [];
     await runChromiumTests(t, {
         head: `<script>window.quicktagsL10n = new Proxy({}, { get: (target, key) => key });</script>${wordpressScripts.join('')}`,
-        script: `(${browserTests.toString()})(${JSON.stringify(editorSource)}, (await import(${JSON.stringify(acfUrl)})).initAcf, ${JSON.stringify(nativeSource)})`,
+        script: `(${browserTests.toString()})(${JSON.stringify(editorSource)}, (await import(${JSON.stringify(acfUrl)})).initAcf, ${JSON.stringify(nativeSource)}, ${JSON.stringify(browserEditorExtensionsSource)})`,
         count: process.env.WORDPRESS_ROOT ? 19 : 16,
     });
 });

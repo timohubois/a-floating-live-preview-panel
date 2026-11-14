@@ -2,7 +2,6 @@
 
 namespace AFloatingLivePreviewPanel;
 
-use AFloatingLivePreviewPanel\Compatibility\Acf;
 use WP_Post;
 
 /** Connect the classic editor to the shared panel and preview features. */
@@ -10,7 +9,6 @@ final class ClassicEditor
 {
     public function __construct(
         private readonly LivePreview $preview,
-        private readonly Acf $acf,
         private readonly Panel $panel
     ) {
         add_action('admin_enqueue_scripts', [$this, 'enqueueEditor']);
@@ -40,10 +38,11 @@ final class ClassicEditor
             return;
         }
 
-        $this->panel->enqueue('classic-editor', array_merge(
+        $this->panel->enqueue(
+            'classic-editor',
             $this->panel->liveConfig($post, $this->preview),
-            ['acfEnabled' => $this->acf->isAvailable()]
-        ), array_merge(['jquery', 'autosave'], $this->acf->editorDependencies()));
+            ['jquery', 'autosave']
+        );
     }
 
     public function renderPanel(): void

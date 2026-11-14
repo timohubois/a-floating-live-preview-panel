@@ -1,4 +1,4 @@
-import { initAcf } from '../compatibility/acf-fields.js';
+import { createEditorExtensions } from './editor-extensions.js';
 import { createLivePreview } from '../preview/live-preview.js';
 
 // Classic fields and native form controls stay outside the shared preview lifecycle.
@@ -6,8 +6,9 @@ export function initLivePreview(config, nativeEditor) {
     const form = document.getElementById('post');
     if (!config || !form) return;
     let capturing = false;
-    let acf;
-    const editors = new WeakSet();
+    let extensions;
+    const editors = new Set();
+    let destroyed = false;
     nativeEditor.title = document.getElementById('title')?.value ?? config.postTitle;
     nativeEditor.preparePreview = async () => {
         capturing = true;
@@ -16,12 +17,11 @@ export function initLivePreview(config, nativeEditor) {
             window.tinymce?.triggerSave();
             values = new FormData(form);
         } finally { capturing = false; }
-        const data = new URLSearchParams();
+        const core = new URLSearchParams();
         for (const [name, value] of values) {
-            if (typeof value === 'string' && (
-                ['post_title', 'content', 'excerpt'].includes(name) || acf?.accepts(name)
-            )) data.append(name, value);
+            if (typeof value === 'string' && ['post_title', 'content', 'excerpt'].includes(name)) core.append(name, value);
         }
+        const data = extensions.capture(core, values);
         data.set('base', config.base);
         const response = await fetch(config.endpoint, {
             method: 'POST', credentials: 'same-origin',
@@ -32,18 +32,26 @@ export function initLivePreview(config, nativeEditor) {
         return result;
     };
     const preview = createLivePreview(config, nativeEditor);
-    const changed = () => { if (!capturing) preview.changed(); };
+    const changed = () => {
+        if (capturing || destroyed) return;
+        const reason = extensions?.filter('previewPauseReason', '') || extensions?.error?.message;
+        const becameReady = nativeEditor.ready === false && !reason;
+        nativeEditor.ready = !reason;
+        nativeEditor.notReady = reason;
+        nativeEditor.notReadyState = 'paused';
+        if (extensions?.error) preview.resume(extensions.error);
+        else if (reason) preview.pause(reason, 'paused');
+        else if (becameReady) preview.resume();
+        else preview.changed();
+    };
     nativeEditor.onAutosave = changed;
     nativeEditor.beforePreview = () => {
         preview.pause(config.strings.nativePreview);
         return preview.pending;
     };
     nativeEditor.onPreview = (error, saved) => {
-        // Remaining ACF row deltas still reference the pre-Preview draft; do not apply them twice.
-        if (!error && saved && acf?.hasStructuralPaginationChanges()) {
-            error = Object.assign(new Error(config.strings.nativePreviewAcf), { code: 'aflpp_source_changed' });
-        }
-        preview.resume(error);
+        error = extensions.filter('nativePreviewHandoffError', error, saved);
+        preview.resume(extensions.error || error);
     };
     function watchEditor(editor) {
         if (!editor || editors.has(editor)) return;
@@ -52,19 +60,39 @@ export function initLivePreview(config, nativeEditor) {
     }
     if (window.tinymce) {
         window.tinymce.editors.forEach(watchEditor);
-        window.tinymce.on('AddEditor', (event) => watchEditor(event.editor));
+        window.tinymce.on('AddEditor', onEditorAdded);
     }
+    function onEditorAdded(event) { watchEditor(event.editor); }
     function cancelNativeSave() {
         if (!nativeEditor.saving) return;
         nativeEditor.saving = false;
         changed();
     }
     nativeEditor.onSaveCancelled = cancelNativeSave;
-    acf = config.acfEnabled ? initAcf(form, changed, watchEditor, cancelNativeSave) : null;
-    nativeEditor.isValidating = () => acf?.isValidating?.();
+    extensions = createEditorExtensions('aflpp.classicEditor.previewSetup', {
+        config, form, changed, watchEditor, cancelNativeSave,
+    });
+    const destroyNative = nativeEditor.destroy;
+    nativeEditor.destroy = () => {
+        if (destroyed) return;
+        destroyed = true;
+        extensions.destroy();
+        form.removeEventListener('input', onFieldChange);
+        form.removeEventListener('change', onFieldChange, true);
+        form.removeEventListener('click', onSaveClick, true);
+        form.removeEventListener('submit', onSaveSubmit, true);
+        window.removeEventListener('pagehide', onPageHide);
+        window.tinymce?.off('AddEditor', onEditorAdded);
+        for (const editor of editors) editor.off('input change undo redo SetContent', changed);
+        editors.clear();
+        destroyNative?.();
+    };
+    function onPageHide(event) { if (!event.persisted) nativeEditor.destroy(); }
+    window.addEventListener('pagehide', onPageHide);
+    nativeEditor.isValidating = () => extensions.filter('nativeSaveValidationPending', false);
     function onFieldChange(event) {
         if (event.target.name === 'post_title') preview.setTitle(event.target.value);
-        if (['post_title', 'content', 'excerpt'].includes(event.target.name) || acf?.isField(event.target)) changed();
+        if (['post_title', 'content', 'excerpt'].includes(event.target.name)) changed();
     }
     nativeEditor.onFieldChange = onFieldChange;
     form.addEventListener('input', onFieldChange);
@@ -91,19 +119,22 @@ export function initLivePreview(config, nativeEditor) {
         drainingNativeSave = true;
         const proceed = () => {
             drainingNativeSave = false;
-            if (nativeEditor.saving) resume();
+            if (!destroyed && nativeEditor.saving) resume();
         };
         pending.then(proceed, proceed);
     }
-    form.addEventListener('click', (event) => {
+    function onSaveClick(event) {
         const control = event.target.closest('#publish, #save-post');
         if (control && !control.disabled && !control.classList.contains('disabled')) {
             continueNativeSave(event, () => control.click());
         }
-    }, true);
-    form.addEventListener('submit', (event) => {
+    }
+    function onSaveSubmit(event) {
         if (form.querySelector('#wp-preview')?.value === 'dopreview') return;
         continueNativeSave(event, () => form.requestSubmit(event.submitter || undefined));
-    }, true);
-    preview.start();
+    }
+    form.addEventListener('click', onSaveClick, true);
+    form.addEventListener('submit', onSaveSubmit, true);
+    changed();
+    if (!extensions.error) preview.start();
 }

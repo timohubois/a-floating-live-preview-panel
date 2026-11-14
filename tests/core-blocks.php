@@ -21,10 +21,15 @@ $originalGet = $_GET;
 $originalPost = $GLOBALS['post'] ?? null;
 $originalQuery = $GLOBALS['wp_query'];
 $originalHooks = [];
-foreach (['aflpp_preview_source', 'the_preview', 'get_post_metadata', 'shutdown'] as $hook) {
+$previewHooks = [
+    'aflpp_frontend_live_preview_source_selected', 'aflpp_frontend_saved_preview_source_selected',
+    'the_preview', 'get_post_metadata', 'shutdown',
+];
+foreach ($previewHooks as $hook) {
     $originalHooks[$hook] = isset($GLOBALS['wp_filter'][$hook]) ? clone $GLOBALS['wp_filter'][$hook] : null;
 }
-remove_all_actions('aflpp_preview_source');
+remove_all_actions('aflpp_frontend_live_preview_source_selected');
+remove_all_actions('aflpp_frontend_saved_preview_source_selected');
 $type = WP_Block_Type_Registry::get_instance()->get_registered('core/post-excerpt');
 $check(
     $type && $type->render_callback === 'render_block_core_post_excerpt',

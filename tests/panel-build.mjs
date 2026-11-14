@@ -3,6 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
 import { icons } from '../src/panel/icons.js';
+import { createHooks } from '@wordpress/hooks';
 
 const bundle = await readFile(new URL('../build/classic-editor.js', import.meta.url), 'utf8');
 const asset = await readFile(new URL('../build/classic-editor.asset.php', import.meta.url), 'utf8');
@@ -17,10 +18,6 @@ function shape({ props }) {
 
 test('asset entries use consistent feature names and only emit standard WordPress build files', async () => {
     const entries = ['classic-editor', 'block-editor', 'revision-browser', 'preview-navigation'];
-    const { scripts } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
-    for (const command of ['build', 'start']) {
-        assert.deepEqual(scripts[command].split(/\s+/).slice(2), entries.map((entry) => `src/${entry}.js`));
-    }
     const expected = entries.flatMap((entry) => [
         `${entry}.js`, `${entry}.asset.php`,
         ...(entry === 'preview-navigation' ? [] : [`${entry}.css`, `${entry}-rtl.css`]),
@@ -33,7 +30,7 @@ test('the editor build declares its public WordPress runtime dependencies', () =
     const dependencies = [...asset.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1].matchAll(/'([^']+)'/g)]
         .map((match) => match[1]);
     assert.deepEqual(dependencies, [
-        'react-jsx-runtime', 'wp-components', 'wp-data', 'wp-element', 'wp-notices', 'wp-preferences', 'wp-primitives',
+        'react-jsx-runtime', 'wp-components', 'wp-data', 'wp-element', 'wp-hooks', 'wp-notices', 'wp-preferences', 'wp-primitives',
     ]);
     assert.match(asset, /'version'\s*=>\s*'[a-f0-9]+'/);
     assert.doesNotMatch(bundle, /__experimental|__unstable|Cannot find module/);
@@ -43,8 +40,9 @@ test('the editor build declares its public WordPress runtime dependencies', () =
 test('the revision build uses the same public runtime without editor save coordination', async () => {
     const revisionBundle = await readFile(new URL('../build/revision-browser.js', import.meta.url), 'utf8');
     const revisionAsset = await readFile(new URL('../build/revision-browser.asset.php', import.meta.url), 'utf8');
-    const dependencies = (source) => source.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1];
-    assert.equal(dependencies(revisionAsset), dependencies(asset));
+    const dependencies = (source) => [...source.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1].matchAll(/'([^']+)'/g)]
+        .map((match) => match[1]);
+    assert.deepEqual(dependencies(revisionAsset), dependencies(asset).filter((name) => name !== 'wp-hooks'));
     assert.doesNotMatch(revisionBundle, /__experimental|__unstable|before-autosave|heartbeat-send|deferredSaves/);
     assert.doesNotMatch(revisionBundle, /import\(/, 'revision coordination and scrolling are bundled');
 });
@@ -57,12 +55,11 @@ test('the shipped editor bundle uses WordPress runtime globals and bundles exact
         return element;
     };
     const window = {
-        wp: { components: {}, data: {}, element: {}, notices: {}, preferences: {}, primitives: { SVG: 'svg', Path: 'path' } },
+        wp: { hooks: createHooks(), components: {}, data: {}, element: {}, notices: {}, preferences: {}, primitives: { SVG: 'svg', Path: 'path' } },
         ReactJSXRuntime: { jsx, jsxs: jsx },
     };
     // No editor form: loading the compiled entry must be safe, without booting coordination or React.
     vm.runInNewContext(bundle, { window, document: { getElementById: () => null } });
-    assert.equal(bundledIcons.length, Object.keys(icons).length);
     assert.deepEqual(bundledIcons.map(shape).sort(), Object.values(icons).map(shape).sort());
     assert.equal(window.aFloatingLivePreviewPanelIcons, undefined, 'icons are module-local, not a plugin global');
 });

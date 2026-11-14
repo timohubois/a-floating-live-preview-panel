@@ -1,0 +1,371 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+import { editorExtensionsFixture } from './helpers/editor-extensions.mjs';
+import { sourceForVm } from './helpers/modules.mjs';
+import vm from 'node:vm';
+
+function fixture({ acfEnabled = false, browserAcf = true } = {}) {
+    const config = { acfEnabled, strings: { integrationFailed: 'Integration failed', acfUnavailable: 'ACF unavailable', acfRefreshing: 'ACF refreshing' } };
+    const context = {
+        URLSearchParams,
+        window: { jQuery() {}, ...(browserAcf ? { acf: { addAction() {}, removeAction() {} } } : {}) },
+    };
+    const fields = { ready: true, changes: 0, saves: 0, destroys: 0,
+        observe() { this.changes++; }, saved() { this.saves++; }, destroy() { this.destroys++; },
+        capture: () => new URLSearchParams([['acf[field_empty]', ''], ['_acf_fields[group][]', 'one'], ['_acf_fields[group][]', 'two']]),
+    };
+    const runtime = editorExtensionsFixture(context, { createBlockEditorAcf: () => fields });
+    const create = (setupAction = 'aflpp.blockEditor.previewSetup', context = {}) =>
+        runtime.createEditorExtensions(setupAction, { config, changed() {}, ...context });
+    return { ...runtime, config, fields, create };
+}
+
+test('no optional integrations leaves core values, capture and readiness untouched', () => {
+    const h = fixture({ browserAcf: false });
+    const extensions = h.create();
+    assert.equal(extensions.error, undefined);
+    assert.equal(extensions.capture(null), null, 'preserve core-only JSON transport');
+    assert.deepEqual(extensions.filter('additionalPreviewValues', {}), {});
+    assert.equal(extensions.filter('previewPauseReason', ''), '');
+    extensions.action('observePreviewInputs');
+    extensions.destroy();
+    assert.equal(h.fields.changes, 0);
+    assert.equal(h.fields.destroys, 0);
+});
+
+for (const priority of [5, 20]) {
+    test(`an external integration composes with ACF before/after its capture: priority ${priority}`, () => {
+        const h = fixture({ acfEnabled: true });
+        let destroyed = 0;
+        h.hooks.addAction('aflpp.blockEditor.previewSetup', 'vendor/custom-fields', ({ config, hooks, onDestroy }) => {
+            assert.equal(config, h.config);
+            hooks.addFilter('previewFormBody', 'vendor/custom-fields', (body) => {
+                body ??= new URLSearchParams();
+                body.append('vendor[value][]', 'first');
+                body.append('vendor[value][]', 'second');
+                return body;
+            }, priority);
+            hooks.addFilter('additionalPreviewValues', 'vendor/custom-fields', (values) => ({ ...values, vendor_value: 'extra' }));
+            onDestroy(() => destroyed++);
+        });
+        const extensions = h.create();
+        const body = extensions.capture(null);
+        assert.equal(body.get('acf[field_empty]'), '');
+        assert.deepEqual(body.getAll('_acf_fields[group][]'), ['one', 'two']);
+        assert.deepEqual(body.getAll('vendor[value][]'), ['first', 'second']);
+        assert.equal(extensions.filter('additionalPreviewValues', {}).vendor_value, 'extra');
+        extensions.action('observePreviewInputs');
+        extensions.action('nativeMetaboxSaveAcknowledged');
+        assert.equal(h.fields.changes, 1);
+        assert.equal(h.fields.saves, 1);
+        extensions.destroy(); extensions.destroy();
+        assert.equal(h.fields.destroys, 1);
+        assert.equal(destroyed, 1);
+    });
+}
+
+test('multiple readiness contributors retain the first blocker and can release it', () => {
+    const h = fixture({ acfEnabled: true });
+    let blocked = true;
+    h.fields.ready = false;
+    h.hooks.addAction('aflpp.blockEditor.previewSetup', 'vendor/readiness', ({ hooks }) => {
+        hooks.addFilter('previewPauseReason', 'vendor/readiness', (reason) => reason || (blocked ? 'Vendor refreshing' : ''));
+    });
+    const extensions = h.create();
+    assert.equal(extensions.filter('previewPauseReason', ''), 'ACF refreshing');
+    h.fields.ready = true;
+    assert.equal(extensions.filter('previewPauseReason', ''), 'Vendor refreshing');
+    blocked = false;
+    assert.equal(extensions.filter('previewPauseReason', ''), '');
+    extensions.destroy();
+});
+
+test('classic and block setup actions expose separate contexts and local contributions', () => {
+    const h = fixture();
+    const form = {};
+    const calls = [];
+    h.hooks.addAction('aflpp.classicEditor.previewSetup', 'vendor/classic', (context) => {
+        assert.equal(context.form, form);
+        context.hooks.addFilter('previewFormBody', 'vendor/classic', (body) => {
+            body.append('vendor_classic', 'Classic');
+            return body;
+        });
+        calls.push('classic');
+    });
+    h.hooks.addAction('aflpp.blockEditor.previewSetup', 'vendor/block', (context) => {
+        assert.equal(context.form, undefined);
+        context.hooks.addFilter('additionalPreviewValues', 'vendor/block', (values) => ({ ...values, vendor_block: 'Block' }));
+        calls.push('block');
+    });
+    const block = h.create();
+    assert.deepEqual(calls, ['block']);
+    assert.equal(block.capture(null), null);
+    assert.equal(block.filter('additionalPreviewValues', {}).vendor_block, 'Block');
+    const classic = h.create('aflpp.classicEditor.previewSetup', { form });
+    assert.deepEqual(calls, ['block', 'classic']);
+    assert.equal(classic.capture(new URLSearchParams()).get('vendor_classic'), 'Classic');
+    assert.deepEqual(classic.filter('additionalPreviewValues', {}), {});
+    classic.destroy(); block.destroy();
+});
+
+test('setup and cleanup are scoped to each editor session, not global filters', () => {
+    const h = fixture();
+    let cleaned = 0;
+    h.hooks.addAction('aflpp.blockEditor.previewSetup', 'vendor/session', ({ hooks, onDestroy }) => {
+        let count = 0;
+        hooks.addFilter('additionalPreviewValues', 'vendor/session', (values) => ({ ...values, count: ++count }));
+        onDestroy(() => cleaned++);
+    });
+    const first = h.create(), second = h.create();
+    assert.equal(first.filter('additionalPreviewValues', {}).count, 1);
+    assert.equal(first.filter('additionalPreviewValues', {}).count, 2);
+    assert.equal(second.filter('additionalPreviewValues', {}).count, 1);
+    first.destroy();
+    assert.deepEqual(first.filter('additionalPreviewValues', {}), {});
+    assert.equal(second.filter('additionalPreviewValues', {}).count, 2);
+    second.destroy();
+    assert.equal(cleaned, 2);
+    assert.throws(() => first.capture(null), (error) => error.code === 'aflpp_integration_failed',
+        'ended sessions cannot silently fall back to core-only writes');
+});
+
+test('missing browser ACF APIs produce a controlled error instead of aborting the editor', () => {
+    const h = fixture({ acfEnabled: true, browserAcf: false });
+    const extensions = h.create();
+    assert.equal(extensions.error.code, 'aflpp_integration_failed');
+    assert.equal(extensions.error.message, 'ACF unavailable');
+    assert.throws(() => extensions.capture(null), (error) => error === extensions.error);
+    assert.equal(h.fields.destroys, 0, 'no ACF instance or subscriptions were created');
+});
+
+for (const lifecycle of ['observePreviewInputs', 'nativeMetaboxSaveAcknowledged', 'additionalPreviewValues', 'previewFormBody']) {
+    test(`a failing ${lifecycle} callback blocks preview capture without escaping into native saving`, () => {
+        const h = fixture();
+        h.hooks.addAction('aflpp.blockEditor.previewSetup', 'vendor/failure', ({ hooks }) => {
+            const fail = () => { throw new Error('Private adapter failure'); };
+            if (['additionalPreviewValues', 'previewFormBody'].includes(lifecycle)) hooks.addFilter(lifecycle, 'vendor/failure', fail);
+            else hooks.addAction(lifecycle, 'vendor/failure', fail);
+        });
+        const extensions = h.create();
+        if (lifecycle === 'additionalPreviewValues') extensions.filter(lifecycle, {});
+        else if (lifecycle !== 'previewFormBody') assert.doesNotThrow(() => extensions.action(lifecycle));
+        assert.throws(() => extensions.capture(null), (error) => error.code === 'aflpp_integration_failed');
+        assert.equal(extensions.error.message, 'Integration failed');
+        extensions.destroy();
+    });
+}
+
+test('setup failures release earlier subscriptions even when another cleanup throws', () => {
+    const h = fixture({ acfEnabled: true });
+    const cleaned = [];
+    h.hooks.addAction('aflpp.blockEditor.previewSetup', 'vendor/failure', ({ onDestroy }) => {
+        onDestroy(() => cleaned.push('first'));
+        onDestroy(() => { cleaned.push('second'); throw new Error('Cleanup failure'); });
+        throw new Error('Setup failure');
+    });
+    const extensions = h.create();
+    assert.equal(extensions.error.code, 'aflpp_integration_failed');
+    assert.deepEqual(cleaned, ['second', 'first']);
+    assert.equal(h.fields.destroys, 1);
+    extensions.destroy();
+    assert.equal(h.fields.destroys, 1);
+});
+
+for (const result of [{}, undefined, new FormData()]) {
+    test(`invalid capture contracts fail closed: ${Object.prototype.toString.call(result)}`, () => {
+        const h = fixture();
+        h.hooks.addAction('aflpp.blockEditor.previewSetup', 'vendor/invalid', ({ hooks }) => {
+            hooks.addFilter('previewFormBody', 'vendor/invalid', () => result);
+        });
+        const extensions = h.create();
+        assert.throws(() => extensions.capture(null), (error) => error.code === 'aflpp_integration_failed');
+    });
+}
+
+for (const result of [null, [], undefined, new Map(), Promise.resolve({}), { nested: [] }, { omitted: undefined }, { invalid: NaN }]) {
+    test(`invalid extra-value contracts stop capture: ${Object.prototype.toString.call(result)}`, () => {
+        const h = fixture();
+        h.hooks.addAction('aflpp.blockEditor.previewSetup', 'vendor/invalid', ({ hooks }) => {
+            hooks.addFilter('additionalPreviewValues', 'vendor/invalid', () => result);
+        });
+        const extensions = h.create();
+        extensions.filter('additionalPreviewValues', {});
+        assert.throws(() => extensions.capture(null), (error) => error.code === 'aflpp_integration_failed');
+    });
+}
+
+for (const [name, capture] of [
+    ['a null body', () => null],
+    ['an empty replacement', () => new URLSearchParams()],
+    ['an integration-only replacement', () => new URLSearchParams({ vendor_note: 'Note' })],
+    ['a deleted core field', (body) => { body.delete('content'); return body; }],
+    ['an overwritten core field', (body) => { body.set('post_title', 'Saved title'); return body; }],
+    ['a deleted empty value', (body) => { body.delete('excerpt'); return body; }],
+    ['collapsed repeated values', (body) => { body.set('content', 'First'); return body; }],
+    ['reordered repeated values', (body) => {
+        body.delete('content'); body.append('content', 'Second'); body.append('content', 'First'); return body;
+    }],
+    ['an appended core value', (body) => { body.append('content', 'Third'); return body; }],
+]) {
+    test(`classic capture fails closed for ${name}`, () => {
+        const h = fixture();
+        h.hooks.addAction('aflpp.classicEditor.previewSetup', 'vendor/invalid', ({ hooks }) => {
+            hooks.addFilter('previewFormBody', 'vendor/invalid', capture);
+        });
+        const extensions = h.create('aflpp.classicEditor.previewSetup');
+        const body = new URLSearchParams([
+            ['post_title', 'Unsaved title'], ['content', 'First'], ['content', 'Second'], ['excerpt', ''],
+        ]);
+        assert.throws(() => extensions.capture(body),
+            (error) => error === extensions.error && error.code === 'aflpp_integration_failed');
+        extensions.destroy();
+    });
+}
+
+for (const copy of [false, true]) {
+    test(`classic capture preserves empty/repeated core values and integration contributions: copy ${copy}`, () => {
+        const h = fixture();
+        h.hooks.addAction('aflpp.classicEditor.previewSetup', 'vendor/fields', ({ hooks }) => {
+            hooks.addFilter('previewFormBody', 'vendor/first', (body) => {
+                body.append('vendor[first][]', 'one'); body.append('vendor[first][]', 'two');
+                return body;
+            }, 5);
+            hooks.addFilter('previewFormBody', 'vendor/second', (body) => {
+                const result = copy ? new URLSearchParams(body) : body;
+                result.append('vendor[second]', '');
+                return result;
+            }, 20);
+        });
+        const extensions = h.create('aflpp.classicEditor.previewSetup');
+        const entries = [['post_title', 'Unsaved title'], ['content', 'First'], ['content', 'Second'], ['excerpt', '']];
+        assert.deepEqual([...extensions.capture(new URLSearchParams(entries))], [
+            ...entries, ['vendor[first][]', 'one'], ['vendor[first][]', 'two'], ['vendor[second]', ''],
+        ]);
+        assert.equal(extensions.error, undefined);
+        extensions.destroy();
+    });
+}
+
+for (const [name, capture] of [
+    ['replaced core values', () => new URLSearchParams({ vendor_note: 'Note' })],
+    ['deleted core values', (body) => { body.delete('content'); return body; }],
+]) {
+    test(`classic ${name} cannot reach the preview endpoint`, async () => {
+        let requests = 0;
+        const form = { addEventListener() {}, removeEventListener() {} };
+        const config = { base: 'baseline', strings: { integrationFailed: 'Integration failed' } };
+        const context = {
+            URLSearchParams, document: { getElementById: (id) => id === 'post' ? form : null },
+            window: { addEventListener() {}, removeEventListener() {} },
+            FormData: class { *[Symbol.iterator]() { yield ['content', 'Unsaved content']; } },
+            fetch: async () => { requests++; throw new Error('Invalid capture reached the endpoint.'); },
+        };
+        const runtime = editorExtensionsFixture(context);
+        runtime.hooks.addAction('aflpp.classicEditor.previewSetup', 'vendor/invalid', ({ hooks }) => {
+            hooks.addFilter('previewFormBody', 'vendor/invalid', capture);
+        });
+        context.imports = {
+            './editor-extensions.js': runtime,
+            '../preview/live-preview.js': { createLivePreview: () => ({ start() {}, changed() {} }) },
+        };
+        const native = {};
+        const source = await sourceForVm(new URL('../src/screens/classic-editor.js', import.meta.url));
+        vm.runInNewContext(`${source}\ninitLivePreview`, context)(config, native);
+        await assert.rejects(native.preparePreview(), (error) => error.code === 'aflpp_integration_failed');
+        assert.equal(requests, 0);
+        native.destroy();
+    });
+}
+
+test('classic external fields can pause initial preview, resume and clean up without editor-specific imports', async () => {
+    let blocked = true, signal, cleaned = 0, nativeDestroyed = 0;
+    const calls = [];
+    const listeners = new Map();
+    const form = {
+        addEventListener(name, callback) { listeners.set(name, callback); },
+        removeEventListener(name) { listeners.delete(name); },
+    };
+    const config = { base: 'baseline', strings: { integrationFailed: 'Integration failed' } };
+    const context = {
+        URLSearchParams, document: { getElementById: (id) => id === 'post' ? form : null },
+        window: { addEventListener() {}, removeEventListener() {} },
+        FormData: class { *[Symbol.iterator]() { yield ['content', 'Native content']; yield ['vendor_note', 'Unsaved note']; } },
+        fetch: async (url, options) => {
+            calls.push(options.body);
+            return { ok: true, json: async () => ({ url: '/preview' }) };
+        },
+    };
+    const runtime = editorExtensionsFixture(context);
+    runtime.hooks.addAction('aflpp.classicEditor.previewSetup', 'vendor/note', ({ hooks, changed, onDestroy }) => {
+        signal = changed;
+        hooks.addFilter('previewPauseReason', 'vendor/note', (reason) => reason || (blocked ? 'Wait for fields' : ''));
+        hooks.addFilter('previewFormBody', 'vendor/note', (body, values) => {
+            for (const [name, value] of values) if (name === 'vendor_note') body.append(name, value);
+            return body;
+        });
+        onDestroy(() => cleaned++);
+    });
+    const native = { destroy: () => nativeDestroyed++ };
+    context.imports = {
+        './editor-extensions.js': runtime,
+        '../preview/live-preview.js': { createLivePreview: () => ({
+            start() { calls.push(['start', native.ready]); }, pause() {}, changed() {},
+            resume() { calls.push(['resume', native.ready]); },
+        }) },
+    };
+    const source = await sourceForVm(new URL('../src/screens/classic-editor.js', import.meta.url));
+    vm.runInNewContext(`${source}\ninitLivePreview`, context)(config, native);
+    assert.equal(native.ready, false);
+    assert.equal(native.notReady, 'Wait for fields');
+    assert.deepEqual(calls, [['start', false]]);
+    blocked = false;
+    signal();
+    assert.deepEqual(calls.at(-1), ['resume', true]);
+    await native.preparePreview();
+    assert.equal(calls.at(-1).get('vendor_note'), 'Unsaved note');
+    assert.equal(calls.at(-1).get('content'), 'Native content');
+    assert.equal(calls.at(-1).get('base'), 'baseline');
+    native.destroy(); native.destroy();
+    assert.equal(cleaned, 1);
+    assert.equal(nativeDestroyed, 1);
+    assert.equal(listeners.size, 0);
+    await assert.rejects(native.preparePreview(), (error) => error.code === 'aflpp_integration_failed');
+});
+
+test('classic startup uses the same failure path once and never starts preview writes after setup errors', async () => {
+    const calls = [];
+    let cleaned = 0;
+    const form = { addEventListener() {}, removeEventListener() {} };
+    const config = { strings: { integrationFailed: 'Integration failed' } };
+    const context = {
+        document: { getElementById: (id) => id === 'post' ? form : null },
+        window: { addEventListener() {}, removeEventListener() {} },
+    };
+    const runtime = editorExtensionsFixture(context);
+    runtime.hooks.addAction('aflpp.classicEditor.previewSetup', 'vendor/failure', ({ onDestroy }) => {
+        onDestroy(() => cleaned++);
+        throw new Error('Setup failed');
+    });
+    context.imports = {
+        './editor-extensions.js': runtime,
+        '../preview/live-preview.js': { createLivePreview: () => ({
+            start() { calls.push('start'); }, changed() { calls.push('changed'); },
+            resume(error) { calls.push(error.code); },
+        }) },
+    };
+    const native = {};
+    const source = await sourceForVm(new URL('../src/screens/classic-editor.js', import.meta.url));
+    vm.runInNewContext(`${source}\ninitLivePreview`, context)(config, native);
+    assert.equal(native.ready, false);
+    assert.equal(native.notReady, 'Integration failed');
+    assert.deepEqual(calls, ['aflpp_integration_failed']);
+    native.destroy(); native.destroy();
+    assert.equal(cleaned, 1);
+});
+
+test('core editor classes and screen modules do not name optional integrations', async () => {
+    for (const path of ['classes/ClassicEditor.php', 'classes/BlockEditor.php', 'src/screens/classic-editor.js', 'src/screens/block-editor.js']) {
+        assert.doesNotMatch(await readFile(new URL(`../${path}`, import.meta.url), 'utf8'), /\bacf\b|\byoast\b|\btimber\b|compatibility\//i, path);
+    }
+});

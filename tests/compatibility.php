@@ -17,7 +17,11 @@ $check = static function (bool $condition, string $message): void {
 };
 $originalUser = get_current_user_id();
 $originalHooks = [];
-$hooks = ['aflpp_preview_payload', 'aflpp_preview_meta_seeded', 'aflpp_preview_save_error', 'aflpp_preview_source'];
+$hooks = [
+    'aflpp_live_preview_form_values', 'aflpp_live_preview_custom_fields_initialized',
+    'aflpp_live_preview_preparation_error', 'aflpp_frontend_live_preview_source_selected',
+    'aflpp_frontend_saved_preview_source_selected',
+];
 foreach ($hooks as $hook) {
     $originalHooks[$hook] = isset($GLOBALS['wp_filter'][$hook]) ? clone $GLOBALS['wp_filter'][$hook] : null;
     remove_all_filters($hook);
@@ -63,10 +67,9 @@ try {
     $events = [];
     $saveError = null;
     $lastSave = null;
-    add_filter('aflpp_preview_payload', static function (
+    add_filter('aflpp_live_preview_form_values', static function (
         $payload,
-        array $data,
-        int $targetId
+        array $context
     ) use (
         $check,
         $postId,
@@ -77,48 +80,54 @@ try {
             return $payload;
         }
         $check(
-            $targetId === $postId && $payload['post_title'] === "Editor's draft"
-            && $data['post_title'] === "Editor's draft",
+            array_keys($context) === ['post', 'source', 'input']
+            && $context['post'] === ['id' => $postId] && $context['source'] === null
+            && $payload['post_title'] === "Editor's draft"
+            && $context['input']['post_title'] === "Editor's draft",
             'Payload filters must receive the authorized parent and unslashed editor/form values.'
         );
+        $context['post']['id'] = 999;
         $payload['content'] = '<p>Adapted editor content</p>';
         return $payload;
-    }, 10, 3);
-    add_action('aflpp_preview_meta_seeded', static function (
-        int $id,
-        int $targetId
+    }, 10, 2);
+    add_action('aflpp_live_preview_custom_fields_initialized', static function (
+        array $context
     ) use (
         $check,
         $postId,
         &$events
     ): void {
         $events[] = 'seeded';
+        $id = $context['source']['id'];
         $revision = get_post($id);
         $check(
-            $targetId === $postId && $revision->post_type === 'revision'
+            array_keys($context) === ['post', 'source']
+            && $context['post'] === ['id' => $postId] && $revision->post_type === 'revision'
             && $revision->post_status === 'aflpp-preview' && (int) $revision->post_parent === $postId
             && get_post_meta($id, 'aflpp_compatibility_seed', true) === 'Saved metadata',
-            'Cache hooks must run after metadata seeding and only for the owned revision.'
+            'Cache hooks must receive only identities after saved fields initialize the owned source.'
         );
-    }, 10, 2);
-    add_filter('aflpp_preview_save_error', static function (
+    });
+    add_filter('aflpp_live_preview_preparation_error', static function (
         $error,
-        int $id,
-        int $targetId
+        array $context
     ) use (
+        $check,
         &$events,
         &$lastSave,
         &$saveError
     ) {
+        $check(array_keys($context) === ['post', 'source'], 'Verification must not retain submitted input.');
         $events[] = 'finished';
-        $lastSave = [$error, $id, $targetId];
+        $lastSave = [$error, $context];
         return $error ?? $saveError;
-    }, 20, 3);
+    }, 20, 2);
     $response = $send($input);
     $check($response->get_status() === 200, 'A compatible payload extension must succeed.');
     $id = $revisionId($response);
     $check(
-        $events === ['payload', 'seeded', 'finished'] && $lastSave === [null, $id, $postId]
+        $events === ['payload', 'seeded', 'finished']
+        && $lastSave === [null, ['post' => ['id' => $postId], 'source' => ['id' => $id]]]
         && get_post($id)->post_content === '<p>Adapted editor content</p>',
         'Preview lifecycle hooks must run in order around the isolated write.'
     );
@@ -138,26 +147,27 @@ try {
     $acf = new Acf();
     $rejected = new WP_Error('aflpp_test_payload', 'Fixture payload rejection.', ['status' => 400]);
     $reject = static fn () => $rejected;
-    add_filter('aflpp_preview_payload', $reject, 5);
+    add_filter('aflpp_live_preview_form_values', $reject, 5);
     $events = [];
     $response = $send($input);
     $check(
         $response->get_status() === 400 && $response->get_data()['code'] === $rejected->get_error_code()
-        && $events === ['payload', 'finished'] && $lastSave === [$rejected, 0, $postId],
+        && $events === ['payload', 'finished']
+        && $lastSave === [$rejected, ['post' => ['id' => $postId], 'source' => null]],
         'Payload errors must survive later adapters and finish preparation without seeding or writing.'
     );
-    remove_filter('aflpp_preview_payload', $reject, 5);
+    remove_filter('aflpp_live_preview_form_values', $reject, 5);
 
     if (function_exists('acf_save_post')) {
         // A later adapter may reject after ACF has prepared its native save monitor.
-        add_filter('aflpp_preview_payload', $reject, 20);
+        add_filter('aflpp_live_preview_form_values', $reject, 20);
         $response = $send($input + ['acf' => [], '_acf_nonce' => wp_create_nonce('post')]);
         $check(
             $response->get_data()['code'] === $rejected->get_error_code()
             && !has_action('acf/save_post', [$acf, 'recordSave']),
             'Rejected payloads must clean up ACF preparation state and preserve the rejection.'
         );
-        remove_filter('aflpp_preview_payload', $reject, 20);
+        remove_filter('aflpp_live_preview_form_values', $reject, 20);
     }
 
     // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Snapshot request globals in the CLI fixture.
@@ -165,7 +175,7 @@ try {
     $throw = static function (): void {
         throw new RuntimeException('Fixture preparation exception.');
     };
-    add_filter('aflpp_preview_payload', $throw, 20);
+    add_filter('aflpp_live_preview_form_values', $throw, 20);
     try {
         $data = function_exists('acf_save_post') ? ['acf' => [], '_acf_nonce' => wp_create_nonce('post')] : [];
         $send($input + $data);
@@ -177,14 +187,64 @@ try {
             $_POST === $originalPost && !has_action('acf/save_post', [$acf, 'recordSave']),
             'Preparation exceptions must restore form globals and remove temporary ACF save monitors.'
         );
+        $check(
+            $lastSave[1] === ['post' => ['id' => $postId], 'source' => null],
+            'Exceptions before source initialization must keep a null cleanup source.'
+        );
     } finally {
-        remove_filter('aflpp_preview_payload', $throw, 20);
+        remove_filter('aflpp_live_preview_form_values', $throw, 20);
     }
-    $check($send($input)->get_status() === 200, 'A later write must work after preparation cleanup.');
+
+    $live->deletePreviews($postId);
+    $previousSource = null;
+    foreach ([false, true] as $reuse) {
+        $initializedSource = null;
+        $lastSave = null;
+        $throwInitialized = static function (array $context) use (&$initializedSource): void {
+            $initializedSource = $context['source'];
+            $context['source']['id'] = 999;
+            throw new RuntimeException('Fixture initialized-source exception.');
+        };
+        add_action('aflpp_live_preview_custom_fields_initialized', $throwInitialized, 20);
+        try {
+            $send($input + $data);
+            throw new RuntimeException('The initialized-source exception was swallowed.');
+        } catch (RuntimeException $error) {
+            $check(
+                $error->getMessage() === 'Fixture initialized-source exception.',
+                'Exceptions after source initialization must propagate.'
+            );
+            $check(
+                $initializedSource !== null && get_post($initializedSource['id']) !== null
+                && $lastSave[1] === ['post' => ['id' => $postId], 'source' => $initializedSource],
+                'Cleanup must retain the established source after initialization throws, ignoring context mutations.'
+            );
+            $check(
+                !$reuse || $initializedSource === $previousSource,
+                'The failure path must also preserve the identity of a reused source.'
+            );
+            $check(
+                // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Check restored CLI globals, not request input.
+                $_POST === $originalPost && !has_action('acf/save_post', [$acf, 'recordSave']),
+                'Initialized-source exceptions must restore form globals and remove temporary ACF save monitors.'
+            );
+            $check(
+                $live->fingerprint($postId) === $base,
+                'Failed initialization must leave the saved parent unchanged.'
+            );
+            $check(!wp_get_post_autosave($postId, $user), 'Failed initialization must not create recovery autosaves.');
+            $previousSource = $initializedSource;
+        } finally {
+            remove_action('aflpp_live_preview_custom_fields_initialized', $throwInitialized, 20);
+        }
+    }
+    $response = $send($input);
+    $check($response->get_status() === 200, 'A later write must work after preparation cleanup.');
+    $id = $revisionId($response);
     $check(!has_action('acf/save_post', [$acf, 'recordSave']), 'Successful writes must remove the save monitor.');
 
     $saveError = new WP_Error('aflpp_test_save', 'Fixture save verification failure.', ['status' => 409]);
-    add_filter('aflpp_preview_save_error', static fn () => $saveError, 5);
+    add_filter('aflpp_live_preview_preparation_error', static fn () => $saveError, 5);
     $response = $send($input);
     $check(
         $response->get_status() === 409 && $response->get_data()['code'] === $saveError->get_error_code(),
