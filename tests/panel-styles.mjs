@@ -9,7 +9,8 @@ function browserTests({ core, panel, strings }) {
     document.head.append(style);
     const shell = document.createElement('section');
     shell.className = 'aflpp-panel';
-    shell.innerHTML = `<button class="components-button has-icon aflpp-icon" type="button">${strings.refresh}</button>`;
+    shell.innerHTML = `<header class="aflpp-header"><button class="components-button has-icon aflpp-icon" type="button">${strings.refresh}</button></header>
+        <footer class="aflpp-devicebar"></footer>`;
     const reference = document.createElement('button');
     reference.type = 'button';
     reference.className = 'components-button has-icon';
@@ -38,6 +39,24 @@ function browserTests({ core, panel, strings }) {
             results.push({ name });
         } catch (error) { results.push({ name, error: error.message }); }
         finally { button.blur(); reference.blur(); }
+    }
+    {
+        const name = 'header and footer share the opaque panel surface and retain separator borders';
+        try {
+            if (getComputedStyle(shell).backgroundColor !== 'rgb(255, 255, 255)') {
+                throw new Error('Keep the panel surface opaque and white.');
+            }
+            for (const [selector, edge] of [['.aflpp-header', 'Bottom'], ['.aflpp-devicebar', 'Top']]) {
+                const chrome = getComputedStyle(shell.querySelector(selector));
+                if (chrome.backgroundColor !== 'rgba(0, 0, 0, 0)' || chrome.backgroundImage !== 'none') {
+                    throw new Error(`${selector} must use the panel surface without its own background.`);
+                }
+                if (chrome[`border${edge}Width`] !== '1px' || chrome[`border${edge}Style`] !== 'solid') {
+                    throw new Error(`${selector} must retain its thin separator border.`);
+                }
+            }
+            results.push({ name });
+        } catch (error) { results.push({ name, error: error.message }); }
     }
     const name = 'shared recovery text balances without changing captions or preview content';
     try {
@@ -69,10 +88,10 @@ function browserTests({ core, panel, strings }) {
     return results;
 }
 
-test('panel styles preserve native component states and balance only shared messages in Chromium', async (t) => {
+test('panel styles preserve native surfaces, component states and balanced messages in Chromium', async (t) => {
     const [core, panel] = await Promise.all([
         readFile(new URL('../node_modules/@wordpress/components/build-style/style.css', import.meta.url), 'utf8'),
         readFile(new URL('../build/classic-editor.css', import.meta.url), 'utf8'),
     ]);
-    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify({ core, panel, strings: panelStrings })})`, count: 6 });
+    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify({ core, panel, strings: panelStrings })})`, count: 7 });
 });
