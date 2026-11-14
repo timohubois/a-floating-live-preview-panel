@@ -283,7 +283,7 @@ export function createPreviewPanel(strings, {
             busy: current.hasPreview && ['stale', 'loading', 'handover'].includes(current.state) && current.text !== strings.saving,
             empty: current.hasPreview ? null : {
                 ...presentation(), busy: ['loading', 'stale', 'ready', 'handover'].includes(current.state),
-                icon: current.state === 'paused' || ['unavailable', 'browser'].includes(current.reason) ? 'info' : current.state === 'conflict' ? 'pip' : 'warning',
+                icon: ['paused', 'conflict'].includes(current.state) || ['unavailable', 'browser'].includes(current.reason) ? 'info' : 'warning',
                 retry, disabled: current.state === 'handover', close: current.state === 'error' && !retry,
                 action: takeOverAction ? (current.state === 'handover' ? strings.takingOver : strings.takeOver) : strings.retry,
                 previewUrl: current.state === 'error' ? current.previewUrl : undefined,
@@ -465,6 +465,7 @@ export function createPreviewPanel(strings, {
             // Keep the admin bundles, component runtime styles and panel CSS in source order.
             const stylesheets = mainDocument.querySelectorAll([
                 'link[rel="stylesheet"][href*="/load-styles.php"]',
+                '#wp-theme-css', '#wp-theme-inline-css',
                 '#wp-components-css', '#wp-components-inline-css',
                 'style[data-emotion]', 'style[data-wp-hash]',
                 '#a-floating-live-preview-panel-css', '#a-floating-live-preview-panel-inline-css',

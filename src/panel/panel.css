@@ -1,6 +1,7 @@
 .aflpp-panel {
-    --aflpp-bg: #fff;
-    --aflpp-border: #c3c4c7;
+    --aflpp-bg: var(--wpds-color-background-surface-neutral-strong, #fff);
+    --aflpp-border: var(--wpds-color-stroke-surface-neutral, #ccc);
+    --aflpp-radius: var(--wpds-border-radius-md, 4px);
     --aflpp-text: #1d2327;
     --aflpp-muted: #50575e;
     --aflpp-accent: var(--wp-admin-theme-color, #2271b1);
@@ -11,13 +12,14 @@
     color: var(--aflpp-text);
     font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
-.aflpp-panel { position: fixed; z-index: 99990; display: flex; flex-direction: column; isolation: isolate; border: 1px solid var(--aflpp-border); border-radius: 6px; background: var(--aflpp-bg); box-shadow: 0 8px 32px #0003; }
+/* Match WordPress's popover surface without adopting its overlay positioning or behavior. */
+.aflpp-panel { position: fixed; z-index: 99990; display: flex; flex-direction: column; isolation: isolate; border: 0; border-radius: var(--aflpp-radius); background: var(--aflpp-bg); box-shadow: 0 0 0 1px var(--aflpp-border), 0 2px 3px #0000000d, 0 4px 5px #0000000a, 0 12px 12px #00000008, 0 16px 16px #00000005; }
 .aflpp-panel[hidden],
 .aflpp-panel [hidden],
 .aflpp-launcher[hidden] { display: none !important; }
 .aflpp-panel :where(button:not(.components-button)) { appearance: none; box-sizing: border-box; margin: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; box-shadow: none; }
 
-.aflpp-header { position: relative; display: flex; flex-shrink: 0; align-items: center; box-sizing: border-box; gap: 2px; height: 44px; padding: 4px 7px; border-bottom: 1px solid var(--aflpp-border); border-radius: 5px 5px 0 0; cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
+.aflpp-header { position: relative; display: flex; flex-shrink: 0; align-items: center; box-sizing: border-box; gap: 2px; height: 44px; padding: 4px 7px; border-bottom: 1px solid var(--aflpp-border); border-radius: var(--aflpp-radius) var(--aflpp-radius) 0 0; cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
 .aflpp-titlebar { display: flex; flex: 1; align-items: center; min-width: 0; padding: 0 8px; }
 .aflpp-caption { margin: 0; color: inherit; font: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aflpp-controls,
@@ -25,10 +27,9 @@
 .aflpp-refresh-control { display: flex; flex-shrink: 0; align-items: center; gap: 2px; }
 .aflpp-move-control:empty, .aflpp-refresh-control:empty { display: none; }
 .aflpp-panel .aflpp-mode { margin-inline-start: 6px; }
-/* Keep compact panel geometry; WordPress owns button colors, focus and disabled states. */
-.aflpp-panel .aflpp-icon { flex-shrink: 0; width: 32px; min-width: 32px; height: 32px; padding: 4px; }
+/* Native compact Buttons own their geometry, colors, focus and disabled states. */
+.aflpp-panel .aflpp-icon { flex-shrink: 0; }
 .aflpp-panel .aflpp-move { cursor: grab; }
-.aflpp-icon svg { display: block; width: 24px; height: 24px; flex-shrink: 0; }
 .aflpp-icon .components-spinner { width: 16px; height: 16px; margin: 0; }
 .aflpp-panel button:not(.components-button):focus-visible,
 .aflpp-feedback:focus-visible { outline: var(--wp-admin-border-width-focus, 2px) solid var(--aflpp-accent); outline-offset: 1px; }
@@ -37,7 +38,7 @@
 .aflpp-stage { position: absolute; top: 0; transform-origin: top left; }
 .aflpp-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
 .aflpp-loading { opacity: 0; pointer-events: none; }
-.aflpp-panel[data-has-preview="false"] .aflpp-viewport { background: var(--aflpp-bg); border-radius: 0 0 5px 5px; }
+.aflpp-panel[data-has-preview="false"] .aflpp-viewport { background: var(--aflpp-bg); border-radius: 0 0 var(--aflpp-radius) var(--aflpp-radius); }
 .aflpp-empty { position: relative; display: flex; box-sizing: border-box; height: 100%; padding: 24px; overflow: auto; }
 .aflpp-empty .aflpp-placeholder { flex-shrink: 0; width: 100%; max-width: 450px; min-height: 0; margin: auto; padding: 0; align-items: center; background: transparent; box-shadow: none; text-align: center; }
 .aflpp-placeholder .components-placeholder__label { align-self: center; justify-content: center; gap: 10px; max-width: 100%; font-size: 18px; line-height: 1.4; }
@@ -51,15 +52,14 @@
 .aflpp-empty-note { flex-basis: 100%; margin: 8px 0 0; color: var(--aflpp-muted); font-size: 12px; line-height: 1.5; }
 .aflpp-empty-title,
 .aflpp-placeholder .components-placeholder__instructions,
-.aflpp-empty-note,
-.aflpp-feedback .components-notice__content p { text-wrap: balance; }
+.aflpp-empty-note { text-wrap: balance; }
 
-.aflpp-feedback { flex-shrink: 0; max-height: 45%; overflow: auto; }
-.aflpp-feedback .components-notice { margin: 0; padding: 10px 14px; border-radius: 0; }
-.aflpp-feedback .components-notice__content { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.aflpp-feedback .components-notice__content p { margin: 0 0 4px; }
-.aflpp-feedback .components-notice__actions { margin-top: 8px; }
-.aflpp-devicebar { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; border-top: 1px solid var(--aflpp-border); border-radius: 0 0 5px 5px; }
+.aflpp-feedback { flex-shrink: 0; max-height: 45%; overflow: auto; overflow-wrap: anywhere; }
+.aflpp-feedback .components-notice { margin: 0; border-radius: 0; border-top-width: 0; }
+/* Match editor inline notices: the header supplies the top separator. */
+.aflpp-inline-notices .components-notice,
+.aflpp-inline-notices .notices-inline-notices__notice { border-top-width: 0; border-inline-width: 0; }
+.aflpp-devicebar { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; border-top: 1px solid var(--aflpp-border); border-radius: 0 0 var(--aflpp-radius) var(--aflpp-radius); }
 .aflpp-devices.components-toolbar { border: 0; background: transparent; }
 .aflpp-dimensions { color: var(--aflpp-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; direction: ltr; unicode-bidi: isolate; }
 .aflpp-actions { flex-shrink: 0; }
@@ -68,15 +68,15 @@
 .aflpp-pip .aflpp-menu-popover .components-popover__content { max-height: calc(100dvh - 48px); overflow-y: auto; }
 
 .aflpp-pip-control { position: absolute; z-index: 2; right: 12px; bottom: 12px; }
-.aflpp-pip-button { position: relative; opacity: 0; transition: opacity 160ms ease; }
-.aflpp-pip-button::before { content: ""; position: absolute; inset: -12px; }
-.aflpp-pip-control:hover .aflpp-pip-button,
-.aflpp-pip-control:focus-within .aflpp-pip-button { opacity: 1; }
-.aflpp-pip-control:focus-within .aflpp-pip-button { transition: none; }
-.aflpp-panel .aflpp-pip-button.components-button { width: 36px; min-width: 36px; height: 36px; padding: 6px; border: 1px solid #fff3; border-radius: 4px; background: #1d2327e8; color: #fff; }
-.aflpp-panel .aflpp-pip-button.components-button:hover { background: #1d2327; color: #fff; }
-@media (hover: none) { .aflpp-pip-button { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .aflpp-pip-button { transition: none; } }
+.aflpp-pip-control:empty { display: none; }
+.aflpp-pip-control::before { content: ""; position: absolute; inset: -12px; }
+/* Fade the backing surface with its native Button; never override the button's states. */
+.aflpp-pip-surface { position: relative; display: flex; border-radius: var(--wpds-border-radius-sm, 2px); background: var(--aflpp-bg); box-shadow: 0 2px 6px #0002; opacity: 0; transition: opacity 160ms ease; }
+.aflpp-pip-control:hover .aflpp-pip-surface,
+.aflpp-pip-control:focus-within .aflpp-pip-surface { opacity: 1; }
+.aflpp-pip-control:focus-within .aflpp-pip-surface { transition: none; }
+@media (hover: none) { .aflpp-pip-surface { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .aflpp-pip-surface { transition: none; } }
 
 /* Pointer-only hit areas: no invisible buttons in the Tab order, no permanent handle icons. */
 .aflpp-edge { position: absolute; z-index: 4; touch-action: none; }
@@ -121,7 +121,7 @@
 .aflpp-launcher { position: fixed; right: auto; bottom: auto; z-index: 99990; display: flex; width: max-content; max-width: calc(100vw - 32px); border-radius: 2px; background: #fff; box-shadow: 0 2px 6px #0002; cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
 .aflpp-launcher .components-button { max-width: 100%; cursor: inherit; }
 .aflpp-launcher-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aflpp-panel:fullscreen { width: 100% !important; height: 100% !important; inset: 0 !important; transform: none !important; border: 0; border-radius: 0; }
+.aflpp-panel:fullscreen { width: 100% !important; height: 100% !important; inset: 0 !important; transform: none !important; border: 0; border-radius: 0; box-shadow: none; }
 .aflpp-panel:fullscreen .aflpp-header,
 .aflpp-panel:fullscreen .aflpp-devicebar { border-radius: 0; }
 .aflpp-pip-document { margin: 0; background: #f0f0f1; }

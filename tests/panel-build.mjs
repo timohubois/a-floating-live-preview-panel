@@ -33,7 +33,7 @@ test('the editor build declares its public WordPress runtime dependencies', () =
     const dependencies = [...asset.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1].matchAll(/'([^']+)'/g)]
         .map((match) => match[1]);
     assert.deepEqual(dependencies, [
-        'react-jsx-runtime', 'wp-components', 'wp-data', 'wp-element', 'wp-preferences', 'wp-primitives',
+        'react-jsx-runtime', 'wp-components', 'wp-data', 'wp-element', 'wp-notices', 'wp-preferences', 'wp-primitives',
     ]);
     assert.match(asset, /'version'\s*=>\s*'[a-f0-9]+'/);
     assert.doesNotMatch(bundle, /__experimental|__unstable|Cannot find module/);
@@ -57,7 +57,7 @@ test('the shipped editor bundle uses WordPress runtime globals and bundles exact
         return element;
     };
     const window = {
-        wp: { components: {}, data: {}, element: {}, preferences: {}, primitives: { SVG: 'svg', Path: 'path' } },
+        wp: { components: {}, data: {}, element: {}, notices: {}, preferences: {}, primitives: { SVG: 'svg', Path: 'path' } },
         ReactJSXRuntime: { jsx, jsxs: jsx },
     };
     // No editor form: loading the compiled entry must be safe, without booting coordination or React.

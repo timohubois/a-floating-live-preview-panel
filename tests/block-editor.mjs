@@ -670,7 +670,7 @@ test('the block build uses WordPress runtime packages and the same shared panel 
     ].map((name) => readFile(new URL(`../build/${name}`, import.meta.url), 'utf8')));
     const dependencies = [...asset.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
     assert.deepEqual(dependencies, [
-        'react-jsx-runtime', 'wp-api-fetch', 'wp-components', 'wp-data', 'wp-element', 'wp-hooks', 'wp-preferences', 'wp-primitives',
+        'react-jsx-runtime', 'wp-api-fetch', 'wp-components', 'wp-data', 'wp-element', 'wp-hooks', 'wp-notices', 'wp-preferences', 'wp-primitives',
     ]);
     assert.doesNotMatch(bundle, /__experimental|__unstable|Cannot find module|import\(/);
     assert.equal(css, classicCss);

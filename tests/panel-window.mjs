@@ -141,15 +141,18 @@ for (const combined of [false, true]) {
             ? { rel: 'stylesheet', href: '/wp-admin/load-styles.php?load%5Bchunk_0%5D=common,forms,wp-components' }
             : { id: 'wp-components-css', rel: 'stylesheet', href: '/wp-includes/css/dist/components/style.min.css' };
         const inline = { id: 'wp-components-inline-css' };
+        const theme = { id: 'wp-theme-css', rel: 'stylesheet', href: '/wp-includes/css/dist/theme/design-tokens.min.css' };
+        const themeInline = { id: 'wp-theme-inline-css' };
         const panel = { id: 'a-floating-live-preview-panel-css', rel: 'stylesheet', href: '/build/classic-editor.css' };
         const panelInline = { id: 'a-floating-live-preview-panel-inline-css' };
         const h = fixture(true, { pip: true, stylesheets: [
-            core, inline, { id: 'unrelated-css', rel: 'stylesheet', href: '/unrelated.css' }, panel, panelInline,
+            theme, themeInline, core, inline,
+            { id: 'unrelated-css', rel: 'stylesheet', href: '/unrelated.css' }, panel, panelInline,
         ] });
         assert.equal(h.state.canPip, true, 'Document PiP does not require video PiP support');
         await h.actions.popOut();
         assert.deepEqual(h.copiedStyles.map(({ id, href }) => ({ id, href })),
-            [core, inline, panel, panelInline].map(({ id, href }) => ({ id, href })));
+            [theme, themeInline, core, inline, panel, panelInline].map(({ id, href }) => ({ id, href })));
         assert.ok(h.copiedStyles.every((style) => getEventListeners(style, 'load').length === 1));
         assert.equal(h.panel.ownerDocument, h.detached.document);
         assert.equal(h.state.inPip, true);
@@ -572,6 +575,7 @@ test('no-frame and retained-frame recovery use native UI models without weakenin
     const h = fixture(true);
     assert.equal(h.state.empty.busy, true);
     h.view.report('Failed', 'error', { canRetry: true });
+    assert.equal(h.state.empty.icon, 'warning', 'Failed preview loading keeps its native warning icon.');
     assert.equal(h.state.empty.retry, true);
     assert.equal(h.state.empty.close, false);
     h.actions.retry();
@@ -582,6 +586,7 @@ test('no-frame and retained-frame recovery use native UI models without weakenin
     h.actions.retry();
     assert.deepEqual(h.retryCalls, [false]);
     h.view.report('Other tab', 'conflict', { canTakeOver: true });
+    assert.equal(h.state.empty.icon, 'info', 'Another-tab recovery is informational, not a PiP action.');
     h.actions.retry();
     assert.deepEqual(h.retryCalls, [false, true]);
     h.view.report('Expired', 'error', { hasPreview: true, canRetry: false, reason: 'reload' });

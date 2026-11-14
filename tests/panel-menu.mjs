@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -70,21 +70,25 @@ function browserTests(css) {
     const panel = document.createElement('section');
     panel.className = 'aflpp-panel';
     panel.style.cssText = 'left:0;top:0;width:360px;height:240px';
-    panel.innerHTML = '<div class="aflpp-viewport"><div class="aflpp-pip-control"><button class="components-button aflpp-pip-button" aria-label="Picture-in-picture"></button></div></div>';
+    panel.innerHTML = '<div class="aflpp-viewport"><div class="aflpp-pip-control"><div class="aflpp-pip-surface"><button class="components-button aflpp-pip-button" aria-label="Picture-in-picture"></button></div></div></div>';
     document.body.append(panel);
     try {
         const button = panel.querySelector('button');
+        const surface = panel.querySelector('.aflpp-pip-surface');
+        const control = panel.querySelector('.aflpp-pip-control');
         const viewport = panel.querySelector('.aflpp-viewport').getBoundingClientRect();
         const rect = button.getBoundingClientRect();
         if (viewport.right - rect.right !== 12 || viewport.bottom - rect.bottom !== 12) throw new Error('Keep the shortcut inside the viewport bottom-right corner.');
         const touch = matchMedia('(hover: none)').matches;
-        if (getComputedStyle(button).opacity !== (touch ? '1' : '0')) throw new Error('Hide the shortcut at rest unless the device cannot hover.');
+        if (getComputedStyle(surface).opacity !== (touch ? '1' : '0')) throw new Error('Hide the entire shortcut and its backing at rest unless the device cannot hover.');
         const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-        if (getComputedStyle(button).transitionDuration !== (reducedMotion ? '0s' : '0.16s')) throw new Error('Use a short opacity fade, respecting reduced motion.');
-        if (getComputedStyle(button, '::before').inset !== '-12px') throw new Error('Limit proximity to the small area around the button.');
+        if (getComputedStyle(surface).transitionDuration !== (reducedMotion ? '0s' : '0.16s')) throw new Error('Use a short opacity fade, respecting reduced motion.');
+        if (getComputedStyle(control, '::before').inset !== '-12px') throw new Error('Limit proximity to the small area around the button.');
         button.focus();
-        if (document.activeElement !== button || getComputedStyle(button).opacity !== '1' || getComputedStyle(button).transitionDuration !== '0s') throw new Error('Keyboard focus must reveal the shortcut immediately.');
+        if (document.activeElement !== button || getComputedStyle(surface).opacity !== '1' || getComputedStyle(surface).transitionDuration !== '0s') throw new Error('Keyboard focus must reveal the shortcut immediately.');
         if (getComputedStyle(button).pointerEvents !== 'auto') throw new Error('The revealed shortcut must accept clicks.');
+        control.replaceChildren();
+        if (getComputedStyle(control).display !== 'none') throw new Error('An unavailable shortcut must not leave an invisible hit area over the preview.');
         results.push({ name });
     } catch (error) { results.push({ name, error: error.message }); }
     finally { panel.remove(); }
@@ -266,13 +270,105 @@ async function nativePreferenceTests(strings) {
     return results;
 }
 
-test('native WordPress launcher and preference menu render and handle focus and clicks in Chromium', async (t) => {
+async function nativeNoticeTests(strings) {
+    const results = [];
+    const { createPreviewControls, dispatch, select, noticesStore } = window.previewControls;
+    const actions = dispatch(noticesStore), selectors = select(noticesStore);
+    const context = 'a-floating-live-preview-panel';
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 50));
+    const check = (condition, message) => { if (!condition) throw new Error(message); };
+    actions.createInfoNotice('Editor-owned notice', { id: 'unrelated-editor-notice', speak: false });
+    const editorNotices = selectors.getNotices();
+    for (const mode of ['in-page', 'fullscreen', 'PiP']) {
+        const name = `${mode} feedback uses scoped native inline notices and preserves recovery and dismissal`;
+        const panel = document.createElement('section');
+        panel.className = 'aflpp-panel';
+        panel.style.cssText = 'left:20px;top:20px;width:480px;height:340px';
+        panel.innerHTML = ['controls', 'refresh-control', 'move-control', 'device-controls', 'pip-control', 'empty', 'feedback']
+            .map((name) => `<div class="aflpp-${name}"></div>`).join('');
+        document.body.append(panel);
+        let controls, frame;
+        try {
+            let state = {
+                inPage: mode === 'in-page', inPip: mode === 'PiP', hasPreview: true, device: 'desktop',
+                notice: { heading: 'Could not update preview', description: 'Showing the previous preview.', status: 'warning', dismissible: false, retry: true, action: strings.retry },
+            };
+            let retries = 0, dismissals = 0;
+            controls = createPreviewControls(panel, strings, {
+                retry() { retries++; },
+                dismissNotice() { dismissals++; state = { ...state, notice: null }; controls.update(state); },
+            });
+            controls.update(state);
+            await pause();
+            const notice = panel.querySelector('.notices-inline-notices__notice');
+            check(notice && !panel.querySelector('.components-notice'), 'Use the real newer inline renderer, not CSS on a legacy Notice.');
+            check(notice.querySelector('svg') && !notice.querySelector('strong'), 'Let core provide the status icon and plain message.');
+            check(notice.textContent.includes('Could not update preview. Showing the previous preview.'), 'Keep both parts of the message.');
+            const style = getComputedStyle(notice);
+            check(style.borderTopWidth === '0px' && style.borderLeftWidth === '0px' && style.borderRightWidth === '0px' && style.borderRadius === '0px', `Integrate with the single header separator and flush editor notice edges: ${style.borderTopWidth}/${style.borderLeftWidth}/${style.borderRightWidth}/${style.borderRadius}.`);
+            let record = selectors.getNotices(context)[0];
+            check(record.spokenMessage === null && !record.isDismissible, 'Do not duplicate the shell announcement or dismiss an unresolved failure.');
+            const retry = [...notice.querySelectorAll('button')].find((button) => button.textContent === strings.retry);
+            retry.click();
+            check(retries === 1, 'Invoke recovery once through the native action.');
+            retry.focus();
+            controls.update({ ...state, device: 'mobile', notice: { ...state.notice } });
+            await pause();
+            check(panel.querySelector('.notices-inline-notices__notice') === notice && document.activeElement === retry, 'Unrelated updates must preserve the notice and action focus.');
+            state = { ...state, notice: { ...state.notice, disabled: true } };
+            controls.update(state);
+            await pause();
+            check(retry.disabled || retry.getAttribute('aria-disabled') === 'true', 'Native recovery actions respect disabled state.');
+            retry.click();
+            check(retries === 1, 'Disabled actions cannot retry.');
+            if (mode === 'PiP') {
+                controls.beforeMove();
+                check(selectors.getNotices(context).length === 0, 'Clean up only our notice before moving documents.');
+                frame = document.createElement('iframe');
+                document.body.append(frame);
+                for (const sheet of document.styleSheets) {
+                    const copy = frame.contentDocument.createElement('style');
+                    copy.textContent = [...sheet.cssRules].map((rule) => rule.cssText).join('\n');
+                    frame.contentDocument.head.append(copy);
+                }
+                frame.contentDocument.body.append(panel);
+                controls.remount();
+                await pause();
+                check(panel.querySelector('.notices-inline-notices__notice') && selectors.getNotices(context).length === 1, 'Restore native feedback in the destination document.');
+            }
+            state = { ...state, notice: { heading: 'Window operation failed', status: 'info', dismissible: true } };
+            controls.update(state);
+            await pause();
+            record = selectors.getNotices(context)[0];
+            check(record.isDismissible, 'Incidental window messages remain dismissible.');
+            const close = panel.querySelector('.aflpp-feedback button');
+            check(close, 'Core supplies its own dismiss button.');
+            close.click();
+            await pause();
+            check(dismissals === 1 && selectors.getNotices(context).length === 0 && !panel.querySelector('.notices-inline-notices__notice'), 'Dismissal clears shell state and the scoped store once.');
+            check(selectors.getNotices() === editorNotices, 'Never change editor-owned notices.');
+            results.push({ name });
+        } catch (error) { results.push({ name, error: error.stack }); }
+        finally { controls?.beforeMove(); panel.remove(); frame?.remove(); }
+    }
+    actions.removeNotice('unrelated-editor-notice');
+    return results;
+}
+
+test('native WordPress launcher, menu and notices render and handle focus and clicks in Chromium', async (t) => {
     const directory = await mkdtemp(join(tmpdir(), 'aflpp-native-launcher-'));
     try {
-        // Bundle the same public packages for this isolated browser fixture, without requiring a WordPress server.
+        // Expose public APIs only in the fixture so native-store isolation can be checked too.
+        await writeFile(join(directory, 'entry.js'), `
+            export { createPreviewControls, createPreviewLauncher } from ${JSON.stringify(fileURLToPath(new URL('../src/panel/controls.js', import.meta.url)))};
+            export { dispatch, select } from '@wordpress/data';
+            export { store as noticesStore } from '@wordpress/notices';
+            export { ThemeProvider } from '@wordpress/theme';
+        `);
         await new Promise((resolve, reject) => webpack({
             mode: 'production', devtool: false,
-            entry: fileURLToPath(new URL('../src/panel/controls.js', import.meta.url)),
+            entry: join(directory, 'entry.js'),
+            resolve: { modules: [fileURLToPath(new URL('../node_modules', import.meta.url)), 'node_modules'] },
             output: { path: directory, filename: 'controls.js', library: { name: 'previewControls', type: 'window' } },
             optimization: { minimize: false }, performance: false,
         }, (error, stats) => {
@@ -282,10 +378,14 @@ test('native WordPress launcher and preference menu render and handle focus and 
         }));
         const css = await readFile(new URL('../build/classic-editor.css', import.meta.url), 'utf8');
         const core = await readFile(new URL('../node_modules/@wordpress/components/build-style/style.css', import.meta.url), 'utf8');
+        const tokens = await readFile(new URL('../node_modules/@wordpress/theme/prebuilt/css/design-tokens.css', import.meta.url), 'utf8');
         const bundle = pathToFileURL(join(directory, 'controls.js')).href;
         await runChromiumTests(t, {
-            script: `(async () => [...(${nativeLauncherTests.toString()})(), ...await (${nativePreferenceTests.toString()})(${JSON.stringify(panelStrings)})])()`, count: 5,
-            head: `<style>${core}\n${css}</style><script src="${bundle}"></script>`,
+            script: `(async () => {
+                window.wp = { theme: { ThemeProvider: window.previewControls.ThemeProvider } };
+                return [...(${nativeLauncherTests.toString()})(), ...await (${nativePreferenceTests.toString()})(${JSON.stringify(panelStrings)}), ...await (${nativeNoticeTests.toString()})(${JSON.stringify(panelStrings)})];
+            })()`, count: 8,
+            head: `<style>${tokens}\n${core}\n${css}</style><script src="${bundle}"></script>`,
         });
     } finally { await rm(directory, { recursive: true, force: true }); }
 });
