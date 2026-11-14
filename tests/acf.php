@@ -107,7 +107,68 @@ try {
             'Rejected ACF requests must not alter either the saved page or the existing preview.'
         );
     }
-    WP_CLI::success('ACF preview saves, paginated row merging, source isolation and invalid-request checks passed.');
+    // Lower-level ACF reads (used by post-meta blocks) must use the same authorized source.
+    $reader = new Acf();
+    $reader->bindPreview($postId, $revisionId);
+    try {
+        $field = acf_get_field('field_aflpp_acf_test_text');
+        $check(acf_get_value($postId, $field) === 'Unsaved text', 'Raw ACF value reads must use the preview source.');
+        $check(
+            acf_get_metadata($postId, 'aflpp_acf_test_text', true) === $field['key'],
+            'Raw ACF field references must use the preview source too.'
+        );
+        delete_metadata('post', $revisionId, 'aflpp_acf_test_text');
+        $reader->clearRevisionCache($postId);
+        $reader->clearRevisionCache($revisionId);
+        $check(
+            acf_get_metadata($postId, 'aflpp_acf_test_text') === null,
+            'Absent source metadata must not fall back to the parent.'
+        );
+    } finally {
+        remove_filter('acf/validate_post_id', [$reader, 'readPostId'], PHP_INT_MAX);
+        remove_filter('acf/pre_load_metadata', [$reader, 'readMetadata'], PHP_INT_MAX);
+        $reader->clearRevisionCache($postId);
+    }
+    if (function_exists('acf_register_block_type')) {
+        acf_register_block_type([
+            'name' => 'aflpp-meta-fixture', 'title' => 'AFLPP metadata fixture', 'use_post_meta' => true,
+            'render_callback' => static function (): void {
+                echo esc_html(get_field('aflpp_block_text'));
+            },
+        ]);
+        acf_add_local_field_group([
+            'key' => 'group_aflpp_block_fixture', 'title' => 'AFLPP block fields',
+            'location' => [[['param' => 'block', 'operator' => '==', 'value' => 'acf/aflpp-meta-fixture']]],
+            'fields' => [['key' => 'field_aflpp_block_text', 'name' => 'aflpp_block_text', 'type' => 'text']],
+        ]);
+        $response = $send($postId, [
+            'base' => $base,
+            'content' => '<!-- wp:acf/aflpp-meta-fixture '
+                . '{"name":"acf/aflpp-meta-fixture","id":"block_aflpp_fixture",'
+                . '"data":{"field_aflpp_block_text":"Unsaved block meta"}} /-->',
+        ]);
+        $check($response->get_status() === 200, 'ACF post-meta blocks must use their native content-save hooks.');
+        parse_str(wp_parse_url($response->get_data()['url'], PHP_URL_QUERY), $blockQuery);
+        $blockRevision = (int) $blockQuery['aflpp_revision'];
+        $check(
+            get_post_meta($blockRevision, 'aflpp_block_text', true) === 'Unsaved block meta',
+            'Native ACF block hooks must save only to the preview revision.'
+        );
+        $check($live->fingerprint($postId) === $base, 'Native ACF block preview must preserve the parent.');
+        $reader->bindPreview($postId, $blockRevision);
+        $originalPost = $GLOBALS['post'] ?? null;
+        try {
+            $GLOBALS['post'] = get_post($postId);
+            $html = do_blocks(get_post($blockRevision)->post_content);
+            $check(str_contains($html, 'Unsaved block meta'), 'Native ACF block rendering must read preview metadata.');
+        } finally {
+            $GLOBALS['post'] = $originalPost;
+            remove_filter('acf/validate_post_id', [$reader, 'readPostId'], PHP_INT_MAX);
+            remove_filter('acf/pre_load_metadata', [$reader, 'readMetadata'], PHP_INT_MAX);
+            $reader->clearRevisionCache($postId);
+        }
+    }
+    WP_CLI::success('ACF preview saves, paginated merging, native post-meta blocks and source isolation passed.');
 } finally {
     if (is_int($postId) && $postId) {
         wp_delete_post($postId, true);

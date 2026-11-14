@@ -12,6 +12,7 @@ final class FrontendPreview
     private int $previewPostId = 0;
     private string $previewToken = '';
     private bool $isolated = false;
+    private bool $saved = false;
 
     public function __construct(
         private readonly string $file,
@@ -101,25 +102,25 @@ final class FrontendPreview
         $this->previewToken = $token;
         $this->isolated = isset($_GET['aflpp_isolated']) && $_GET['aflpp_isolated'] === '1';
         $this->source = sanitize_post($source);
+        $this->saved = $saved;
         // Bind core and compatibility reads to the authorized source, not the latest revision.
         remove_filter('the_preview', '_set_preview');
         add_filter('the_preview', [$this, 'readPost']);
         // Timber can reload the parent by ID instead of using WordPress's filtered preview object.
         add_filter('timber/post/import_data', [$this, 'readTimberPost'], PHP_INT_MAX, 2);
         $this->acf->bindPreview($postId, $this->source->ID, $saved);
-        if ($saved) {
-            add_filter('get_post_metadata', [$this, 'readRevisionMeta'], 10, 4);
-        }
+        add_filter('get_post_metadata', [$this, 'readRevisionMeta'], 10, 4);
         add_action('template_redirect', [$this, 'checkPreviewTarget'], -1);
     }
 
-    /** Only explicitly revisioned metadata comes from history; unrelated metadata stays current. */
+    /** History uses revision-enabled keys; live reads overlay only the supported featured-image input. */
     public function readRevisionMeta($value, int $postId, string $key, bool $single)
     {
+        $keys = $this->saved ? wp_post_revision_meta_keys(get_post_type($this->previewPostId)) : ['_thumbnail_id'];
         if (
             $value !== null || $postId !== $this->previewPostId || !$this->source
             || $this->source->ID === $postId
-            || !in_array($key, wp_post_revision_meta_keys(get_post_type($postId)), true)
+            || !in_array($key, $keys, true)
         ) {
             return $value;
         }

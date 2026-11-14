@@ -89,11 +89,14 @@ Preview revisions stay out of the normal revision history and do not trigger the
 newer-autosave notice. They are reused on refresh and deleted when the parent post
 is updated or permanently deleted. Existing recovery autosaves are left untouched.
 
-Both editors preview title, content and excerpt; the Block Editor supplies serialized
-blocks in either visual or code mode. Classic editing also captures supported
-post-local ACF fields. Block Editor ACF/meta fields, featured images, taxonomies,
-template selections and unsaved separate entities are not live inputs. Native
-ACF/legacy meta-box saving remains intact; saved values become the new baseline.
+Both editors preview title, content, excerpt and supported post-local ACF fields.
+The Block Editor supplies serialized blocks in either visual or code mode and also
+previews featured-image selection, replacement and removal. ACF meta-box values use
+the same field-save integration as classic editing; ACF blocks keep their native
+content-save hooks, including blocks configured to store values in post metadata.
+Arbitrary non-ACF metadata, taxonomies, template selections and unsaved separate
+entities are not live inputs. Native ACF/legacy meta-box saving remains intact;
+saved values become the new baseline.
 When the editor switches to an unsupported entity, the panel visibly pauses without
 a loading spinner and retains its last frame. Returning to the original post resumes
 live updates.
@@ -106,6 +109,7 @@ and block-editor legacy meta-box saves use a short-lived
 acknowledgement cookie containing fingerprints, not editor content; it is cleared
 on completion and expires after one minute.
 
+- **Block Editor ACF fields:** native form serialization preserves ACF's field keys, empty values, signed field lists and paginated row changes. The optional ACF PRO datastore is respected when already enabled; the plugin never enables it or changes Gutenberg's edited metadata to prepare a preview. After a native meta-box save, previewing pauses with its last frame until ACF replaces its paginated rows. If ACF's reload fails, the panel remains paused and asks you to reload; it never resets row markers or guesses that a delay was sufficient. Live preview storage is not recovery storage: legacy meta boxes are not sent by Gutenberg's native autosave, and ACF datastore recovery behavior remains ACF's responsibility.
 - **Classic live ACF fields:** support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages. If native Preview saves draft repeater additions, deletions or reordering, the panel retains its last frame but requires an editor reload: ACF's remaining row changes still refer to the old saved order. Copy any later edits before reloading, and reload before saving again.
 - **Frontend output:** your theme and plugins determine the result, including redirects and browser-native output such as PDFs. Scroll restoration and change-following only apply to recognized HTML previews. Changes made only through stylesheets or frontend state may be missed; dynamic output at load can introduce unrelated differences. PDF page, zoom and scroll state may reset on refresh.
 - **Isolated editors:** authorized HTML previews opt into an isolated Block Editor's `Document-Isolation-Policy` when the frontend is not already isolated, preserving document access for scrolling without disabling core's client-side media processing. Existing frontend isolation policies are retained. Cross-origin subresources follow the resulting policy. Non-isolated screens do not request it.
@@ -187,8 +191,8 @@ Frame/scroll tests cover isolation opt-in, incidental presentation changes, cont
 edits and presentation-only edits. These do not replace authenticated browser testing
 of native editor controls.
 
-The optional ACF fixture checks classic live-field saves, paginated repeater merging
-and source isolation. It exits successfully with a skip message when ACF Pro with
+The optional ACF fixture checks shared live-field saves, paginated repeater merging,
+native post-meta block saving/rendering and source isolation. It exits successfully with a skip message when ACF Pro with
 repeater support is absent:
 
 ```sh
@@ -229,7 +233,7 @@ compatibility claims above.
 - `a-floating-live-preview-panel.php` explicitly loads the PHP classes; `classes/Plugin.php` connects the owners. No Composer autoloader is required at runtime.
 - `classes/Admin/ClassicEditor.php`, `BlockEditor.php` and `RevisionBrowser.php` connect their respective native screens. `Admin/Panel.php` owns shared assets, labels and the PHP view in `views/panel.php`.
 - `classes/Preview/LivePreview.php` owns internal preview revision writes, fingerprints, native-save coordination and cleanup. `Preview/FrontendPreview.php` authorizes reads and overlays only the selected source on frontend output. Live-source ownership and token verification stay together in `LivePreview`.
-- `classes/Compatibility/Acf.php` owns the optional ACF save/read contracts; `src/compatibility/acf.js` bridges its browser events. Small Timber read handling stays beside frontend content reads rather than becoming another integration class.
+- `classes/Compatibility/Acf.php` owns the optional ACF save/read contracts; `src/compatibility/acf.js` bridges its browser events; `block-editor-acf.js` captures native meta-box forms and observes ACF's own post-save row replacement. Small Timber read handling stays beside frontend content reads rather than becoming another integration class.
 - `src/preview/live-preview.js` shares live writes, frames and Web Locks between editor adapters. `classic-editor/live-preview.js` captures classic/ACF fields; `classic-editor/native-editor.js` observes native Preview, heartbeat and validation. `block-editor/editor.js` reads public editor selectors and coordinates native saves through the awaited pre-save hook and narrowly scoped API-fetch middleware.
 - `src/revisions/preview.js` owns read-only revision selection. It never acquires editor locks or writes previews. It follows core's `wp.revisions.view.frame.model`; guard and verify that integration when changing supported WordPress versions.
 - `src/panel/window.js` owns window presentation, focus, preferences, fullscreen and PiP. `panel/geometry.js` owns preferred bounds, docking, resizing and temporary viewport fitting; pointer/keyboard event binding stays with the window. `controls.js` renders public WordPress components and `viewport.js` sizes the preview viewport.

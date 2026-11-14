@@ -51,7 +51,9 @@ Title, content, excerpt, revision-enabled post metadata and stored ACF values co
 
 = Which fields update live? =
 
-Both editors preview title, content and excerpt. The Block Editor supplies serialized blocks in visual or code mode. Classic editing also captures supported post-local ACF fields. Block Editor ACF/meta fields, featured images, taxonomies, template selections and unsaved separate entities are not live inputs. Native ACF/legacy meta-box saving remains intact; saved values become the new baseline. ACF support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages.
+Both editors preview title, content, excerpt and supported post-local ACF fields. The Block Editor supplies serialized blocks in visual or code mode and previews featured-image selection, replacement and removal. ACF meta boxes use native form values and the shared ACF save integration; ACF blocks retain their native content-save hooks, including post-meta storage. Arbitrary non-ACF metadata, taxonomies, template selections and unsaved separate entities are not live inputs. Native ACF/legacy meta-box saving remains intact; saved values become the new baseline. ACF support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages.
+
+The plugin respects ACF's opt-in datastore when already enabled; it never enables it or edits Gutenberg's metadata to prepare a preview. After native meta-box saving, the panel waits for ACF to replace its paginated rows before resuming. If that reload fails, it retains the last preview and asks you to reload rather than resetting ACF's row markers. Live previews do not provide crash recovery: Gutenberg skips legacy meta boxes during native autosave, and ACF datastore recovery behavior remains ACF's responsibility.
 
 = Does this replace saving or publishing? =
 
@@ -69,7 +71,7 @@ In the classic editor, if native Preview saves additions, deletions or reorderin
 
 = Does it work with the Block Editor? =
 
-Yes, for posts, pages and frontend-viewable custom post types that use the post Block Editor. Title, serialized block content and excerpt update live, and new posts become eligible after their first native save. The Site Editor and unsaved changes to separate entities such as synced patterns are excluded. Saved post revisions can also be previewed through WordPress's native revision browser.
+Yes, for posts, pages and frontend-viewable custom post types that use the post Block Editor. Title, serialized block content, excerpt, supported post-local ACF fields and featured images update live, and new posts become eligible after their first native save. The Site Editor and unsaved changes to separate entities such as synced patterns are excluded. Saved post revisions can also be previewed through WordPress's native revision browser.
 
 = What does Scroll to changes do? =
 

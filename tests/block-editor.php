@@ -4,6 +4,7 @@
 
 use AFloatingLivePreviewPanel\Compatibility\Acf;
 use AFloatingLivePreviewPanel\Preview\LivePreview;
+use AFloatingLivePreviewPanel\Preview\FrontendPreview;
 
 if (!defined('WP_CLI') || !WP_CLI || !class_exists(LivePreview::class) || is_multisite()) {
     throw new RuntimeException('Run through WP-CLI on a single-site installation with this plugin active.');
@@ -86,6 +87,83 @@ try {
         && str_contains($revision->post_content, '<!-- wp:paragraph -->'),
         'Preview revisions must retain block serialization.'
     );
+
+    $images = [];
+    foreach (['saved', 'edited'] as $label) {
+        $upload = wp_upload_bits(
+            'aflpp-image-' . $label . '-' . wp_generate_password(8, false) . '.png',
+            null,
+            file_get_contents(ABSPATH . 'wp-includes/images/w-logo-blue.png')
+        );
+        $check(empty($upload['error']), 'Could not create a fixture image.');
+        $image = wp_insert_attachment(
+            ['post_title' => 'AFLPP image fixture', 'post_mime_type' => 'image/png'],
+            $upload['file']
+        );
+        $check($image > 0, 'Could not create a fixture attachment.');
+        $images[] = $image;
+        $posts[] = $image;
+    }
+    update_post_meta($draft, '_thumbnail_id', $images[0]);
+    $base = $live->fingerprint($draft);
+    $previewRoute = '/a-floating-live-preview-panel/v1/posts/' . $draft . '/preview';
+    foreach ([$images[1], 0, null] as $selection) {
+        $data = ['base' => $base, 'content' => '<!-- wp:paragraph --><p>Image preview</p><!-- /wp:paragraph -->'];
+        if ($selection !== null) {
+            $data['featured_media'] = $selection;
+        }
+        $response = $send($previewRoute, $data, null);
+        $check($response->get_status() === 200, 'Valid featured-image changes must preview.');
+        parse_str(wp_parse_url($response->get_data()['url'], PHP_URL_QUERY), $imageQuery);
+        $imageRevision = (int) $imageQuery['aflpp_revision'];
+        $expected = $selection ?? $images[0];
+        $check(
+            (int) get_post_meta($imageRevision, '_thumbnail_id', true) === $expected,
+            'Featured-image replacement, removal and omitted-input seeding must stay revision-local.'
+        );
+        $frontendAcf = new Acf();
+        $frontend = new FrontendPreview(dirname(__DIR__) . '/a-floating-live-preview-panel.php', $live, $frontendAcf);
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Preserve request globals in the CLI fixture.
+        $originalGet = $_GET;
+        try {
+            $_GET = $imageQuery;
+            $frontend->authorizePreview();
+            $check(
+                get_post_thumbnail_id($draft) === $expected,
+                'Native frontend image reads must use the authorized live source.'
+            );
+            $check(
+                (int) get_post_meta($draft, '_thumbnail_id', true) === $expected,
+                'Themes reading thumbnail metadata directly must see the same live source.'
+            );
+            $check(get_post_meta($draft, '_aflpp_test', true) === '1', 'Unrelated metadata must not be overlaid.');
+            $check(get_post_thumbnail_id($published) === 0, 'Other posts must not inherit the preview image.');
+        } finally {
+            $_GET = $originalGet;
+            remove_action('init', [$frontend, 'authorizePreview'], 20);
+            remove_filter('the_preview', [$frontend, 'readPost']);
+            remove_filter('timber/post/import_data', [$frontend, 'readTimberPost'], PHP_INT_MAX);
+            remove_filter('get_post_metadata', [$frontend, 'readRevisionMeta']);
+            remove_action('template_redirect', [$frontend, 'checkPreviewTarget'], -1);
+            remove_filter('acf/validate_post_id', [$frontendAcf, 'readPostId'], PHP_INT_MAX);
+            remove_filter('acf/pre_load_metadata', [$frontendAcf, 'readMetadata'], PHP_INT_MAX);
+        }
+        $check(
+            $live->fingerprint($draft) === $base && get_post_thumbnail_id($draft) === $images[0],
+            'Image previews must leave the parent and its saved image unchanged.'
+        );
+        $check(!wp_get_post_autosave($draft, $admin), 'Image previews must not create recovery autosaves.');
+    }
+    $revision = get_post($imageRevision);
+    $revisionBase = $live->fingerprint($imageRevision);
+    foreach ([-1, [$images[1]], 'invalid', $draft, PHP_INT_MAX] as $invalid) {
+        $response = $send($previewRoute, ['base' => $base, 'featured_media' => $invalid], null);
+        $check($response->get_status() === 400, 'Invalid or non-image featured media must be rejected.');
+        $check(
+            $live->fingerprint($draft) === $base && $live->fingerprint($imageRevision) === $revisionBase,
+            'Rejected image changes must not alter either the parent or its preview.'
+        );
+    }
 
     $response = $send($route, ['title' => 'Native update'], $base, 'PUT');
     $receipt = $response->get_data()['_aflpp_receipt'] ?? [];

@@ -14,8 +14,10 @@ const deferred = () => {
     return { promise, resolve, reject };
 };
 
-function fixture({ ready = true, available = true, route = '/wp/v2/posts/123' } = {}) {
+function fixture({ ready = true, available = true, route = '/wp/v2/posts/123', acfEnabled = false } = {}) {
     const calls = { pauses: [], pauseStates: [], resumes: [], titles: [], changes: 0, requests: [], contentReads: 0 };
+    const acfFields = { ready: true, saved: 0, destroyed: false, waitAfterSave: false };
+    let acfChanged;
     const state = { id: ready ? 123 : 0, type: 'post', saving: false, previewing: false, title: 'Title', content: '<!-- wp:paragraph --><p>Unsaved</p><!-- /wp:paragraph -->', excerpt: 'Excerpt', blocks: [], savedContent: 'Saved content' };
     const cookies = new Map();
     let subscription, filter, middleware, pending;
@@ -33,16 +35,25 @@ function fixture({ ready = true, available = true, route = '/wp/v2/posts/123' } 
     };
     const config = {
         postId: 123, postType: 'post', postRoute: route, restRoot: 'http://site.test/wp-json/', endpoint: 'http://site.test/wp-json/a-floating-live-preview-panel/v1/posts/123/preview',
-        base: 'a'.repeat(64), available, adminCookiePath: '/wp-admin/', strings: { nativeSaveFailed: 'Reload editor', postOnly: 'Return to post' },
+        base: 'a'.repeat(64), available, acfEnabled, adminCookiePath: '/wp-admin/', strings: { nativeSaveFailed: 'Reload editor', postOnly: 'Return to post', acfRefreshing: 'Waiting for ACF fields' },
     };
     const document = {
         get cookie() { return [...cookies].map(([key, value]) => `${key}=${value}`).join('; '); },
         set cookie(value) { if (value.includes('Max-Age=0')) cookies.delete(value.split('=')[0]); },
     };
     const context = {
-        URL, FormData, queueMicrotask, document,
+        URL, URLSearchParams, FormData, queueMicrotask, document,
         window: { crypto: webcrypto, location: new URL('http://site.test/wp-admin/post.php'), _wpMetaBoxUrl: 'http://site.test/wp-admin/post.php?post=123&meta-box-loader=1', addEventListener() {} },
         imports: {
+            '../compatibility/block-editor-acf.js': { createBlockEditorAcf(changed) {
+                acfChanged = changed;
+                return {
+                    get ready() { return acfFields.ready; }, observe() {},
+                    saved() { acfFields.saved++; acfFields.ready = !acfFields.waitAfterSave; },
+                    capture: () => new URLSearchParams({ 'acf[field_test]': 'Unsaved ACF', _acf_nonce: 'acf-nonce' }),
+                    destroy: () => { acfFields.destroyed = true; },
+                };
+            } },
             '@wordpress/api-fetch': { default: apiFetch },
             '@wordpress/data': { select: () => selectors, subscribe: (callback) => { subscription = callback; return () => { subscription = null; }; } },
             '@wordpress/hooks': { addFilter: (name, scope, callback) => { assert.equal(name, 'editor.preSavePost'); filter = callback; }, removeFilter: () => { filter = null; } },
@@ -55,7 +66,8 @@ function fixture({ ready = true, available = true, route = '/wp/v2/posts/123' } 
         changed: () => calls.changes++, setTitle: (title) => calls.titles.push(title),
     });
     return {
-        native, config, state, calls, cookies,
+        native, config, state, calls, cookies, acfFields,
+        acfChanged: async () => { acfChanged?.(); await flush(); },
         emit: async () => { subscription?.(); await flush(); },
         beforeSave: (...args) => filter(...args),
         request: (options, next) => middleware(options, next),
@@ -75,7 +87,7 @@ test('wait for the intended post and capture only supported unsaved editor value
     assert.equal(h.native.ready, true);
     await h.native.preparePreview();
     assert.deepEqual(JSON.parse(JSON.stringify(h.calls.requests[0].data)), {
-        post_title: h.state.title, content: h.state.content, excerpt: h.state.excerpt, base: h.config.base,
+        post_title: h.state.title, content: h.state.content, excerpt: h.state.excerpt, featured_media: 0, base: h.config.base,
     });
     const changes = h.calls.changes;
     await h.emit();
@@ -107,6 +119,66 @@ test('unrelated notifications and metadata edits never serialize content or rewr
     assert.equal(h.calls.contentReads, 0);
     await h.native.preparePreview();
     assert.equal(h.calls.contentReads, 1);
+});
+
+test('featured-image additions, replacements and removal are live inputs without serializing blocks', async () => {
+    const h = fixture();
+    const changes = h.calls.changes;
+    for (const [i, id] of [41, 42, 0].entries()) {
+        h.state.featured_media = id;
+        await h.emit();
+        assert.equal(h.calls.changes, changes + i + 1);
+        assert.equal(h.calls.contentReads, i);
+        await h.native.preparePreview();
+        assert.equal(h.calls.requests.at(-1).data.featured_media, id);
+    }
+});
+
+test('ACF capture shares the Gutenberg snapshot without sending native save controls', async () => {
+    const h = fixture({ acfEnabled: true });
+    const changes = h.calls.changes;
+    await h.acfChanged();
+    assert.equal(h.calls.changes, changes + 1);
+    h.state.featured_media = 42;
+    await h.native.preparePreview();
+    const { body, data } = h.calls.requests.at(-1);
+    assert.equal(data, undefined);
+    assert.equal(body.get('acf[field_test]'), 'Unsaved ACF');
+    assert.equal(body.get('_acf_nonce'), 'acf-nonce');
+    assert.equal(body.get('featured_media'), '42');
+    assert.equal(body.get('content'), h.state.content);
+    assert.equal(body.get('base'), h.config.base);
+    h.native.destroy();
+    assert.equal(h.acfFields.destroyed, true);
+});
+
+test('ACF native row reload pauses capture and resumes only after field replacement', async () => {
+    const h = fixture({ acfEnabled: true });
+    h.acfFields.waitAfterSave = true;
+    await h.request({ url: 'http://site.test/wp-admin/post.php?post=123&meta-box-loader=1', method: 'POST', body: h.metaBody(), parse: false }, async (options) => {
+        h.cookies.set(`aflpp_preview_${options.body.get('aflpp_preview')}`, `${h.config.base}.${'c'.repeat(64)}`);
+        return {};
+    });
+    await h.emit();
+    assert.equal(h.acfFields.saved, 1);
+    assert.equal(h.native.ready, false);
+    assert.equal(h.native.notReady, 'Waiting for ACF fields');
+    assert.equal(h.calls.pauseStates.at(-1), 'paused');
+    const resumes = h.calls.resumes.length;
+    await h.acfChanged();
+    assert.equal(h.calls.resumes.length, resumes);
+    h.acfFields.ready = true;
+    await h.acfChanged();
+    assert.equal(h.native.ready, true);
+    assert.equal(h.calls.resumes.length, resumes + 1);
+});
+
+test('unacknowledged ACF saves never assume native row reload succeeded', async () => {
+    const h = fixture({ acfEnabled: true });
+    await h.request({ url: 'http://site.test/wp-admin/post.php?post=123&meta-box-loader=1', method: 'POST', body: h.metaBody(), parse: false }, async () => ({}));
+    await h.emit();
+    assert.equal(h.acfFields.saved, 0);
+    assert.equal(h.calls.resumes.at(-1)?.code, 'aflpp_source_changed');
 });
 
 test('block references and raw code edits schedule capture without serializing', async () => {

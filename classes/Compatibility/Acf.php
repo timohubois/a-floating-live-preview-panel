@@ -13,7 +13,7 @@ final class Acf
     private int $sourceId = 0;
     private bool $readOnly = false;
 
-    /** Load ACF's classic JavaScript API before the admin entry point. */
+    /** Load ACF's field JavaScript API before either editor entry point. */
     public function editorDependencies(): array
     {
         return $this->isAvailable() ? ['acf-input'] : [];
@@ -99,6 +99,9 @@ final class Acf
         $this->sourceId = $sourceId;
         $this->readOnly = $readOnly;
         add_filter('acf/validate_post_id', [$this, 'readPostId'], PHP_INT_MAX, 2);
+        // ACF post-meta blocks use the lower-level value APIs without validating a post ID first.
+        add_filter('acf/pre_load_metadata', [$this, 'readMetadata'], PHP_INT_MAX, 4);
+        $this->clearRevisionCache($postId);
         if ($readOnly) {
             add_filter('acf/pre_update_metadata', [$this, 'preventSourceWrite'], PHP_INT_MAX, 2);
             add_filter('acf/pre_delete_metadata', [$this, 'preventSourceWrite'], PHP_INT_MAX, 2);
@@ -113,6 +116,22 @@ final class Acf
         }
         $target = acf_decode_post_id($postId);
         return $target['type'] === 'post' && (int) $target['id'] === $this->sourceId ? false : $check;
+    }
+
+    public function readMetadata($value, $postId, string $name, bool $hidden)
+    {
+        if ($value !== null) {
+            return $value;
+        }
+        $target = acf_decode_post_id($postId);
+        if (
+            $target['type'] !== 'post' || (int) $target['id'] !== $this->previewPostId
+            || $this->sourceId === $this->previewPostId
+        ) {
+            return $value;
+        }
+        // ACF's null sentinel prevents a missing source field from falling back to saved parent data.
+        return acf_get_metadata($this->sourceId, $name, $hidden) ?? '__return_null';
     }
 
     public function readPostId($postId, $original)

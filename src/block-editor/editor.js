@@ -1,6 +1,7 @@
 import apiFetch from '@wordpress/api-fetch';
 import { select, subscribe } from '@wordpress/data';
 import { addFilter, removeFilter } from '@wordpress/hooks';
+import { createBlockEditorAcf } from '../compatibility/block-editor-acf.js';
 
 const scope = 'a-floating-live-preview-panel';
 const fingerprint = /^[a-f0-9]{64}$/;
@@ -15,6 +16,10 @@ export function createBlockEditor(config) {
     let requests = 0;
     let failure;
     let settleQueued = false;
+    const acf = config.acfEnabled ? createBlockEditorAcf(() => {
+        preview?.changed();
+        scheduleObserve();
+    }) : null;
     const editor = () => select('core/editor');
     const ownsPost = () => Number(editor()?.getCurrentPostId()) === config.postId
         && editor()?.getCurrentPostType() === config.postType;
@@ -28,14 +33,18 @@ export function createBlockEditor(config) {
             post_title: state.getEditedPostAttribute('title') ?? '',
             content: state.getEditedPostContent(),
             excerpt: state.getEditedPostAttribute('excerpt') ?? '',
+            featured_media: state.getEditedPostAttribute('featured_media') ?? 0,
         };
     }
 
     function observe() {
         if (destroyed || !preview) return;
         const state = editor();
-        const ready = ownsPost() && !!state.getCurrentPost()?.id;
-        const saving = ready && (state.isSavingPost() || requests > 0);
+        const postReady = ownsPost() && !!state.getCurrentPost()?.id;
+        acf?.observe();
+        const ready = postReady && (acf?.ready ?? true);
+        native.notReady = postReady ? config.strings.acfRefreshing : config.strings.postOnly;
+        const saving = postReady && (state.isSavingPost() || requests > 0);
         const becameReady = ready && !native.ready;
         native.ready = ready;
         native.saving = saving;
@@ -54,6 +63,7 @@ export function createBlockEditor(config) {
             excerpt: state.getEditedPostAttribute('excerpt') ?? '',
             content: state.getPostEdits().content ?? state.getCurrentPost().content,
             blocks: state.getEditedPostAttribute('blocks'),
+            featured_media: state.getEditedPostAttribute('featured_media') ?? 0,
         };
         if (native.title !== current.post_title) {
             native.title = current.post_title;
@@ -154,6 +164,7 @@ export function createBlockEditor(config) {
             const cookie = document.cookie.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${cookieName}=`));
             const receipt = cookie?.slice(cookieName.length + 1);
             accept({ request, before: base, after: receipt?.startsWith(`${base}.`) ? receipt.slice(65) : '', available: config.available }, request, base);
+            if (!failure) acf?.saved();
             return response;
         } catch (error) {
             // Even a REST 4xx can follow wp_update_post(). Retry preview only when the server
@@ -178,9 +189,13 @@ export function createBlockEditor(config) {
         }
     }
 
-    native.preparePreview = () => apiFetch({
-        url: config.endpoint, method: 'POST', data: { ...values(), base: config.base },
-    });
+    native.preparePreview = () => {
+        const data = { ...values(), base: config.base };
+        if (!acf) return apiFetch({ url: config.endpoint, method: 'POST', data });
+        const body = acf.capture();
+        for (const [key, value] of Object.entries(data)) body.set(key, value);
+        return apiFetch({ url: config.endpoint, method: 'POST', body });
+    };
     const unsubscribe = subscribe(scheduleObserve);
     addFilter('editor.preSavePost', scope, beforeSave);
     apiFetch.use(middleware);
@@ -188,6 +203,7 @@ export function createBlockEditor(config) {
     native.destroy = () => {
         destroyed = true;
         unsubscribe();
+        acf?.destroy();
         removeFilter('editor.preSavePost', scope);
     };
     window.addEventListener('pagehide', (event) => { if (!event.persisted) native.destroy(); });

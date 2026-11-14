@@ -396,6 +396,7 @@ try {
     remove_filter('wp_die_handler', $dieHandler, PHP_INT_MAX);
     remove_filter('get_post_metadata', [$preview, 'readRevisionMeta']);
     remove_filter('acf/validate_post_id', [$acf, 'readPostId'], PHP_INT_MAX);
+    remove_filter('acf/pre_load_metadata', [$acf, 'readMetadata'], PHP_INT_MAX);
     remove_filter('acf/pre_update_metadata', [$acf, 'preventSourceWrite'], PHP_INT_MAX);
     remove_filter('acf/pre_delete_metadata', [$acf, 'preventSourceWrite'], PHP_INT_MAX);
     foreach (array_reverse($posts) as $postId) {

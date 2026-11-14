@@ -20,7 +20,7 @@ final class Plugin
         $frontendPreview = new FrontendPreview($file, $livePreview, $acf);
         $panel = new Panel($file);
         new ClassicEditor($livePreview, $acf, $panel);
-        new BlockEditor($livePreview, $panel);
+        new BlockEditor($livePreview, $acf, $panel);
         new RevisionBrowser($frontendPreview, $panel);
     }
 }

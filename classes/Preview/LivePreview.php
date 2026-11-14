@@ -57,6 +57,7 @@ final class LivePreview
                 'post_title' => ['type' => 'string'],
                 'content' => ['type' => 'string'],
                 'excerpt' => ['type' => 'string'],
+                'featured_media' => ['type' => 'integer', 'minimum' => 0],
             ],
         ]);
     }
@@ -253,6 +254,20 @@ final class LivePreview
             );
         }
         $base = $this->fingerprint($postId);
+        // Match the native featured-image contract, without calling parent-redirecting post-meta writers.
+        $imageId = $input['featured_media'] ?? null;
+        if (
+            $imageId !== null && $imageId && (
+                !get_post($imageId) || get_post_type($imageId) !== 'attachment'
+                || !current_user_can('read_post', $imageId) || !wp_get_attachment_image($imageId, 'thumbnail')
+            )
+        ) {
+            return new WP_Error(
+                'rest_invalid_featured_media',
+                __('The featured image can’t be used in this preview.', 'a-floating-live-preview-panel'),
+                ['status' => 400]
+            );
+        }
 
         // REST values are unslashed. Native save APIs sanitize HTML and need slashed form data.
         $payload = [
@@ -280,7 +295,16 @@ final class LivePreview
         // ACF's classic-preview form hooks read $_POST during the revision save.
         $originalPost = $_POST;
         $revisionId = 0;
-        $seed = fn (int $revisionId) => $this->seedPreviewMeta($postId, $revisionId);
+        $seed = function (int $revisionId) use ($postId, $imageId): void {
+            $this->seedPreviewMeta($postId, $revisionId);
+            if ($imageId !== null && $this->ownsRevision($postId, $revisionId)) {
+                if ($imageId) {
+                    update_metadata('post', $revisionId, '_thumbnail_id', $imageId);
+                } else {
+                    delete_metadata('post', $revisionId, '_thumbnail_id');
+                }
+            }
+        };
         add_action('save_post_revision', $seed, 0);
         if (!defined('DOING_AUTOSAVE')) {
             define('DOING_AUTOSAVE', true);
