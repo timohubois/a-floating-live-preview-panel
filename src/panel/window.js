@@ -1,6 +1,6 @@
 import { select, dispatch } from '@wordpress/data';
 import { store as preferencesStore } from '@wordpress/preferences';
-import { createPreviewControls } from './controls.js';
+import { createPreviewControls, createPreviewLauncher } from './controls.js';
 import { createPreviewViewport } from './viewport.js';
 import { createPanelGeometry } from './geometry.js';
 
@@ -19,9 +19,10 @@ export function createPreviewPanel(strings, {
     let rememberVisibility = preferences.get(scope, 'rememberVisibility') !== false;
     let followChanges = preferences.get(scope, 'scrollToChanges') !== false;
     const showOnLoad = !rememberVisibility || preferences.get(scope, 'panelOpen') !== false;
-    const launcher = mainDocument.getElementById('aflpp-toggle');
+    const launcherContainer = mainDocument.getElementById('aflpp-toggle');
     const panel = mainDocument.getElementById('aflpp-panel');
-    if (!launcher || !panel) throw new Error('Preview panel markup is missing.');
+    if (!launcherContainer || !panel) throw new Error('Preview panel markup is missing.');
+    const launcher = createPreviewLauncher(launcherContainer);
 
     const move = panel.querySelector('.aflpp-move-control');
     const resize = panel.querySelector('.aflpp-resize');
@@ -200,11 +201,11 @@ export function createPreviewPanel(strings, {
     function launcherRect() {
         // Initial markup and a just-closed panel still hide the launcher. Measure its real label
         // and CSS size synchronously before revealing it at the fitted position.
-        const hidden = launcher.hidden;
-        launcher.hidden = false;
-        launcher.style.maxWidth = `${area(!geometry.dock).width}px`;
-        const size = { width: launcher.offsetWidth, height: launcher.offsetHeight };
-        launcher.hidden = hidden;
+        const hidden = launcherContainer.hidden;
+        launcherContainer.hidden = false;
+        launcherContainer.style.maxWidth = `${area(!geometry.dock).width}px`;
+        const size = { width: launcherContainer.offsetWidth, height: launcherContainer.offsetHeight };
+        launcherContainer.hidden = hidden;
         return geometry.launcherRect(size);
     }
 
@@ -213,7 +214,7 @@ export function createPreviewPanel(strings, {
         if (!visible) {
             const rect = launcherRect();
             const factor = geometry.anchorFactor;
-            Object.assign(launcher.style, {
+            Object.assign(launcherContainer.style, {
                 left: `${rect.x + rect.width * factor}px`, top: `${rect.y + rect.height}px`,
                 transform: `translate(${-100 * factor}%, -100%)`,
             });
@@ -521,11 +522,10 @@ export function createPreviewPanel(strings, {
         },
     });
     report(strings.loading, 'loading', { canRetry: false });
-    // Controls render the launcher's icon; include it in the initial size measurement.
     draw();
     // Reveal only after binding controls and positioning the server-rendered panel.
     panel.hidden = !visible;
-    launcher.hidden = visible;
+    launcherContainer.hidden = visible;
     launcher.setAttribute('aria-expanded', String(visible));
 
     return {
@@ -543,7 +543,7 @@ export function createPreviewPanel(strings, {
             visible = value;
             draw();
             panel.hidden = !visible;
-            launcher.hidden = visible;
+            launcherContainer.hidden = visible;
             launcher.setAttribute('aria-expanded', String(visible));
         },
         report,

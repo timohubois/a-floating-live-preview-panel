@@ -78,10 +78,11 @@ function fixture(open = false, {
     document.body = { append: (panel) => { panel.ownerDocument = document; } };
     const detached = target({ document: detachedDocument, close() { this.fire('pagehide'); } });
     const requests = [];
-    const launcher = node('aflpp-toggle');
-    launcher.title = 'Live preview'; // Server-rendered action label.
-    launcher.offsetWidth = 160;
-    launcher.offsetHeight = 40;
+    const launcherContainer = node('aflpp-toggle');
+    const launcher = node('launcher-button');
+    launcher.title = 'Live preview'; // Native Button's action label.
+    launcherContainer.offsetWidth = 160;
+    launcherContainer.offsetHeight = 40;
     const window = target({
         innerWidth: width, innerHeight: height, scrollX: 0, requestAnimationFrame: () => 1, cancelAnimationFrame() {},
         getComputedStyle: () => ({ direction, cursor: 'ew-resize', getPropertyValue: () => '' }),
@@ -109,7 +110,7 @@ function fixture(open = false, {
         '@wordpress/data': window.wp.data,
         '@wordpress/preferences': { store: { name: 'core/preferences' } },
         './geometry.js': { createPanelGeometry },
-        './controls.js': { createPreviewControls: createControls },
+        './controls.js': { createPreviewControls: createControls, createPreviewLauncher: () => launcher },
         './viewport.js': { createPreviewViewport: () => ({
             device: 'desktop', layout() {}, beforeMove() {}, afterMove() {},
         }) },
@@ -122,7 +123,7 @@ function fixture(open = false, {
     });
     const panel = node('aflpp-panel');
     return {
-        view, launcher, panel, node, actions, window, document, preferences, writes, detached, copiedStyles,
+        view, launcher, launcherContainer, panel, node, actions, window, document, preferences, writes, detached, copiedStyles,
         requests, focusCalls, retryCalls,
         get state() { return state; },
         rect: () => Object.fromEntries(['left', 'top', 'width', 'height'].map((key) => [key, parseFloat(panel.style[key])])),
@@ -228,18 +229,34 @@ test('an initially closed panel does not claim to load a preview on launcher hov
     assert.equal(launcher.title, 'Live preview');
 });
 
+test('launcher geometry and visibility apply to the whole Card while the native Button owns interactions', () => {
+    const h = fixture();
+    assert.equal(h.launcherContainer.hidden, false);
+    assert.ok(parseFloat(h.launcherContainer.style.left) > 0);
+    assert.equal(h.launcher.style.left, undefined, 'Do not position the Button separately from its Card.');
+    for (const event of ['click', 'keydown', 'pointerdown']) {
+        assert.equal(getEventListeners(h.launcher, event).length, 1);
+        assert.equal(getEventListeners(h.launcherContainer, event).length, 0);
+    }
+    h.launcher.fire('click', { detail: 0 });
+    assert.equal(h.launcherContainer.hidden, true, 'Do not leave an empty Card behind the open panel.');
+    h.actions.close();
+    assert.equal(h.launcherContainer.hidden, false);
+    assert.equal(h.document.activeElement, h.launcher);
+});
+
 test('a native Save during startup does not override remembered panel visibility', () => {
     assert.equal(fixture(true, { nativeSaving: true }).view.visible, true);
     assert.equal(fixture(false, { nativeSaving: true }).view.visible, false);
 });
 
 test('closing a ready panel clears its frame without changing the launcher into a loading indicator', () => {
-    const { view, launcher, panel } = fixture(true);
+    const { view, launcher, launcherContainer, panel } = fixture(true);
     view.report('Preview refreshed', 'ready', { hasPreview: true });
     view.setVisible(false);
     view.clearPreview();
     assert.equal(panel.hidden, true);
-    assert.equal(launcher.hidden, false);
+    assert.equal(launcherContainer.hidden, false);
     assert.equal(launcher.title, 'Live preview');
 });
 
@@ -484,9 +501,9 @@ for (const dock of ['left', 'center', 'right']) {
         h.actions.close();
         const factor = dock === 'left' ? 0 : dock === 'center' ? 0.5 : 1;
         const before = h.rect();
-        assert.equal(parseFloat(h.launcher.style.left), before.left + before.width * factor);
-        assert.equal(parseFloat(h.launcher.style.top), before.top + before.height);
-        assert.equal(h.launcher.style.transform, `translate(${-100 * factor}%, -100%)`);
+        assert.equal(parseFloat(h.launcherContainer.style.left), before.left + before.width * factor);
+        assert.equal(parseFloat(h.launcherContainer.style.top), before.top + before.height);
+        assert.equal(h.launcherContainer.style.transform, `translate(${-100 * factor}%, -100%)`);
         const dx = dock === 'left' ? 60 : -60;
         h.launcher.fire('pointerdown');
         h.launcher.fire('pointermove', { clientX: 100 + dx, clientY: 60 });
@@ -498,8 +515,8 @@ for (const dock of ['left', 'center', 'right']) {
         assert.equal(h.preferences.get('layout').anchor, dock);
         assert.deepEqual([moved.width, moved.height], [before.width, before.height]);
         const reopened = fixture(false, { layout: h.preferences.get('layout') });
-        assert.equal(reopened.launcher.style.left, h.launcher.style.left);
-        assert.equal(reopened.launcher.style.transform, h.launcher.style.transform);
+        assert.equal(reopened.launcherContainer.style.left, h.launcherContainer.style.left);
+        assert.equal(reopened.launcherContainer.style.transform, h.launcherContainer.style.transform);
     });
 
     test(`${dock} resize grip follows the pointer while preserving the bottom anchor and docking`, () => {
@@ -718,8 +735,8 @@ for (const direction of ['ltr', 'rtl']) for (const gutter of [12, 20, 28]) {
     test(`${direction} docking matches the editor's ${gutter}px gutter, excluding the scrollbar`, () => {
         const h = fixture(false, { direction, gutter, scrollbar: 15 });
         const width = h.document.documentElement.clientWidth;
-        assert.equal(parseFloat(h.launcher.style.left), width - gutter);
-        assert.equal(parseFloat(h.launcher.style.top), h.window.innerHeight - gutter);
+        assert.equal(parseFloat(h.launcherContainer.style.left), width - gutter);
+        assert.equal(parseFloat(h.launcherContainer.style.top), h.window.innerHeight - gutter);
         h.view.setVisible(true);
         assert.equal(h.rect().left + h.rect().width, width - gutter);
         assert.equal(h.rect().top + h.rect().height, h.window.innerHeight - gutter);
@@ -746,8 +763,8 @@ for (const anchor of ['left', 'center', 'right']) for (const keyboard of [false,
             h.launcher.fire('pointerup');
         }
         const factor = anchor === 'left' ? 0 : anchor === 'center' ? 0.5 : 1;
-        assert.equal(parseFloat(h.launcher.style.left), h.launcher.offsetWidth * factor);
-        assert.equal(parseFloat(h.launcher.style.top), 32 + h.launcher.offsetHeight);
+        assert.equal(parseFloat(h.launcherContainer.style.left), h.launcherContainer.offsetWidth * factor);
+        assert.equal(parseFloat(h.launcherContainer.style.top), 32 + h.launcherContainer.offsetHeight);
         const saved = h.preferences.get('layout');
         assert.equal(saved.bounds.width, 560);
         assert.equal(saved.bounds.height, 420);
@@ -757,11 +774,11 @@ for (const anchor of ['left', 'center', 'right']) for (const keyboard of [false,
         assert.equal(h.rect().top, 32);
         inside(h);
         h.actions.close();
-        assert.equal(parseFloat(h.launcher.style.left), h.launcher.offsetWidth * factor);
-        assert.equal(parseFloat(h.launcher.style.top), 32 + h.launcher.offsetHeight);
+        assert.equal(parseFloat(h.launcherContainer.style.left), h.launcherContainer.offsetWidth * factor);
+        assert.equal(parseFloat(h.launcherContainer.style.top), 32 + h.launcherContainer.offsetHeight);
         const reopened = fixture(false, { layout: saved });
-        assert.equal(reopened.launcher.style.left, h.launcher.style.left);
-        assert.equal(reopened.launcher.style.top, h.launcher.style.top);
+        assert.equal(reopened.launcherContainer.style.left, h.launcherContainer.style.left);
+        assert.equal(reopened.launcherContainer.style.top, h.launcherContainer.style.top);
     });
 }
 
@@ -772,13 +789,13 @@ for (const launcher of [false, true]) {
         control.fire('pointerdown');
         control.fire('pointermove', { clientX: -2000, clientY: -2000 });
         control.fire('pointerup');
-        assert.equal(launcher ? parseFloat(h.launcher.style.left) - h.launcher.offsetWidth : h.rect().left, 0);
-        assert.equal(launcher ? parseFloat(h.launcher.style.top) - h.launcher.offsetHeight : h.rect().top, 46);
+        assert.equal(launcher ? parseFloat(h.launcherContainer.style.left) - h.launcherContainer.offsetWidth : h.rect().left, 0);
+        assert.equal(launcher ? parseFloat(h.launcherContainer.style.top) - h.launcherContainer.offsetHeight : h.rect().top, 46);
         control.fire('pointerdown');
         control.fire('pointermove', { clientX: 3000, clientY: 3000 });
         control.fire('pointerup');
-        assert.equal(launcher ? parseFloat(h.launcher.style.left) : h.rect().left + h.rect().width, 1425);
-        assert.equal(launcher ? parseFloat(h.launcher.style.top) : h.rect().top + h.rect().height, 1000);
+        assert.equal(launcher ? parseFloat(h.launcherContainer.style.left) : h.rect().left + h.rect().width, 1425);
+        assert.equal(launcher ? parseFloat(h.launcherContainer.style.top) : h.rect().top + h.rect().height, 1000);
     });
 }
 
@@ -790,10 +807,10 @@ test('scrolling the mobile admin bar into view temporarily fits a free launcher 
     const writes = h.writes.length;
     h.node('wpadminbar').getBoundingClientRect = () => ({ bottom: 46 });
     h.window.fire('scroll');
-    assert.equal(parseFloat(h.launcher.style.top), 46 + h.launcher.offsetHeight);
+    assert.equal(parseFloat(h.launcherContainer.style.top), 46 + h.launcherContainer.offsetHeight);
     h.node('wpadminbar').getBoundingClientRect = () => ({ bottom: -200 });
     h.window.fire('scroll');
-    assert.equal(parseFloat(h.launcher.style.top), h.launcher.offsetHeight);
+    assert.equal(parseFloat(h.launcherContainer.style.top), h.launcherContainer.offsetHeight);
     assert.equal(h.writes.length, writes);
 });
 

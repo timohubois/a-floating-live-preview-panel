@@ -59,6 +59,63 @@ function fixture() {
     return { controls, state, mounts, calls, nodes, icons, body };
 }
 
+test('PHP supplies only the launcher mount and escaped labels, not a hand-written button', async () => {
+    const template = await readFile(new URL('../views/panel.php', import.meta.url), 'utf8');
+    const launcher = template.split('<section')[0];
+    assert.match(launcher, /<div id="aflpp-toggle" class="aflpp-launcher" hidden/);
+    assert.ok(launcher.includes('data-title="<?php echo esc_attr($title); ?>"'));
+    assert.match(launcher, /data-move-help=/);
+    assert.doesNotMatch(launcher, /<button|components-button|components-external-link/);
+});
+
+for (const direction of ['ltr', 'rtl']) {
+    test(`launcher renders a native WordPress Card and Button synchronously in ${direction}`, () => {
+        const Card = Symbol('Native Card');
+        const Button = Symbol('Native Button');
+        const button = {};
+        const container = { dataset: { title: 'Revision preview', moveHelp: 'Drag or use arrow keys.', direction } };
+        let tree;
+        let mounts = 0;
+        const imports = {
+            '@wordpress/components': { Button, Card },
+            './icons.js': {},
+            '@wordpress/element': {
+                createElement: (type, props, ...children) => ({ type, props, children }),
+                flushSync: (callback) => callback(),
+                createRoot(target) {
+                    assert.equal(target, container);
+                    mounts++;
+                    return { render(node) {
+                        assert.equal(node.type, Card);
+                        assert.equal(node.props.elevation, 2, 'Use native elevation instead of custom shadow CSS.');
+                        assert.equal(node.props.size, 'none');
+                        assert.equal(node.props.style, undefined);
+                        assert.equal(node.props.className, undefined, 'Only the outer mount needs plugin layout CSS.');
+                        tree = node.children[0];
+                        tree.props.ref(button);
+                    } };
+                },
+            },
+        };
+        const createLauncher = vm.runInNewContext(`${source}\ncreatePreviewLauncher`, { imports });
+        assert.equal(createLauncher(container), button, 'Bind interactions to the actual native button after mounting.');
+        assert.equal(mounts, 1);
+        assert.equal(tree.type, Button);
+        assert.equal(tree.props.className, undefined, 'The native component supplies its own components-button class.');
+        assert.equal(tree.props.style, undefined);
+        assert.equal(tree.props.label, 'Revision preview');
+        assert.equal(tree.props.title, 'Revision preview');
+        assert.equal(tree.props.description, container.dataset.moveHelp, 'Use the native accessible description.');
+        assert.equal(tree.props['aria-controls'], 'aflpp-panel');
+        assert.equal(tree.props['aria-expanded'], false);
+        assert.equal(tree.props.hidden, undefined, 'Hide the entire surface through its mount, not just the button.');
+        assert.equal(tree.props.href, undefined, 'This opens a panel, not an external page.');
+        assert.equal(tree.children[0].children[0], 'Revision preview');
+        assert.equal(tree.children[1].props['aria-hidden'], true);
+        assert.equal(tree.children[1].children[0], direction === 'rtl' ? '↖' : '↗');
+    });
+}
+
 test('PiP uses a text-only menu label without an icon or a fake shortcut', async () => {
     const panelSource = await readFile(new URL('../classes/Admin/Panel.php', import.meta.url), 'utf8');
     assert.match(panelSource, /'popOut' => __\('Pop out preview \(PiP\)',/);
@@ -198,8 +255,6 @@ test('controls pass the official bundled icon elements directly to native compon
     assert.equal(refresh.props.icon, h.icons.refresh);
     assert.equal(h.nodes('Button').find(({ props }) => props['data-action'] === 'move').props.tooltipPosition, 'bottom', 'do not cover the upper resize corner');
     assert.equal(h.nodes('DropdownMenu')[0].props.icon, h.icons.more);
-    const portalIcon = (selector) => h.nodes('Portal').find(({ props }) => props.target.selector === selector).children[0];
-    assert.equal(portalIcon('#aflpp-toggle .aflpp-launcher-icon'), h.icons.pip);
     assert.equal(h.nodes('Button').find(({ props }) => props['data-action'] === 'move').props.icon, h.icons.move);
     assert.equal(h.nodes('Button').some(({ props }) => props.icon === h.icons.resize), false);
     const icons = [...h.nodes('Button'), ...h.nodes('MenuItem')].map(({ props }) => props.icon).filter(Boolean);

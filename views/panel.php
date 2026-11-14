@@ -6,16 +6,13 @@
 
 defined('ABSPATH') || exit;
 ?>
-<button type="button" id="aflpp-toggle" class="aflpp-launcher" aria-controls="aflpp-panel" aria-expanded="false"
-    aria-label="<?php echo esc_attr($title); ?>"
-    title="<?php echo esc_attr($title); ?>"
-    aria-description="<?php esc_attr_e(
+<div id="aflpp-toggle" class="aflpp-launcher" hidden
+    data-title="<?php echo esc_attr($title); ?>"
+    data-direction="<?php echo is_rtl() ? 'rtl' : 'ltr'; ?>"
+    data-move-help="<?php esc_attr_e(
         'Drag or use arrow keys to move; Shift for larger steps.',
         'a-floating-live-preview-panel'
-    ); ?>" hidden>
-    <span class="aflpp-launcher-icon" aria-hidden="true"></span>
-    <span><?php echo esc_html($title); ?></span>
-</button>
+    ); ?>"></div>
 <section id="aflpp-panel" class="aflpp-panel" data-state="loading" data-has-preview="false" data-has-feedback="false"
     aria-label="<?php echo esc_attr($title); ?>" hidden>
     <div class="aflpp-header">

@@ -1,9 +1,26 @@
 import { createElement as h, createPortal, createRoot, flushSync, Fragment } from '@wordpress/element';
 import {
-    Button, DropdownMenu, MenuGroup, MenuItem, MenuItemsChoice, Notice, Placeholder,
+    Button, Card, DropdownMenu, MenuGroup, MenuItem, MenuItemsChoice, Notice, Placeholder,
     Popover, SlotFillProvider, Spinner, Toolbar, ToolbarButton,
 } from '@wordpress/components';
 import { icons } from './icons.js';
+
+// Keep the launcher mounted in the editor while panel controls unmount for fullscreen/PiP moves.
+export function createPreviewLauncher(container) {
+    let button;
+    const { title, moveHelp, direction } = container.dataset;
+    flushSync(() => createRoot(container).render(h(Card, { elevation: 2, size: 'none' },
+        h(Button, {
+            ref: (element) => { button = element; },
+            label: title, title, description: moveHelp,
+            'aria-controls': 'aflpp-panel', 'aria-expanded': false,
+        },
+        h('span', { className: 'aflpp-launcher-label' }, title),
+        h('span', { className: 'components-external-link__icon wp-exclude-emoji', 'aria-hidden': true }, direction === 'rtl' ? '↖' : '↗'),
+        ),
+    )));
+    return button;
+}
 
 // Public WordPress UI only. The shell owns geometry, recovery decisions and preview state.
 export function createPreviewControls(panel, strings, callbacks) {
@@ -14,7 +31,6 @@ export function createPreviewControls(panel, strings, callbacks) {
     const pipContainer = panel.querySelector('.aflpp-pip-control');
     const emptyContainer = panel.querySelector('.aflpp-empty');
     const feedbackContainer = panel.querySelector('.aflpp-feedback');
-    const launcherContainer = panel.ownerDocument.querySelector('#aflpp-toggle .aflpp-launcher-icon');
     let root = createRoot(container);
     let state;
     let open = false;
@@ -26,7 +42,6 @@ export function createPreviewControls(panel, strings, callbacks) {
         } = state;
         const command = (action) => () => { closeMenu(); action(); };
         return h(SlotFillProvider, null,
-            createPortal(icons.pip, launcherContainer),
             createPortal(movable && inPage && h(Button, {
                 className: 'aflpp-icon aflpp-move', icon: icons.move, label: strings.move, showTooltip: true, tooltipPosition: 'bottom',
                 'data-action': 'move',

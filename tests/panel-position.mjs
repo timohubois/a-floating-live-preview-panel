@@ -5,7 +5,7 @@ import { sourceForVm } from './helpers/modules.mjs';
 
 // Exercise real layout, hidden-element measurement and responsive admin gutters. Mock only
 // component rendering and native pointer capture; drive the view's actual event handlers.
-function browserTests({ css, geometry, source }) {
+function browserTests({ core, css, geometry, source }) {
     const results = [];
     for (const direction of ['ltr', 'rtl']) for (const [width, height] of [[1440, 900], [800, 600], [600, 480], [390, 600], [320, 240]]) {
         const name = `${direction} ${width}×${height}: startup, native gutters, drag fitting and focus`;
@@ -26,10 +26,11 @@ function browserTests({ css, geometry, source }) {
                     .wrap { margin-inline-start:0; margin-inline-end:12px; }
                     #wpadminbar { height:46px; }
                 }
+                ${core}
                 ${css}
                 </style></head><body><div id="wpadminbar"></div>
                 <div id="wpcontent"><div id="wpbody-content"><div class="wrap">Editor content</div></div></div>
-                <button type="button" id="aflpp-toggle" class="aflpp-launcher" hidden><span class="aflpp-launcher-icon"></span><span>Revision preview</span></button>
+                <div id="aflpp-toggle" class="aflpp-launcher" hidden><div><button type="button" class="components-button"><span class="aflpp-launcher-label">Revision preview</span><span class="components-external-link__icon wp-exclude-emoji" aria-hidden="true">${direction === 'rtl' ? '↖' : '↗'}</span></button></div></div>
                 <section id="aflpp-panel" class="aflpp-panel" hidden>
                     <div class="aflpp-header"><div class="aflpp-move-control"><button>Move</button></div>
                         <div class="aflpp-caption"></div><div class="aflpp-controls"><button data-action="actions">Actions</button></div></div>
@@ -40,7 +41,7 @@ function browserTests({ css, geometry, source }) {
             doc.close();
             const win = doc.defaultView;
             // A left-edge corner remembered with the shorter editor launcher is also restored
-            // on revision screens. Its icon must render before the wider label is measured.
+            // on revision screens. Measure the full label and native trailing arrow.
             const saved = { bounds: { x: -348, y: -268, width: 480, height: 340 }, dock: null, anchor: 'right', expanded: false };
             const preferences = new Map([['panelOpen', false], ['layout', saved]]);
             const focusCalls = [];
@@ -53,13 +54,10 @@ function browserTests({ css, geometry, source }) {
                 '@wordpress/preferences': { store: {} },
                 './geometry.js': { createPanelGeometry: win.Function(`${geometry}\nreturn createPanelGeometry;`)() },
                 './viewport.js': { createPreviewViewport: () => ({ device: 'desktop', layout() {} }) },
-                './controls.js': { createPreviewControls(panel, strings, callbacks) {
+                './controls.js': { createPreviewLauncher: (container) => container.querySelector('button'), createPreviewControls(panel, strings, callbacks) {
                     actions = callbacks;
                     return {
-                        update() {
-                            const icon = doc.querySelector('.aflpp-launcher-icon');
-                            if (!icon.firstElementChild) icon.innerHTML = '<svg width="24" height="24" aria-hidden="true"></svg>';
-                        },
+                        update() {},
                         closeMenu() {}, focus(action) {
                             focusCalls.push(action);
                             panel.querySelector(`[data-action="${action}"]`)?.focus();
@@ -72,7 +70,7 @@ function browserTests({ css, geometry, source }) {
             const view = createPreviewPanel(strings, {
                 onOpen: () => view.setVisible(true), onClose: () => view.setVisible(false),
             });
-            const launcher = doc.getElementById('aflpp-toggle');
+            const launcher = doc.querySelector('#aflpp-toggle button');
             const panel = doc.getElementById('aflpp-panel');
             const close = (actual, expected, message) => {
                 if (Math.abs(actual - expected) > 1) throw new Error(`${message}: got ${actual}, expected ${expected}`);
@@ -108,7 +106,7 @@ function browserTests({ css, geometry, source }) {
             launcher.dispatchEvent(new win.MouseEvent('click', { detail: 0 }));
             if (focusCalls.join() !== 'actions' || doc.activeElement?.dataset.action !== 'actions') throw new Error('Keyboard opening retains accessible focus transfer.');
             actions.close();
-            launcher.lastElementChild.textContent = 'A long translated live preview label '.repeat(8);
+            launcher.querySelector('.aflpp-launcher-label').textContent = 'A long translated live preview label '.repeat(8);
             win.dispatchEvent(new win.Event('resize'));
             const long = launcher.getBoundingClientRect();
             if (long.left < viewportLeft - 1 || long.right > viewportRight + 1) throw new Error('Real translated launcher dimensions must fit independently.');
@@ -165,10 +163,11 @@ function browserTests({ css, geometry, source }) {
 }
 
 test('responsive panel and launcher geometry in Chromium', async (t) => {
-    const [css, geometry, source] = await Promise.all([
+    const [core, css, geometry, source] = await Promise.all([
+        readFile(new URL('../node_modules/@wordpress/components/build-style/style.css', import.meta.url), 'utf8'),
         readFile(new URL('../build/classic-editor.css', import.meta.url), 'utf8'),
         sourceForVm(new URL('../src/panel/geometry.js', import.meta.url)),
         sourceForVm(new URL('../src/panel/window.js', import.meta.url)),
     ]);
-    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify({ css, geometry, source })})`, count: 10 });
+    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify({ core, css, geometry, source })})`, count: 10 });
 });

@@ -1,5 +1,9 @@
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
+import webpack from 'webpack';
 import { runChromiumTests } from './helpers/chromium.mjs';
 
 // Exercise panel CSS and the native overlay layers; WordPress owns actual menu rendering and positioning.
@@ -132,4 +136,82 @@ function browserTests(css) {
 test('menu layering, PiP bounds, preview shortcut and geometry controls in Chromium', async (t) => {
     const css = await readFile(new URL('../build/classic-editor.css', import.meta.url), 'utf8');
     await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify(css)})`, count: 15 });
+});
+
+function nativeLauncherTests() {
+    const results = [];
+    const check = (condition, message) => { if (!condition) throw new Error(message); };
+    for (const direction of ['ltr', 'rtl']) {
+        const name = `native ${direction} launcher renders a Card and Button with an accessible description`;
+        const container = document.createElement('div');
+        container.dir = direction;
+        container.className = 'aflpp-launcher';
+        container.hidden = true;
+        container.style.cssText = 'left:20px;top:20px';
+        Object.assign(container.dataset, { title: 'Live preview', moveHelp: 'Drag or use arrow keys.', direction });
+        document.body.append(container);
+        try {
+            const button = window.previewControls.createPreviewLauncher(container);
+            check(button instanceof HTMLButtonElement && button.classList.contains('components-button'), 'Render the native Button component.');
+            check(container.hidden && !button.getClientRects().length && button.getAttribute('aria-expanded') === 'false', 'Hide the entire native surface until it is positioned.');
+            check(button.getAttribute('aria-controls') === 'aflpp-panel' && !button.hasAttribute('href'), 'Keep native button semantics.');
+            check(button.getAttribute('aria-label') === 'Live preview', 'Keep the action label independent of status messages.');
+            const description = document.getElementById(button.getAttribute('aria-describedby'));
+            check(description?.textContent === container.dataset.moveHelp, 'Let Button provide its accessible description.');
+            const arrow = button.querySelector('.components-external-link__icon');
+            check(arrow.textContent === (direction === 'rtl' ? '↖' : '↗') && arrow.getAttribute('aria-hidden') === 'true', 'Keep the trailing arrow decorative and directional.');
+            container.hidden = false;
+            const card = container.firstElementChild;
+            const reference = card.cloneNode(true);
+            reference.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
+            document.body.append(reference);
+            try {
+                const properties = ['backgroundColor', 'border', 'borderRadius', 'boxShadow', 'fontFamily', 'fontSize', 'fontWeight', 'padding', 'color'];
+                const appearance = (element) => properties.map((property) => getComputedStyle(element)[property]);
+                check(JSON.stringify(appearance(card)) === JSON.stringify(appearance(reference)), 'Do not override the native Card appearance.');
+                check(JSON.stringify(appearance(button)) === JSON.stringify(appearance(reference.querySelector('button'))), 'Do not override the native Button appearance.');
+                check(getComputedStyle(card).backgroundColor !== 'rgba(0, 0, 0, 0)', 'The native Card must provide an opaque floating surface.');
+                check([...card.querySelectorAll('div')].some((node) => getComputedStyle(node).boxShadow !== 'none'), 'Let Card supply its native elevation shadow.');
+            } finally { reference.remove(); }
+            button.focus();
+            check(document.activeElement === button, 'The native button must receive focus.');
+            let clicks = 0;
+            button.addEventListener('click', () => clicks++);
+            button.click();
+            check(clicks === 1, 'Existing shell handlers must receive the native button click once.');
+            container.style.maxWidth = '120px';
+            button.querySelector('.aflpp-launcher-label').textContent = 'A long translated live preview label '.repeat(8);
+            const box = container.getBoundingClientRect();
+            const icon = arrow.getBoundingClientRect();
+            check(box.width <= 120 && button.getBoundingClientRect().width <= box.width, 'Fit the entire Card and Button to the available width.');
+            check(icon.width > 0 && icon.left >= box.left && icon.right <= box.right && button.scrollWidth <= button.clientWidth, 'Keep the native trailing arrow visible while truncating only the label.');
+            results.push({ name });
+        } catch (error) { results.push({ name, error: error.stack }); }
+        finally { container.remove(); }
+    }
+    return results;
+}
+
+test('native WordPress launcher renders and handles focus and clicks in Chromium', async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), 'aflpp-native-launcher-'));
+    try {
+        // Bundle the same public packages for this isolated browser fixture, without requiring a WordPress server.
+        await new Promise((resolve, reject) => webpack({
+            mode: 'production', devtool: false,
+            entry: fileURLToPath(new URL('../src/panel/controls.js', import.meta.url)),
+            output: { path: directory, filename: 'controls.js', library: { name: 'previewControls', type: 'window' } },
+            optimization: { minimize: false }, performance: false,
+        }, (error, stats) => {
+            if (error) return reject(error);
+            if (stats.hasErrors()) return reject(new Error(stats.toString({ all: false, errors: true })));
+            resolve();
+        }));
+        const css = await readFile(new URL('../build/classic-editor.css', import.meta.url), 'utf8');
+        const core = await readFile(new URL('../node_modules/@wordpress/components/build-style/style.css', import.meta.url), 'utf8');
+        const bundle = pathToFileURL(join(directory, 'controls.js')).href;
+        await runChromiumTests(t, {
+            script: `(${nativeLauncherTests.toString()})()`, count: 2,
+            head: `<style>${core}\n${css}</style><script src="${bundle}"></script>`,
+        });
+    } finally { await rm(directory, { recursive: true, force: true }); }
 });
