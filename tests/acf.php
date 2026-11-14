@@ -40,6 +40,8 @@ try {
     wp_set_current_user($user);
     acf_add_local_field_group([
         'key' => 'group_aflpp_acf_test', 'title' => 'Temporary ACF preview test',
+        // Unsigned form inputs must belong to a matching field group in ACF 6.8.11+.
+        'location' => [[['param' => 'post_type', 'operator' => '==', 'value' => 'page']]],
         'fields' => [
             ['key' => 'field_aflpp_acf_test_text', 'name' => 'aflpp_acf_test_text', 'type' => 'text'],
             [

@@ -29,7 +29,7 @@ Requires WordPress 6.7+, PHP 8.3+, a saved post in a frontend-viewable post type
 
 The admin and frontend must share an origin and the browser must support ES modules. Live editing additionally requires working authenticated WordPress REST requests and Web Locks in a secure context. Composer and Node.js are not required to run the plugin.
 
-**Development status:** not a verified release. Local authenticated Gutenberg flows have been exercised with Flynt, WordPress 7.1.2 and ACF; this is not a full compatibility guarantee. The public panel API baseline is WordPress 6.7; a general browser, theme or ACF compatibility range has not been verified.
+**Development status:** not a verified release. An installed ZIP has passed core-only browser smoke tests on WordPress 6.7 and 7.1.4 with PHP 8.3 and the default Twenty Twenty-Five theme, covering both editors, featured images, native saves/autosaves and read-only revision previews. Stable-WordPress ACF PRO 6.8.11 checks also passed with its datastore disabled and enabled. Earlier Flynt/ACF checks used WordPress 7.1.2 and 7.2-beta5; administrator classic integration was rechecked with Ask the Origin 1.1.2. These focused checks do not establish a general browser, theme or ACF compatibility range; see README.md for the verified scope.
 
 == Installation ==
 
@@ -52,6 +52,8 @@ Title, content, excerpt, revision-enabled post metadata and stored ACF values co
 = Which fields update live? =
 
 Both editors preview title, content, excerpt and supported post-local ACF fields. The Block Editor supplies serialized blocks in visual or code mode and previews featured-image selection, replacement and removal. ACF meta boxes use native form values and the shared ACF save integration; ACF blocks retain their native content-save hooks, including post-meta storage. Arbitrary non-ACF metadata, taxonomies, template selections and unsaved separate entities are not live inputs. Native ACF/legacy meta-box saving remains intact; saved values become the new baseline. ACF support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages.
+
+Unsaved excerpts are captured, but renderers that reload the saved post by ID may still show the saved excerpt. Core's Post Excerpt block does this on WordPress 6.7 and 7.1.4 even in native Preview of a published post. The panel retains that native behavior rather than replacing the renderer; a native save or own-draft autosave can change the saved value.
 
 The plugin respects ACF's opt-in datastore when already enabled; it never enables it or edits Gutenberg's metadata to prepare a preview. After native meta-box saving, the panel waits for ACF to replace its paginated rows before resuming. If that reload fails, it retains the last preview and asks you to reload rather than resetting ACF's row markers. Live previews do not provide crash recovery: Gutenberg skips legacy meta boxes during native autosave, and ACF datastore recovery behavior remains ACF's responsibility.
 

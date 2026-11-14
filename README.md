@@ -3,9 +3,12 @@
 See your changes in a floating preview while you edit WordPress posts, pages and
 supported custom post types, or look through their saved versions.
 
-**Development status:** not a verified release. Local authenticated Gutenberg
-flows have been exercised with Flynt and ACF on WordPress 7.1.2 and 7.2-beta5.
-This is not a full browser, theme or plugin compatibility guarantee.
+**Development status:** not a verified release. An installed ZIP has passed
+core-only browser smoke tests on WordPress 6.7 and 7.1.4 with PHP 8.3 and the default
+Twenty Twenty-Five theme. Stable-WordPress ACF PRO 6.8.11 checks also passed with
+its datastore disabled and enabled. Earlier Flynt/ACF checks used WordPress 7.1.2
+and 7.2-beta5; administrator classic integration was rechecked with Ask the Origin
+1.1.2. These are focused checks, not a full compatibility guarantee.
 
 ## Requirements
 
@@ -111,6 +114,7 @@ on completion and expires after one minute.
 
 - **Block Editor ACF fields:** native form serialization preserves ACF's field keys, empty values, signed field lists and paginated row changes. The optional ACF PRO datastore is respected when already enabled; the plugin never enables it or changes Gutenberg's edited metadata to prepare a preview. After a native meta-box save, previewing pauses with its last frame until ACF replaces its paginated rows. If ACF's reload fails, the panel remains paused and asks you to reload; it never resets row markers or guesses that a delay was sufficient. Live preview storage is not recovery storage: legacy meta boxes are not sent by Gutenberg's native autosave, and ACF datastore recovery behavior remains ACF's responsibility.
 - **Classic live ACF fields:** support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages. If native Preview saves draft repeater additions, deletions or reordering, the panel retains its last frame but requires an editor reload: ACF's remaining row changes still refer to the old saved order. Copy any later edits before reloading, and reload before saving again.
+- **Excerpt rendering:** unsaved excerpts are captured in the preview source, but a renderer that reloads the saved post by ID may still show its saved excerpt. On WordPress 6.7 and 7.1.4, core's Post Excerpt block does this even in native Preview of a published post. The panel retains that native behavior rather than replacing the block renderer; a native save or own-draft autosave can change the saved value.
 - **Frontend output:** your theme and plugins determine the result, including redirects and browser-native output such as PDFs. Scroll restoration and change-following only apply to recognized HTML previews. Changes made only through stylesheets or frontend state may be missed; dynamic output at load can introduce unrelated differences. PDF page, zoom and scroll state may reset on refresh.
 - **Isolated editors:** authorized HTML previews opt into an isolated Block Editor's `Document-Isolation-Policy` when the frontend is not already isolated, preserving document access for scrolling without disabling core's client-side media processing. Existing frontend isolation policies are retained. Cross-origin subresources follow the resulting policy. Non-isolated screens do not request it.
 - **Trusted code only:** the preview is not sandboxed. Same-origin frontend scripts can access the editor. Use trusted theme and plugin code.
@@ -200,6 +204,53 @@ repeater support is absent:
 ```sh
 wp eval-file /path/to/a-floating-live-preview-panel/tests/acf.php
 ```
+
+### Installed-ZIP verification
+
+The built distribution, not a checkout or symlink, was installed on disposable
+single-site WordPress 6.7 and 7.1.4 installations with PHP 8.3.36, Chromium and each
+version's bundled Twenty Twenty-Five theme. ACF, Timber and Flynt were absent. A QA
+helper selected the classic editor through core's native filter and exposed
+read-only saved-parent/recovery hashes; no Classic Editor plugin was required.
+
+Both installations passed authenticated checks for:
+
+- Gutenberg title/content rendering and excerpt capture, with native save/reopen.
+- Native featured-image picker selection and edited-attribute replacement/removal,
+  isolated from saved metadata until Save.
+- Gutenberg and administrator classic native autosaves, including own-draft parent
+  updates, published-post recovery preservation and the genuine recovery notice.
+- Continued live editing after native saves/autosaves, with saved-parent and recovery
+  hashes distinguishing native writes from panel writes.
+- Historical/current revision selection with zero live-preview POST writes and the
+  packaged revision-browser entry loaded.
+
+The 364-test JavaScript suite and five core PHP fixtures passed against both core
+versions; the optional ACF fixture skipped as expected. Core checksums passed, and
+browser runs recorded no PHP errors. A separate native-preview comparison confirmed
+the Post Excerpt block limitation above on both versions.
+
+The same ZIP also passed the Gutenberg and classic browser suites on WordPress
+7.1.4 with ACF PRO 6.8.11, using separate fixtures with the datastore disabled and
+enabled. These checks covered native field capture, datastore API edits without
+changing Gutenberg transport metadata, paginated row edits/additions, real native
+autosaves, save/reopen, featured images, and delayed/failed native row reloads.
+The datastore-only API case skipped when disabled. All six PHP fixtures passed
+with ACF active, including native post-meta block saving/rendering and source
+isolation. The ACF fixture now gives unsigned inputs a matching Page field-group
+location, as ACF 6.8.11 requires; that fixture also passed with ACF 6.8.10.
+
+The remaining administrator classic integration check passed on the existing
+Flynt / WordPress 7.2-beta5 / ACF PRO 6.8.10 site with Ask the Origin 1.1.2 and this
+plugin active together. A fresh administrator's real heartbeat sent the post form's
+nonce, with one core `_wpnonce` and a separate toolbar `ask_the_origin_nonce`.
+Native draft autosave, save/reopen, continued ACF editing and published-post recovery
+preservation/notices passed. Ask the Origin's saved settings stayed unchanged.
+
+These results do not establish a general theme/browser/ACF range or verify other
+PHP versions, multisite editor workflows or production deployment. Disposable browser
+servers used PHP 8.3.36; the PHP integration fixtures used WP-CLI's PHP 8.3.33. Older
+Flynt/ACF browser evidence remains separate and configuration-specific.
 
 ### GitHub Actions and releases
 
