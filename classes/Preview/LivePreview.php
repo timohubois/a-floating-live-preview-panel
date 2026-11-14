@@ -228,7 +228,7 @@ final class LivePreview
         if (!wp_verify_nonce((string) $request->get_header('X-WP-Nonce'), 'wp_rest')) {
             return new WP_Error(
                 'aflpp_invalid_nonce',
-                __('The preview request expired. Reload the editor.', 'a-floating-live-preview-panel'),
+                __('This preview has expired.', 'a-floating-live-preview-panel'),
                 ['status' => 403]
             );
         }
@@ -246,7 +246,7 @@ final class LivePreview
             return new WP_Error(
                 'aflpp_preview_conflict',
                 __(
-                    'The post changed, is locked, or cannot use revisions. Reload the editor.',
+                    'This post has changed, someone else is editing it, or WordPress can’t save versions of it.',
                     'a-floating-live-preview-panel'
                 ),
                 ['status' => 409]
@@ -303,7 +303,7 @@ final class LivePreview
         if (!$revisionId || !$this->ownsRevision($postId, $revisionId)) {
             return new WP_Error(
                 'aflpp_revision_unavailable',
-                __('The preview revision is unavailable.', 'a-floating-live-preview-panel'),
+                __('We couldn’t prepare the preview.', 'a-floating-live-preview-panel'),
                 ['status' => 409]
             );
         }
@@ -311,7 +311,7 @@ final class LivePreview
         if (!hash_equals($base, $this->fingerprint($postId))) {
             return new WP_Error(
                 'aflpp_source_changed',
-                __('The saved post changed during preview. Reload the editor.', 'a-floating-live-preview-panel'),
+                __('The saved post changed while the preview was loading.', 'a-floating-live-preview-panel'),
                 ['status' => 409]
             );
         }

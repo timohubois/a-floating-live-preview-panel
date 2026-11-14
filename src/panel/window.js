@@ -14,9 +14,10 @@ export function createPreviewPanel(strings, {
     const preferences = select(preferencesStore);
     const preferenceActions = dispatch(preferencesStore);
     preferenceActions.setDefaults(scope, {
-        rememberVisibility: true, panelOpen: true, scrollToChanges: true, viewport: 'desktop',
+        rememberVisibility: true, rememberPosition: true, panelOpen: true, scrollToChanges: true, viewport: 'desktop',
     });
     let rememberVisibility = preferences.get(scope, 'rememberVisibility') !== false;
+    let rememberPosition = preferences.get(scope, 'rememberPosition') !== false;
     let followChanges = preferences.get(scope, 'scrollToChanges') !== false;
     const showOnLoad = !rememberVisibility || preferences.get(scope, 'panelOpen') !== false;
     const launcherContainer = mainDocument.getElementById('aflpp-toggle');
@@ -60,7 +61,11 @@ export function createPreviewPanel(strings, {
 
     let visible = showOnLoad;
     let pipWindow;
-    const geometry = createPanelGeometry(preferences.get(scope, 'layout'), area);
+    const savedLayout = preferences.get(scope, 'layout');
+    // Older layouts retain their last preset in the dock or, after dragging, the shared anchor.
+    const savedPosition = preferences.get(scope, 'position') ?? savedLayout?.dock ?? savedLayout?.anchor;
+    let position = ['left', 'center', 'right'].includes(savedPosition) ? savedPosition : 'right';
+    const geometry = createPanelGeometry(rememberPosition ? savedLayout : undefined, area, position);
     const { compactRect, usableEdge } = geometry;
     let controls;
     let takeOverAction = false;
@@ -198,7 +203,19 @@ export function createPreviewPanel(strings, {
     }
 
     function rememberLayout() {
-        preferenceActions.set(scope, 'layout', geometry.layout);
+        if (rememberPosition) preferenceActions.set(scope, 'layout', geometry.layout);
+    }
+
+    function toggleRememberPosition() {
+        rememberPosition = !rememberPosition;
+        preferenceActions.set(scope, 'rememberPosition', rememberPosition);
+        if (rememberPosition) rememberLayout();
+        else {
+            // Keep the chosen preset, including one inherited from an older layout, but discard custom geometry.
+            preferenceActions.set(scope, 'position', position);
+            preferenceActions.set(scope, 'layout', undefined);
+        }
+        syncControls();
     }
 
     function launcherRect() {
@@ -235,6 +252,8 @@ export function createPreviewPanel(strings, {
 
     function dockWindow(side = 'right', resetSize = false) {
         geometry.dockTo(side, resetSize);
+        position = side;
+        preferenceActions.set(scope, 'position', position);
         draw();
         rememberLayout();
         syncControls();
@@ -260,7 +279,7 @@ export function createPreviewPanel(strings, {
         for (const edge of resizeEdges) edge.hidden = !movable || !usableEdge(edge.dataset.resizeEdge);
         const retry = takeOverAction || (current.canRetry && ['error', 'conflict'].includes(current.state));
         controls.update({
-            inPage, inPip: !!pipWindow, movable, dock: geometry.dock, rememberVisibility, followChanges, device: responsiveViewport.device,
+            inPage, inPip: !!pipWindow, movable, dock: geometry.dock, rememberVisibility, rememberPosition, followChanges, device: responsiveViewport.device,
             busy: current.hasPreview && ['stale', 'loading', 'handover'].includes(current.state) && current.text !== strings.saving,
             empty: current.hasPreview ? null : {
                 ...presentation(), busy: ['loading', 'stale', 'ready', 'handover'].includes(current.state),
@@ -517,7 +536,7 @@ export function createPreviewPanel(strings, {
         },
         mode: toggleMode, close: closePanel, popOut, fullscreen: enterFullscreen,
         dock: (side) => dockWindow(side), size: sizeWindow, reset: () => dockWindow('right', true),
-        follow: toggleFollow, rememberVisibility: toggleRememberVisibility,
+        follow: toggleFollow, rememberVisibility: toggleRememberVisibility, rememberPosition: toggleRememberPosition,
         device(name) {
             if (responsiveViewport.device !== name) preferenceActions.set(scope, 'viewport', name);
             responsiveViewport.select(name, visible);

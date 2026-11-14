@@ -40,7 +40,7 @@ final class Acf
         ) {
             return new WP_Error(
                 'aflpp_acf_unavailable',
-                __('ACF preview support is unavailable or expired.', 'a-floating-live-preview-panel'),
+                __('The preview can’t read your custom fields.', 'a-floating-live-preview-panel'),
                 ['status' => 400]
             );
         }
@@ -85,7 +85,7 @@ final class Acf
         if (!$revisionId || $this->savedId !== $revisionId) {
             return new WP_Error(
                 'aflpp_acf_not_saved',
-                __('ACF values were not saved to the preview revision.', 'a-floating-live-preview-panel'),
+                __('We couldn’t add your field changes to the preview.', 'a-floating-live-preview-panel'),
                 ['status' => 409]
             );
         }

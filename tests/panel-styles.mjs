@@ -1,14 +1,15 @@
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { runChromiumTests } from './helpers/chromium.mjs';
+import { panelStrings } from './helpers/panel-strings.mjs';
 
-function browserTests({ core, panel }) {
+function browserTests({ core, panel, strings }) {
     const style = document.createElement('style');
     style.textContent = `${core}\n${panel}`;
     document.head.append(style);
     const shell = document.createElement('section');
     shell.className = 'aflpp-panel';
-    shell.innerHTML = '<button class="components-button has-icon aflpp-icon" type="button">Refresh</button>';
+    shell.innerHTML = `<button class="components-button has-icon aflpp-icon" type="button">${strings.refresh}</button>`;
     const reference = document.createElement('button');
     reference.type = 'button';
     reference.className = 'components-button has-icon';
@@ -41,10 +42,10 @@ function browserTests({ core, panel }) {
     const name = 'shared recovery text balances without changing captions or preview content';
     try {
         shell.innerHTML = `<span class="aflpp-caption">Preview title</span>
-            <div class="aflpp-placeholder"><h2 class="aflpp-empty-title">Preview couldn’t load</h2>
-                <div class="components-placeholder__instructions">Review your edits, then reload the editor.</div>
-                <p class="aflpp-empty-note">Each tab keeps its own edits.</p></div>
-            <div class="aflpp-feedback"><div class="components-notice__content"><p>Preview refresh failed.</p></div></div>
+            <div class="aflpp-placeholder"><h2 class="aflpp-empty-title">${strings.failed}</h2>
+                <div class="components-placeholder__instructions">${strings.reviewBeforeReload}</div>
+                <p class="aflpp-empty-note">${strings.tabEdits}</p></div>
+            <div class="aflpp-feedback"><div class="components-notice__content"><p>${strings.refreshFailed}</p></div></div>
             <div class="aflpp-viewport"><p>Preview content is not panel status text.</p></div>`;
         for (const selector of ['.aflpp-empty-title', '.components-placeholder__instructions', '.aflpp-empty-note', '.components-notice__content p']) {
             if (getComputedStyle(shell.querySelector(selector)).textWrap !== 'balance') {
@@ -68,5 +69,5 @@ test('panel styles preserve native component states and balance only shared mess
         readFile(new URL('../node_modules/@wordpress/components/build-style/style.css', import.meta.url), 'utf8'),
         readFile(new URL('../build/classic-editor.css', import.meta.url), 'utf8'),
     ]);
-    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify({ core, panel })})`, count: 6 });
+    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify({ core, panel, strings: panelStrings })})`, count: 6 });
 });

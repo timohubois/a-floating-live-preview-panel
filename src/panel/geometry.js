@@ -1,5 +1,5 @@
 // Preferred window geometry only. Viewport fitting is temporary and never rewrites saved dimensions.
-export function createPanelGeometry(saved, area) {
+export function createPanelGeometry(saved, area, position = 'right') {
     const validLayout = saved && !Array.isArray(saved) && saved.bounds
         && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(saved.bounds[key]))
         && saved.bounds.width > 0 && saved.bounds.height > 0
@@ -8,7 +8,7 @@ export function createPanelGeometry(saved, area) {
     let expanded = validLayout ? saved.expanded : false;
     const sizes = { small: { width: 480, height: 340 }, large: { width: 640, height: 440 } };
     const bounds = validLayout ? { ...saved.bounds } : { x: 0, y: 0, ...sizes.small };
-    let dock = validLayout ? saved.dock : 'right';
+    let dock = validLayout ? saved.dock : position;
     // Keep the same collapse/resize corner when dragging away from a dock. Older layouts default to the right.
     let anchor = dock || (validLayout && saved.anchor) || 'right';
     const anchorFactor = () => anchor === 'left' ? 0 : anchor === 'center' ? 0.5 : 1;

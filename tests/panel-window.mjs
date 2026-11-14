@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { getEventListeners, setMaxListeners } from 'node:events';
+import { readFile } from 'node:fs/promises';
 import { sourceForVm } from './helpers/modules.mjs';
 import { createPanelGeometry } from '../src/panel/geometry.js';
+import { panelStrings, revisionStrings, blockEditorStrings } from './helpers/panel-strings.mjs';
 import test from 'node:test';
 import vm from 'node:vm';
 
@@ -9,11 +11,14 @@ const source = await sourceForVm(new URL('../src/panel/window.js', import.meta.u
 
 // Exercise the view's lifecycle and launcher label without starting requests or changing native controls.
 function fixture(open = false, {
-    layout, width = 1440, height = 1000, direction = 'ltr', gutter = 20, scrollbar = 0, toolbarHeight = 32,
+    layout, position, rememberPosition, preferences: savedPreferences, labels = {},
+    width = 1440, height = 1000, direction = 'ltr', gutter = 20, scrollbar = 0, toolbarHeight = 32,
     nativeSaving = false, pip = false, pipApi, videoPip = false, stylesheets = [],
 } = {}) {
     const nodes = new Map();
-    const preferences = new Map([['panelOpen', open], ['layout', layout]]);
+    const preferences = new Map(savedPreferences ?? [
+        ['panelOpen', open], ['layout', layout], ['position', position], ['rememberPosition', rememberPosition],
+    ]);
     const writes = [];
     const target = (element) => Object.assign(new EventTarget(), element, {
         fire(type, properties = {}) {
@@ -97,7 +102,7 @@ function fixture(open = false, {
     setMaxListeners(0, window); // Browser windows have no Node listener warning limit.
     if (pip) window.documentPictureInPicture = { requestWindow: async (options) => { requests.push(options); return detached; } };
     if (pipApi !== undefined) window.documentPictureInPicture = pipApi;
-    const strings = new Proxy({ title: 'Live preview', preview: 'Preview', loading: 'Loading preview…' }, {
+    const strings = new Proxy({ title: 'Live preview', preview: 'Preview', loading: 'Loading preview…', ...labels }, {
         get: (target, key) => target[key] ?? String(key),
     });
     let actions;
@@ -252,7 +257,7 @@ test('a native Save during startup does not override remembered panel visibility
 
 test('closing a ready panel clears its frame without changing the launcher into a loading indicator', () => {
     const { view, launcher, launcherContainer, panel } = fixture(true);
-    view.report('Preview refreshed', 'ready', { hasPreview: true });
+    view.report(panelStrings.current, 'ready', { hasPreview: true });
     view.setVisible(false);
     view.clearPreview();
     assert.equal(panel.hidden, true);
@@ -265,8 +270,8 @@ test('pending, loading, ready and problem states keep refresh activity and acces
     const status = h.node('aflpp-panel [role="status"]');
     h.view.report('Loading preview…', 'loading', { hasPreview: false });
     assert.equal(status.textContent, 'Loading preview…');
-    h.view.report('Changes pending…', 'stale', { hasPreview: true });
-    assert.equal(status.textContent, 'Changes pending…');
+    h.view.report(panelStrings.stale, 'stale', { hasPreview: true });
+    assert.equal(status.textContent, 'Waiting to update preview…');
     assert.equal(h.state.busy, true, 'Show activity while changes wait for the debounced refresh.');
     assert.equal(h.state.canRefresh, false);
     assert.equal(h.state.empty, null, 'Keep the previous frame visible.');
@@ -274,8 +279,8 @@ test('pending, loading, ready and problem states keep refresh activity and acces
     h.view.report('Updating preview…', 'loading', { hasPreview: true });
     assert.equal(status.textContent, 'Updating preview…');
     assert.equal(h.state.busy, true);
-    h.view.report('Preview refreshed', 'ready', { hasPreview: true, canRefresh: true });
-    assert.equal(status.textContent, 'Preview refreshed');
+    h.view.report(panelStrings.current, 'ready', { hasPreview: true, canRefresh: true });
+    assert.equal(status.textContent, 'Preview updated');
     assert.equal(h.state.busy, false);
     h.view.report('Could not refresh', 'error', { hasPreview: true, canRetry: true });
     assert.match(status.textContent, /Could not refresh/);
@@ -308,6 +313,161 @@ test('compact geometry is restored without writing preferences on load', () => {
     assert.equal(h.writes.length, 0);
 });
 
+test('remembering size and position defaults to on with a small compact bottom-right panel', () => {
+    const h = fixture(true);
+    assert.equal(h.state.rememberPosition, true);
+    assert.equal(h.state.size, 'small');
+    assert.equal(h.state.dock, 'right');
+    assert.equal(h.state.mode, 'expand');
+    assert.equal(h.writes.length, 0);
+});
+
+for (const position of ['left', 'center', 'right']) {
+    test(`${position} preset persists while remembering is off, without persisting manual layout changes`, () => {
+        const h = fixture(true, { rememberPosition: false });
+        h.actions.dock(position);
+        assert.equal(h.preferences.get('position'), position);
+        h.actions.size('large');
+        h.node('aflpp-panel .aflpp-resize').fire('keydown', { key: 'ArrowUp' });
+        const move = h.node('aflpp-panel .aflpp-move-control');
+        move.fire('keydown', { key: position === 'left' ? 'ArrowRight' : 'ArrowLeft' });
+        move.fire('pointerdown');
+        move.fire('pointermove', { clientY: 80 });
+        move.fire('pointerup');
+        assert.equal(h.state.dock, null);
+        assert.equal(h.preferences.get('position'), position, 'Dragging must not erase the preferred preset.');
+        h.actions.mode();
+        const current = h.rect();
+        h.actions.close();
+        h.launcher.fire('click', { detail: 0 });
+        assert.deepEqual(h.rect(), current, 'Closing and reopening without navigation keeps the current layout.');
+        assert.equal(h.state.mode, 'compact');
+        assert.equal(h.writes.some(({ key }) => key === 'layout'), false);
+
+        const reopened = fixture(true, { preferences: h.preferences, width: 1000, height: 800 });
+        assert.equal(reopened.state.rememberPosition, false);
+        assert.equal(reopened.state.dock, position);
+        assert.equal(reopened.state.mode, 'expand');
+        assert.equal(reopened.state.size, 'small');
+        assert.deepEqual(reopened.rect(), {
+            left: position === 'left' ? 20 : position === 'center' ? 260 : 500,
+            top: 440, width: 480, height: 340,
+        });
+        assert.equal(reopened.writes.length, 0);
+    });
+
+    for (const custom of [false, true]) {
+        test(`${position} preset is inherited from an older ${custom ? 'dragged' : 'docked'} layout when remembering is disabled`, () => {
+            const h = fixture(true, { layout: layout({ dock: custom ? null : position, anchor: position, expanded: true }) });
+            const before = h.rect();
+            h.actions.rememberPosition();
+            assert.deepEqual(h.rect(), before, 'Disabling must not move, resize or collapse the current panel.');
+            assert.equal(h.state.mode, 'compact');
+            assert.equal(h.state.rememberPosition, false);
+            assert.equal(h.preferences.get('layout'), undefined);
+            assert.equal(h.preferences.get('position'), position);
+            const reopened = fixture(true, { preferences: h.preferences });
+            assert.equal(reopened.state.dock, position);
+            assert.equal(reopened.state.size, 'small');
+            assert.equal(reopened.state.mode, 'expand');
+        });
+    }
+}
+
+test('re-enabling remembers the current layout rather than restoring an older one', () => {
+    const h = fixture(true, { rememberPosition: false, position: 'left', layout: layout({ expanded: true }) });
+    assert.equal(h.state.dock, 'left', 'Disabled remembering ignores stale saved geometry.');
+    assert.equal(h.state.size, 'small');
+    assert.equal(h.state.mode, 'expand');
+    h.actions.size('large');
+    h.node('aflpp-panel .aflpp-move-control').fire('keydown', { key: 'ArrowRight', shiftKey: true });
+    const compact = h.rect();
+    h.actions.mode();
+    const expanded = h.rect();
+    h.actions.rememberPosition();
+    assert.deepEqual(h.rect(), expanded, 'Re-enabling must not change the current presentation.');
+    assert.equal(h.state.rememberPosition, true);
+    assert.equal(h.preferences.get('layout').dock, null);
+    assert.equal(h.preferences.get('layout').anchor, 'left');
+    assert.equal(h.preferences.get('layout').expanded, true);
+    const reopened = fixture(true, { preferences: h.preferences });
+    assert.equal(reopened.state.mode, 'compact');
+    reopened.actions.mode();
+    assert.deepEqual(reopened.rect(), compact);
+});
+
+test('toggling layout remembering preserves preferred bounds during temporary viewport fitting and other preferences', () => {
+    const saved = layout();
+    const preferences = new Map([
+        ['panelOpen', true], ['rememberVisibility', false], ['viewport', 'mobile'], ['scrollToChanges', false], ['layout', saved],
+    ]);
+    const h = fixture(true, { preferences, width: 390, height: 400 });
+    const fitted = h.rect();
+    h.actions.rememberPosition();
+    h.actions.rememberPosition();
+    assert.deepEqual(h.rect(), fitted);
+    assert.deepEqual(plain(h.preferences.get('layout').bounds), saved.bounds, 'Save preferred bounds, not the smaller fitted rectangle.');
+    for (const key of ['panelOpen', 'rememberVisibility', 'viewport', 'scrollToChanges']) {
+        assert.equal(h.preferences.get(key), preferences.get(key));
+        assert.equal(h.writes.some((write) => write.key === key), false);
+    }
+    h.window.innerWidth = 1440;
+    h.window.innerHeight = 1000;
+    h.window.fire('resize');
+    assert.deepEqual(h.rect(), { left: 150, top: 180, width: 560, height: 420 });
+});
+
+test('moving the closed launcher with remembering off keeps its preset for the next load', () => {
+    const h = fixture(true, { rememberPosition: false });
+    h.actions.dock('center');
+    h.actions.close();
+    h.launcher.fire('pointerdown');
+    h.launcher.fire('pointermove', { clientX: 60, clientY: 80 });
+    h.launcher.fire('pointerup');
+    assert.equal(h.state.dock, null);
+    const moved = h.rect();
+    h.launcher.fire('click', { detail: 0 });
+    assert.deepEqual(h.rect(), moved);
+    assert.equal(h.preferences.get('layout'), undefined);
+    const reopened = fixture(true, { preferences: h.preferences });
+    assert.equal(reopened.state.dock, 'center');
+    assert.equal(reopened.rect().left, 480);
+});
+
+for (const rememberPosition of [false, true]) {
+    test(`reset saves the default preset without ${rememberPosition ? 'disabling' : 'enabling'} layout remembering`, () => {
+        const h = fixture(true, { rememberPosition });
+        h.actions.dock('left');
+        h.actions.size('large');
+        h.actions.mode();
+        h.actions.reset();
+        assert.deepEqual(h.rect(), { left: 940, top: 640, width: 480, height: 340 });
+        assert.equal(h.state.rememberPosition, rememberPosition);
+        assert.equal(h.preferences.get('position'), 'right');
+        assert.equal(!!h.preferences.get('layout'), rememberPosition);
+        const reopened = fixture(true, { preferences: h.preferences });
+        assert.deepEqual(reopened.rect(), h.rect());
+        assert.equal(reopened.state.rememberPosition, rememberPosition);
+    });
+}
+
+for (const position of ['invalid', false, [], {}]) {
+    test(`invalid position preference falls back safely: ${JSON.stringify(position)}`, () => {
+        const h = fixture(true, { rememberPosition: false, position });
+        assert.equal(h.state.dock, 'right');
+        assert.equal(h.state.size, 'small');
+        assert.equal(h.writes.length, 0);
+    });
+}
+
+test('an invalid saved layout falls back to the preferred static position', () => {
+    const h = fixture(true, { position: 'left', layout: layout({ expanded: 'invalid' }) });
+    assert.equal(h.state.dock, 'left');
+    assert.equal(h.state.size, 'small');
+    assert.equal(h.state.mode, 'expand');
+    assert.equal(h.writes.length, 0);
+});
+
 test('expanded mode survives reload and returns to the saved compact geometry', () => {
     const h = fixture(true, { layout: layout({ expanded: true }) });
     assert.equal(h.state.mode, 'compact');
@@ -337,6 +497,10 @@ for (const dock of ['left', 'center', 'right']) {
         assert.equal(h.rect().left, dock === 'left' ? 20 : dock === 'center' ? 260 : 500);
         assert.equal(h.rect().top, 440);
         inside(h);
+        const reopened = fixture(true, { preferences: h.preferences, width: 1000, height: 800 });
+        assert.equal(reopened.state.dock, dock);
+        assert.deepEqual(reopened.rect(), h.rect(), 'Restore responsive docking, not coordinates from the previous window.');
+        assert.equal(reopened.writes.length, 0);
     });
 }
 
@@ -463,6 +627,60 @@ for (const hasPreview of [false, true]) {
         assert.equal(h.state.canRefresh, true);
     });
 }
+
+// Exercise complete messages, not just individual strings: server errors must not repeat the reload warning.
+const reloadDetails = [panelStrings.nativePreviewAcf, panelStrings.nativePreviewFailed, blockEditorStrings.nativeSaveFailed];
+for (const path of ['classes/Preview/LivePreview.php', 'classes/Compatibility/Acf.php']) {
+    const php = await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+    for (const [, code, message] of php.matchAll(/new WP_Error\(\s*'(aflpp_[^']+)',\s*__\(\s*'([^']+)'/g)) {
+        if (['aflpp_invalid_nonce', 'aflpp_preview_conflict', 'aflpp_source_changed', 'aflpp_acf_unavailable'].includes(code)) {
+            reloadDetails.push(message);
+        }
+    }
+}
+assert.equal(reloadDetails.length, 7, 'Cover every plugin-owned error that requires reloading.');
+for (const hasPreview of [false, true]) {
+    test(`reload errors explain how to keep changes once with ${hasPreview ? 'a retained preview' : 'no preview'}`, () => {
+        const h = fixture(true, { labels: panelStrings });
+        for (const message of reloadDetails) {
+            assert.equal(typeof message, 'string');
+            h.view.report(message, 'error', { hasPreview, reason: 'reload', canRetry: false });
+            const content = hasPreview ? h.state.notice : h.state.empty;
+            const text = `${content.heading} ${content.description}`;
+            assert.ok(text.includes(message));
+            assert.equal((text.match(/Copy any changes you want to keep/g) || []).length, 1);
+            assert.equal((text.match(/reload the editor/gi) || []).length, 1);
+            assert.match(text, /Copy any changes you want to keep\. Then reload the editor before saving again\./);
+            assert.equal(content.retry, false);
+            assert.equal(content.close, !hasPreview, 'Keep the existing close action for errors without a preview.');
+        }
+    });
+}
+
+test('uncertain saves do not claim failure or success, and ACF recovery identifies what WordPress already saved', () => {
+    assert.equal(blockEditorStrings.nativeSaveFailed, 'We couldn’t check whether WordPress saved your latest changes.');
+    assert.equal(panelStrings.nativePreviewAcf, 'WordPress Preview saved changes in your repeating fields to the post.');
+    assert.doesNotMatch(panelStrings.nativePreviewAcf, /all changes|all edits|reload/i);
+});
+
+test('revision help explains read-only previews without live-editor browser requirements', () => {
+    const h = fixture(true, { labels: revisionStrings });
+    assert.equal(h.state.empty.description, 'Showing this saved version won’t change your post.');
+    h.view.report(revisionStrings.browser, 'error', { reason: 'browser', canRetry: false });
+    assert.equal(h.state.empty.description, 'Ask your site admin to make WordPress and the preview use the same website address.');
+    assert.doesNotMatch(h.state.empty.description, /Web Locks|secure|same-origin/i);
+    h.view.report(revisionStrings.unavailable, 'error', { reason: 'unavailable', canRetry: false });
+    assert.match(h.state.empty.description, /Choose another version, or reload this page/);
+});
+
+test('update failures explain a retained preview without claiming the post was saved', () => {
+    const h = fixture(true, { labels: panelStrings });
+    h.view.report(panelStrings.failed, 'error', { hasPreview: true });
+    assert.equal(h.state.notice.heading, 'Couldn’t update preview');
+    assert.equal(h.state.notice.description, 'Showing the last preview.');
+    assert.equal(h.state.notice.retry, true);
+    assert.equal(h.state.notice.action, 'Try again');
+});
 
 test('ordinary updates and native saving never replace a retained frame with a placeholder or success notice', () => {
     const h = fixture(true);

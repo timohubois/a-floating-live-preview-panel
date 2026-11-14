@@ -39,7 +39,7 @@ final class BlockEditor
         $config['postRoute'] = rest_get_route_for_post($post);
         $config['restRoot'] = rest_url();
         $config['strings']['nativeSaveFailed'] = __(
-            'Could not confirm the saved state.',
+            'We couldn’t check whether WordPress saved your latest changes.',
             'a-floating-live-preview-panel'
         );
         $config['strings']['postOnly'] = __(

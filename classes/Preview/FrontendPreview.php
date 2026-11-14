@@ -89,7 +89,7 @@ final class FrontendPreview
         if (!$authorized) {
             wp_die(
                 esc_html__(
-                    'This preview expired or is unavailable. Reload the editor or revision browser.',
+                    'This preview has expired or can’t be opened. Open a new preview from the editor or Revisions page.',
                     'a-floating-live-preview-panel'
                 ),
                 '',

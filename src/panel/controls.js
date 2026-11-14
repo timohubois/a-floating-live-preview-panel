@@ -38,7 +38,7 @@ export function createPreviewControls(panel, strings, callbacks) {
     function Controls() {
         const {
             inPage, inPip, mode, modeLabel, movable, busy, canRefresh, hasPreview, previewUrl,
-            canPip, canFullscreen, dock, size, rememberVisibility, followChanges, device, empty, notice,
+            canPip, canFullscreen, dock, size, rememberVisibility, rememberPosition, followChanges, device, empty, notice,
         } = state;
         const command = (action) => () => { closeMenu(); action(); };
         return h(SlotFillProvider, null,
@@ -53,8 +53,8 @@ export function createPreviewControls(panel, strings, callbacks) {
                 accessibleWhenDisabled: true, disabled: !canRefresh, onClick: callbacks.refresh, 'data-action': 'refresh',
             }), refreshContainer),
             createPortal(canPip && hasPreview && h(Button, {
-                className: 'aflpp-pip-button', icon: icons.pip, label: strings.popOut, 'aria-label': strings.popOut,
-                showTooltip: true, onClick: callbacks.popOut, 'data-action': 'pop-out',
+                className: 'aflpp-pip-button', icon: icons.pip, label: strings.popOutHelp, 'aria-label': strings.popOut,
+                description: strings.popOutHelp, showTooltip: true, onClick: callbacks.popOut, 'data-action': 'pop-out',
             }), pipContainer),
             h(DropdownMenu, {
                 className: 'aflpp-actions', label: strings.actions, icon: icons.more, open,
@@ -68,6 +68,7 @@ export function createPreviewControls(panel, strings, callbacks) {
                         onClick: closeMenu, 'data-action': 'open-preview',
                     }, strings.openPreview),
                     canPip && h(MenuItem, {
+                        label: strings.popOutHelp, description: strings.popOutHelp, showTooltip: true,
                         onClick: command(callbacks.popOut), 'data-action': 'pip', 'aria-label': strings.popOut,
                     }, strings.popOut),
                     canFullscreen && h(MenuItem, {
@@ -96,6 +97,10 @@ export function createPreviewControls(panel, strings, callbacks) {
                         role: 'menuitemcheckbox', isSelected: rememberVisibility, icon: rememberVisibility ? icons.check : undefined,
                         onClick: command(callbacks.rememberVisibility), 'data-action': 'remember-visibility',
                     }, strings.rememberVisibility),
+                    h(MenuItem, {
+                        role: 'menuitemcheckbox', isSelected: rememberPosition, icon: rememberPosition ? icons.check : undefined,
+                        onClick: command(callbacks.rememberPosition), 'data-action': 'remember-position',
+                    }, strings.rememberPosition),
                     h(MenuItem, {
                         role: 'menuitemcheckbox', isSelected: followChanges, icon: followChanges ? icons.check : undefined,
                         onClick: command(callbacks.follow), 'data-action': 'follow',

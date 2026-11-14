@@ -10,7 +10,7 @@ defined('ABSPATH') || exit;
     data-title="<?php echo esc_attr($title); ?>"
     data-direction="<?php echo is_rtl() ? 'rtl' : 'ltr'; ?>"
     data-move-help="<?php esc_attr_e(
-        'Drag or use arrow keys to move; Shift for larger steps.',
+        'Drag to move the preview, or use the arrow keys. Hold Shift to move farther.',
         'a-floating-live-preview-panel'
     ); ?>"></div>
 <section id="aflpp-panel" class="aflpp-panel" data-state="loading" data-has-preview="false" data-has-feedback="false"
@@ -33,7 +33,7 @@ defined('ABSPATH') || exit;
         <div class="aflpp-device-controls"></div>
         <span class="aflpp-dimensions"
             title="<?php esc_attr_e(
-                'Viewport width and scale; not device emulation.',
+                'Shows the page width and how small we make it to fit. This is not a full test of a phone or tablet.',
                 'a-floating-live-preview-panel'
             ); ?>">
         </span>
@@ -48,7 +48,7 @@ defined('ABSPATH') || exit;
             aria-describedby="aflpp-resize-help"></button>
         <span id="aflpp-resize-help" class="aflpp-resize-help" role="tooltip">
             <?php esc_html_e(
-                'Use arrow keys to resize; Shift for larger steps.',
+                'Use the arrow keys to change the preview’s size. Hold Shift for bigger steps.',
                 'a-floating-live-preview-panel'
             ); ?>
         </span>

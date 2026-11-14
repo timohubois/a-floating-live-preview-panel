@@ -58,16 +58,16 @@ final class Panel
             'adminCookiePath' => ADMIN_COOKIE_PATH,
             'available' => $preview->isAvailable($post),
             'strings' => [
-                'takeOver' => __('Preview here', 'a-floating-live-preview-panel'),
+                'takeOver' => __('Use preview here', 'a-floating-live-preview-panel'),
                 'takingOver' => __('Switching…', 'a-floating-live-preview-panel'),
                 'switchingPreview' => __('Switching preview…', 'a-floating-live-preview-panel'),
                 'waiting' => __(
-                    'Waiting for the other tab to finish its current update.',
+                    'Waiting for the other tab to finish updating.',
                     'a-floating-live-preview-panel'
                 ),
                 'handedOff' => __('Preview is paused here', 'a-floating-live-preview-panel'),
                 'handedOffHelp' => __(
-                    'Another tab now runs live updates. Starting here pauses that preview.',
+                    'The preview is updating in another tab. Starting it here pauses updates there.',
                     'a-floating-live-preview-panel'
                 ),
                 'takeoverTimeout' => __('The other preview is still busy', 'a-floating-live-preview-panel'),
@@ -77,45 +77,45 @@ final class Panel
                 ),
                 'tabEdits' => __('Each tab keeps its own edits.', 'a-floating-live-preview-panel'),
                 'bootFailed' => __(
-                    'Live preview could not start. Reload the editor or use WordPress Preview.',
+                    'Couldn’t start live preview. Use WordPress Preview, or copy any changes you want to keep and reload the editor.',
                     'a-floating-live-preview-panel'
                 ),
                 'reviewBeforeReload' => __(
-                    'Review your edits, then reload the editor.',
+                    'Copy any changes you want to keep. Then reload the editor before saving again.',
                     'a-floating-live-preview-panel'
                 ),
                 'conflict' => __('Preview is running in another tab', 'a-floating-live-preview-panel'),
                 'conflictHelp' => __(
-                    'Starting it here pauses live updates in the other tab.',
+                    'Starting the preview here pauses updates in the other tab.',
                     'a-floating-live-preview-panel'
                 ),
-                'closeOther' => __('Finish in the other tab first', 'a-floating-live-preview-panel'),
+                'closeOther' => __('Close the other preview first', 'a-floating-live-preview-panel'),
                 'closeOtherHelp' => __(
-                    'Close its live preview, then start one here.',
+                    'Close the preview in the other tab, then start it here.',
                     'a-floating-live-preview-panel'
                 ),
                 'manualSwitchHint' => __(
-                    'This browser can’t switch previews between tabs.',
+                    'This browser can’t switch the preview between tabs for you.',
                     'a-floating-live-preview-panel'
                 ),
                 'unavailableTitle' => __('Live preview isn’t available yet', 'a-floating-live-preview-panel'),
                 'unavailable' => __(
-                    'Save a draft first. If revisions are disabled, enable them for this post.',
+                    'Save a draft first. If the preview still won’t open, ask your site admin to check that revisions are turned on.',
                     'a-floating-live-preview-panel'
                 ),
-                'browserTitle' => __('Live preview isn’t supported here', 'a-floating-live-preview-panel'),
+                'browserTitle' => __('Live preview can’t run here', 'a-floating-live-preview-panel'),
                 'browser' => __(
-                    'Open a secure, same-origin site in a browser with Web Locks support.',
+                    'Try an up-to-date browser. If the preview still won’t open, ask your site admin to check that the editor and preview use the same secure website address.',
                     'a-floating-live-preview-panel'
                 ),
                 'saving' => __('Saving in WordPress…', 'a-floating-live-preview-panel'),
                 'nativePreview' => __('Preparing WordPress Preview…', 'a-floating-live-preview-panel'),
                 'nativePreviewAcf' => __(
-                    'WordPress Preview saved these repeater changes. Copy later edits and reload before saving again.',
+                    'WordPress Preview saved changes in your repeating fields to the post.',
                     'a-floating-live-preview-panel'
                 ),
                 'nativePreviewFailed' => __(
-                    'Could not confirm WordPress Preview. Check its tab before continuing.',
+                    'We couldn’t check whether WordPress finished preparing its preview. Check the preview tab before continuing.',
                     'a-floating-live-preview-panel'
                 ),
             ],
@@ -132,13 +132,14 @@ final class Panel
             'resize' => __('Resize preview', 'a-floating-live-preview-panel'),
             'retry' => __('Try again', 'a-floating-live-preview-panel'),
             'actions' => __('Preview actions', 'a-floating-live-preview-panel'),
-            'refresh' => __('Refresh preview', 'a-floating-live-preview-panel'),
+            'refresh' => __('Update preview', 'a-floating-live-preview-panel'),
             'close' => __('Close preview', 'a-floating-live-preview-panel'),
             'closeLivePreview' => __('Close live preview', 'a-floating-live-preview-panel'),
-            'display' => __('Display', 'a-floating-live-preview-panel'),
-            'openPreview' => __('Open preview in new tab', 'a-floating-live-preview-panel'),
-            'popOut' => __('Pop out preview (PiP)', 'a-floating-live-preview-panel'),
-            'fullscreen' => __('Enter fullscreen', 'a-floating-live-preview-panel'),
+            'display' => __('View', 'a-floating-live-preview-panel'),
+            'openPreview' => __('Open preview in a new tab', 'a-floating-live-preview-panel'),
+            'popOut' => __('Picture-in-picture', 'a-floating-live-preview-panel'),
+            'popOutHelp' => __('Open the preview in a window that stays on top.', 'a-floating-live-preview-panel'),
+            'fullscreen' => __('Fill the screen', 'a-floating-live-preview-panel'),
             'position' => __('Position', 'a-floating-live-preview-panel'),
             'bottomLeft' => __('Bottom left', 'a-floating-live-preview-panel'),
             'bottomCenter' => __('Bottom center', 'a-floating-live-preview-panel'),
@@ -146,30 +147,31 @@ final class Panel
             'size' => __('Size', 'a-floating-live-preview-panel'),
             'small' => __('Small', 'a-floating-live-preview-panel'),
             'large' => __('Large', 'a-floating-live-preview-panel'),
-            'preferences' => __('Preferences', 'a-floating-live-preview-panel'),
-            'rememberVisibility' => __('Remember preview visibility', 'a-floating-live-preview-panel'),
+            'preferences' => __('Settings', 'a-floating-live-preview-panel'),
+            'rememberVisibility' => __('Remember if the preview is open', 'a-floating-live-preview-panel'),
+            'rememberPosition' => __('Remember size and position', 'a-floating-live-preview-panel'),
             'follow' => __('Scroll to changes', 'a-floating-live-preview-panel'),
             'reset' => __('Reset size and position', 'a-floating-live-preview-panel'),
-            'viewport' => __('Preview viewport', 'a-floating-live-preview-panel'),
+            'viewport' => __('Preview width', 'a-floating-live-preview-panel'),
             'desktop' => __('Desktop', 'a-floating-live-preview-panel'),
             'tablet' => __('Tablet', 'a-floating-live-preview-panel'),
             'mobile' => __('Mobile', 'a-floating-live-preview-panel'),
-            'expand' => __('Expand preview', 'a-floating-live-preview-panel'),
-            'compact' => __('Make preview compact', 'a-floating-live-preview-panel'),
-            'exitFullscreen' => __('Exit fullscreen', 'a-floating-live-preview-panel'),
-            'pipFailed' => __('The preview couldn’t pop out.', 'a-floating-live-preview-panel'),
-            'fullscreenFailed' => __('Couldn’t change fullscreen mode.', 'a-floating-live-preview-panel'),
-            'windowNoticeHelp' => __('Continue in this panel.', 'a-floating-live-preview-panel'),
+            'expand' => __('Make preview bigger', 'a-floating-live-preview-panel'),
+            'compact' => __('Make preview smaller', 'a-floating-live-preview-panel'),
+            'exitFullscreen' => __('Leave full screen', 'a-floating-live-preview-panel'),
+            'pipFailed' => __('Couldn’t open the preview in its own window.', 'a-floating-live-preview-panel'),
+            'fullscreenFailed' => __('Couldn’t switch to or from full screen.', 'a-floating-live-preview-panel'),
+            'windowNoticeHelp' => __('You can still use the preview here.', 'a-floating-live-preview-panel'),
             'loading' => __('Loading preview…', 'a-floating-live-preview-panel'),
             'preparing' => __('Preparing your first preview.', 'a-floating-live-preview-panel'),
             'updating' => __('Updating preview…', 'a-floating-live-preview-panel'),
-            'current' => __('Preview refreshed', 'a-floating-live-preview-panel'),
+            'current' => __('Preview updated', 'a-floating-live-preview-panel'),
             'pausedTitle' => __('Live preview is paused', 'a-floating-live-preview-panel'),
-            'stale' => __('Changes pending…', 'a-floating-live-preview-panel'),
-            'failed' => __('Preview couldn’t load', 'a-floating-live-preview-panel'),
+            'stale' => __('Waiting to update preview…', 'a-floating-live-preview-panel'),
+            'failed' => __('Couldn’t load preview', 'a-floating-live-preview-panel'),
             'failedHelp' => __('Try loading the preview again.', 'a-floating-live-preview-panel'),
-            'refreshFailed' => __('Preview couldn’t refresh.', 'a-floating-live-preview-panel'),
-            'previousPreview' => __('Showing the previous preview.', 'a-floating-live-preview-panel'),
+            'refreshFailed' => __('Couldn’t update preview', 'a-floating-live-preview-panel'),
+            'previousPreview' => __('Showing the last preview.', 'a-floating-live-preview-panel'),
         ];
     }
 }

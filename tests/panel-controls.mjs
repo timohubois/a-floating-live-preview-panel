@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { icons } from '../src/panel/icons.js';
 import { moreVertical } from '@wordpress/icons';
 import { sourceForVm } from './helpers/modules.mjs';
+import { panelStrings } from './helpers/panel-strings.mjs';
 import test from 'node:test';
 import vm from 'node:vm';
 
@@ -24,9 +25,9 @@ function fixture() {
             return mount;
         },
     };
-    const callbacks = Object.fromEntries(['refresh', 'retry', 'dismissNotice', 'mode', 'close', 'popOut', 'fullscreen', 'dock', 'size', 'reset', 'follow', 'rememberVisibility', 'device']
+    const callbacks = Object.fromEntries(['refresh', 'retry', 'dismissNotice', 'mode', 'close', 'popOut', 'fullscreen', 'dock', 'size', 'reset', 'follow', 'rememberVisibility', 'rememberPosition', 'device']
         .map((name) => [name, (...args) => calls.push({ name, args })]));
-    const strings = new Proxy({ popOut: 'Pop out preview (PiP)' }, { get: (target, key) => target[key] ?? String(key) });
+    const strings = panelStrings;
     const querySelector = (selector) => selector === '.aflpp-controls' ? container : {
         selector, focus() { calls.push({ name: 'focus', args: [selector] }); },
     };
@@ -40,9 +41,9 @@ function fixture() {
     const createPreviewControls = vm.runInNewContext(`${source}\ncreatePreviewControls`, { imports });
     const controls = createPreviewControls(panel, strings, callbacks);
     const state = {
-        inPage: true, inPip: false, movable: true, mode: 'expand', modeLabel: 'Expand preview', canRefresh: true,
+        inPage: true, inPip: false, movable: true, mode: 'expand', modeLabel: strings.expand, canRefresh: true,
         hasPreview: true, previewUrl: '/preview',
-        canPip: true, canFullscreen: true, dock: 'center', size: 'small', rememberVisibility: true, followChanges: false, device: 'desktop',
+        canPip: true, canFullscreen: true, dock: 'center', size: 'small', rememberVisibility: true, rememberPosition: true, followChanges: false, device: 'desktop',
     };
     controls.update(state);
     function nodes(type) {
@@ -116,15 +117,16 @@ for (const direction of ['ltr', 'rtl']) {
     });
 }
 
-test('PiP uses a text-only menu label without an icon or a fake shortcut', async () => {
-    const panelSource = await readFile(new URL('../classes/Admin/Panel.php', import.meta.url), 'utf8');
-    assert.match(panelSource, /'popOut' => __\('Pop out preview \(PiP\)',/);
+test('picture-in-picture keeps the browser feature name with a plain native tooltip and no fake shortcut', () => {
     const h = fixture();
     const item = h.nodes('MenuItem').find(({ props }) => props['data-action'] === 'pip');
     assert.equal(item.props.icon, undefined);
     assert.equal(item.props.suffix, undefined);
-    assert.equal(item.props['aria-label'], 'Pop out preview (PiP)');
-    assert.equal(item.children[0], 'Pop out preview (PiP)');
+    assert.equal(item.props['aria-label'], 'Picture-in-picture');
+    assert.equal(item.children[0], 'Picture-in-picture');
+    assert.equal(item.props.label, 'Open the preview in a window that stays on top.');
+    assert.equal(item.props.description, item.props.label);
+    assert.equal(item.props.showTooltip, true);
     assert.equal(item.props.shortcut, undefined);
     assert.equal(item.props['aria-keyshortcuts'], undefined);
     item.props.onClick();
@@ -139,11 +141,30 @@ test('position choices and preferences use native radio and checkbox components'
     choices.props.onSelect('left');
     assert.deepEqual(h.calls.at(-1), { name: 'dock', args: ['left'] });
     const toggles = h.nodes('MenuItem').filter(({ props }) => props.role === 'menuitemcheckbox');
-    assert.equal(toggles.length, 2);
-    assert.equal(toggles[0].props.isSelected, true);
-    assert.equal(toggles[1].props.isSelected, false);
+    assert.equal(toggles.length, 3);
+    assert.deepEqual(toggles.map(({ props }) => [props['data-action'], props.isSelected]), [
+        ['remember-visibility', true], ['remember-position', true], ['follow', false],
+    ]);
     assert.equal(h.nodes('Popover.Slot').length, 1);
 });
+
+for (const inPage of [true, false]) {
+    test(`layout remembering uses the existing native checkbox pattern ${inPage ? 'in-page' : 'outside in-page mode'}`, async () => {
+        const labels = await readFile(new URL('../classes/Admin/Panel.php', import.meta.url), 'utf8');
+        assert.match(labels, /'rememberPosition' => __\('Remember size and position', 'a-floating-live-preview-panel'\)/);
+        const h = fixture();
+        const toggle = () => h.nodes('MenuItem').find(({ props }) => props['data-action'] === 'remember-position');
+        for (const rememberPosition of [true, false]) {
+            h.controls.update({ ...h.state, inPage, rememberPosition });
+            assert.equal(toggle().props.role, 'menuitemcheckbox');
+            assert.equal(toggle().props.isSelected, rememberPosition);
+            assert.equal(toggle().props.icon, rememberPosition ? h.icons.check : undefined);
+            assert.equal(toggle().children[0], 'Remember size and position');
+            toggle().props.onClick();
+            assert.deepEqual(h.calls.at(-1), { name: 'rememberPosition', args: [] });
+        }
+    });
+}
 
 test('in-page popovers escape the panel stacking context while fullscreen and PiP retain their slot', () => {
     const h = fixture();
@@ -171,7 +192,7 @@ test('size presets offer native single-choice controls without dragging and stay
 
 test('viewport choices use native Toolbar buttons and pressed-state behavior', () => {
     const h = fixture();
-    assert.equal(h.nodes('Toolbar')[0].props.label, 'viewport');
+    assert.equal(h.nodes('Toolbar')[0].props.label, 'Preview width');
     const buttons = h.nodes('ToolbarButton');
     assert.equal(buttons.length, 3);
     assert.deepEqual(buttons.map(({ props }) => props.isPressed), [true, false, false]);
@@ -192,7 +213,7 @@ for (const mode of ['in-page', 'fullscreen', 'PiP']) {
         assert.equal(h.calls.at(-1).name, 'refresh');
         h.controls.update({ ...state, busy: true, canRefresh: false });
         assert.equal(refresh().props.icon.type, 'Spinner');
-        assert.equal(refresh().props.label, 'refresh');
+        assert.equal(refresh().props.label, 'Update preview');
         assert.equal(refresh().props.disabled, true);
         assert.equal(refresh().props.accessibleWhenDisabled, true, 'Use native aria-disabled behavior without disabling DOM focus.');
         h.controls.focus('refresh');
@@ -271,9 +292,9 @@ test('expanded and fullscreen controls retain the official compact icon', () => 
     const h = fixture();
     const modeIcon = () => h.nodes('Button').find(({ props }) => props['data-action'] === 'mode').props.icon;
     assert.equal(modeIcon(), h.icons.expand);
-    h.controls.update({ ...h.state, mode: 'compact', modeLabel: 'Make preview compact' });
+    h.controls.update({ ...h.state, mode: 'compact', modeLabel: panelStrings.compact });
     assert.equal(modeIcon(), h.icons.compact);
-    h.controls.update({ ...h.state, inPage: false, mode: 'compact', modeLabel: 'Exit fullscreen' });
+    h.controls.update({ ...h.state, inPage: false, mode: 'compact', modeLabel: panelStrings.exitFullscreen });
     assert.equal(modeIcon(), h.icons.compact);
     assert.equal(modeIcon().props.style.fill, 'none');
 });
@@ -282,8 +303,9 @@ test('the preview shortcut is icon-only, labelled and available only for a visib
     const h = fixture();
     const shortcut = () => h.nodes('Button').find(({ props }) => props['data-action'] === 'pop-out');
     assert.equal(shortcut().props.icon, h.icons.pip);
-    assert.equal(shortcut().props.label, 'Pop out preview (PiP)');
-    assert.equal(shortcut().props['aria-label'], 'Pop out preview (PiP)');
+    assert.equal(shortcut().props.label, 'Open the preview in a window that stays on top.');
+    assert.equal(shortcut().props['aria-label'], 'Picture-in-picture');
+    assert.equal(shortcut().props.description, shortcut().props.label);
     assert.equal(shortcut().props.showTooltip, true);
     assert.equal(shortcut().children.length, 0, 'no visible PiP text');
     shortcut().props.onClick();
@@ -308,7 +330,7 @@ test('PiP keeps header refresh without duplicating browser window controls or th
     assert.deepEqual(h.nodes('Button').map(({ props }) => props['data-action']).filter(Boolean), ['refresh']);
     assert.equal(h.nodes('MenuItem').some(({ props }) => props['data-action'] === 'refresh'), false);
     const close = h.nodes('MenuItem').find(({ props }) => props['data-action'] === 'close');
-    assert.equal(close.children[0], 'closeLivePreview');
+    assert.equal(close.children[0], 'Close live preview');
     close.props.onClick();
     assert.equal(h.calls.at(-1).name, 'close');
     h.controls.focus('mode');

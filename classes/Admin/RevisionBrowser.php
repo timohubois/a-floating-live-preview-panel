@@ -54,20 +54,23 @@ final class RevisionBrowser
                 'preview' => __('Revision preview', 'a-floating-live-preview-panel'),
                 'closeLivePreview' => __('Close revision preview', 'a-floating-live-preview-panel'),
                 'preparing' => __(
-                    'Loading the selected revision without restoring it.',
+                    'Showing this saved version won’t change your post.',
                     'a-floating-live-preview-panel'
                 ),
                 'bootFailed' => __(
-                    'Revision preview could not start. WordPress comparison and restore are still available.',
+                    'Couldn’t start revision preview. You can still compare and restore saved versions in WordPress.',
                     'a-floating-live-preview-panel'
                 ),
-                'unavailableTitle' => __('Revision preview is unavailable', 'a-floating-live-preview-panel'),
+                'unavailableTitle' => __('Can’t show this revision', 'a-floating-live-preview-panel'),
                 'unavailable' => __(
-                    'This revision cannot be previewed. Reload the revision browser to update the selection.',
+                    'We can’t show this saved version. Choose another version, or reload this page.',
                     'a-floating-live-preview-panel'
                 ),
-                'browserTitle' => __('Revision preview isn’t supported here', 'a-floating-live-preview-panel'),
-                'browser' => __('Open the admin and frontend on the same origin.', 'a-floating-live-preview-panel'),
+                'browserTitle' => __('Revision preview can’t run here', 'a-floating-live-preview-panel'),
+                'browser' => __(
+                    'Ask your site admin to make WordPress and the preview use the same website address.',
+                    'a-floating-live-preview-panel'
+                ),
                 /* translators: 1: Revision date, 2: Revision author. */
                 'revisionLabel' => __('%1$s — %2$s', 'a-floating-live-preview-panel'),
                 'currentVersion' => __('Current version', 'a-floating-live-preview-panel'),

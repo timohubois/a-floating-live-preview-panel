@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 import webpack from 'webpack';
 import { runChromiumTests } from './helpers/chromium.mjs';
+import { panelStrings } from './helpers/panel-strings.mjs';
 
 // Exercise panel CSS and the native overlay layers; WordPress owns actual menu rendering and positioning.
 function browserTests(css) {
@@ -69,7 +70,7 @@ function browserTests(css) {
     const panel = document.createElement('section');
     panel.className = 'aflpp-panel';
     panel.style.cssText = 'left:0;top:0;width:360px;height:240px';
-    panel.innerHTML = '<div class="aflpp-viewport"><div class="aflpp-pip-control"><button class="components-button aflpp-pip-button" aria-label="Pop out preview (PiP)"></button></div></div>';
+    panel.innerHTML = '<div class="aflpp-viewport"><div class="aflpp-pip-control"><button class="components-button aflpp-pip-button" aria-label="Picture-in-picture"></button></div></div>';
     document.body.append(panel);
     try {
         const button = panel.querySelector('button');
@@ -192,7 +193,73 @@ function nativeLauncherTests() {
     return results;
 }
 
-test('native WordPress launcher renders and handles focus and clicks in Chromium', async (t) => {
+async function nativePreferenceTests(strings) {
+    const results = [];
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 50));
+    const check = (condition, message) => { if (!condition) throw new Error(message); };
+    for (const mode of ['in-page', 'fullscreen', 'PiP']) {
+        const name = `${mode} native menu exposes and toggles Remember size and position`;
+        const panel = document.createElement('section');
+        panel.className = 'aflpp-panel';
+        panel.style.cssText = 'left:20px;top:20px;width:480px;height:340px';
+        panel.innerHTML = ['controls', 'refresh-control', 'move-control', 'device-controls', 'pip-control', 'empty', 'feedback']
+            .map((name) => `<div class="aflpp-${name}"></div>`).join('');
+        document.body.append(panel);
+        let controls;
+        try {
+            let state = {
+                inPage: mode === 'in-page', inPip: mode === 'PiP', movable: mode === 'in-page', mode: 'expand', modeLabel: strings.expand,
+                canPip: mode === 'in-page', canFullscreen: mode === 'in-page',
+                hasPreview: true, dock: 'center', size: 'small', device: 'desktop',
+                rememberVisibility: true, rememberPosition: true, followChanges: true,
+            };
+            let toggles = 0;
+            controls = window.previewControls.createPreviewControls(panel, strings, {
+                rememberPosition() {
+                    toggles++;
+                    state = { ...state, rememberPosition: !state.rememberPosition };
+                    controls.update(state);
+                },
+            });
+            controls.update(state);
+            const trigger = panel.querySelector('[data-action="actions"]');
+            const preference = () => document.querySelector('[data-action="remember-position"]');
+            for (const checked of [true, false]) {
+                trigger.click();
+                await pause();
+                const item = preference();
+                check(item?.getAttribute('role') === 'menuitemcheckbox', 'Use the native checkbox menu item.');
+                check(item.textContent.trim() === strings.rememberPosition, 'Expose the translated preference label.');
+                check(item.getAttribute('aria-checked') === String(checked), 'Expose the current saved checkbox state.');
+                const visibility = document.querySelector('[data-action="remember-visibility"]');
+                check(visibility.textContent.trim() === 'Remember if the preview is open', 'Use the new plain-language visibility label.');
+                check(visibility.scrollWidth <= visibility.clientWidth, 'Keep the longer label within the native menu.');
+                if (mode === 'in-page') {
+                    for (const action of ['pip', 'pop-out']) {
+                        const button = document.querySelector(`[data-action="${action}"]`);
+                        check(button.getAttribute('aria-label') === 'Picture-in-picture', 'Use the browser feature name.');
+                        const help = document.getElementById(button.getAttribute('aria-describedby'));
+                        check(help?.textContent === strings.popOutHelp, 'Let the native Button associate the plain explanation.');
+                    }
+                    const pip = document.querySelector('[data-action="pip"]');
+                    check(pip.textContent.trim() === 'Picture-in-picture', 'Keep the explanation out of the visible menu label.');
+                }
+                item.focus();
+                check(document.activeElement === item, 'Keep the preference keyboard-focusable.');
+                item.click();
+                await pause();
+                check(!preference(), 'Toggling closes the menu like the other preferences.');
+                check(state.rememberPosition === !checked, 'Update the preference once without changing display mode.');
+            }
+            check(toggles === 2, 'Invoke each toggle only once.');
+            results.push({ name });
+        } catch (error) { results.push({ name, error: error.stack }); }
+        finally { controls?.beforeMove(); panel.remove(); }
+    }
+    return results;
+}
+
+test('native WordPress launcher and preference menu render and handle focus and clicks in Chromium', async (t) => {
     const directory = await mkdtemp(join(tmpdir(), 'aflpp-native-launcher-'));
     try {
         // Bundle the same public packages for this isolated browser fixture, without requiring a WordPress server.
@@ -210,7 +277,7 @@ test('native WordPress launcher renders and handles focus and clicks in Chromium
         const core = await readFile(new URL('../node_modules/@wordpress/components/build-style/style.css', import.meta.url), 'utf8');
         const bundle = pathToFileURL(join(directory, 'controls.js')).href;
         await runChromiumTests(t, {
-            script: `(${nativeLauncherTests.toString()})()`, count: 2,
+            script: `(async () => [...(${nativeLauncherTests.toString()})(), ...await (${nativePreferenceTests.toString()})(${JSON.stringify(panelStrings)})])()`, count: 5,
             head: `<style>${core}\n${css}</style><script src="${bundle}"></script>`,
         });
     } finally { await rm(directory, { recursive: true, force: true }); }
