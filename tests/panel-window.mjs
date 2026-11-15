@@ -547,6 +547,26 @@ test('the Zoom control receives live DPR changes without another user action', (
     assert.equal(h.writes.length, writes, 'Detected DPR must not become a saved preference.');
 });
 
+test('hybrid Auto stays selected and never persists an internal fitting strategy during resize or DPR changes', () => {
+    const h = fixture(true, { rememberPosition: false });
+    h.actions.device('mobile');
+    h.actions.fit('automatic');
+    const preferred = plain([...h.preferences]);
+    const writes = h.writes.length;
+    h.window.devicePixelRatio = 2;
+    h.window.fire('resize');
+    h.window.innerWidth = 900;
+    h.window.innerHeight = 650;
+    h.window.fire('resize');
+    assert.equal(h.state.fit, 'automatic');
+    assert.equal(h.state.device, 'mobile');
+    assert.equal(h.state.orientation, 'portrait');
+    assert.equal(h.node('aflpp-panel .aflpp-stage').style.width, '390px');
+    assert.equal(h.node('aflpp-panel .aflpp-stage').style.height, '844px');
+    assert.equal(h.writes.length, writes);
+    assert.deepEqual(plain([...h.preferences]), preferred);
+});
+
 test('invalid new fitting preferences fall back to Automatic', () => {
     for (const value of ['__proto__', {}, false, 100]) {
         const h = fixture(true, { preferences: [['fit', 'width'], ['fitMode', value]] });

@@ -78,9 +78,7 @@
 .aflpp-custom-zoom { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--aflpp-border); }
 .aflpp-custom-zoom .components-base-control__field { margin-bottom: 0; }
 .aflpp-dpr-note { display: grid; gap: 4px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--aflpp-border); color: var(--aflpp-muted); font-size: 11px; line-height: 16px; }
-.aflpp-dpr-title { font-weight: 600; }
 .aflpp-dpr-value { color: var(--aflpp-text); }
-.aflpp-pixel-note { margin-top: 4px; }
 /* Pass SVGs directly to ToolbarButton so core owns their sizing; rotate without a wrapper. */
 .aflpp-devices .aflpp-device-rotated svg { transform: rotate(90deg); }
 .aflpp-devices.components-toolbar { border: 0; background: transparent; }

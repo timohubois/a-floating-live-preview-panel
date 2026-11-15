@@ -18,6 +18,8 @@ export function createPreviewViewport(container, stage, dimensions, saved = {}, 
             ? saved[`${name}Orientation`] : defaultOrientation(name),
     ]));
     const size = () => orientations[device] === defaultOrientation(device) ? sizes[device] : [...sizes[device]].reverse();
+    // Portrait handhelds prioritize readable width; Computer and landscape keep the whole viewport visible.
+    const widthFirst = () => fit === 'width' || (fit === 'automatic' && device !== 'desktop' && orientations[device] === 'portrait');
     let scale;
     let animation;
     let removeResolutionListener;
@@ -31,7 +33,7 @@ export function createPreviewViewport(container, stage, dimensions, saved = {}, 
     function scaleFor(width, height) {
         if (fit === 'custom') return customZoom / 100 / pixelRatio();
         const widthScale = canvas.clientWidth / width;
-        if (fit === 'width') return widthScale;
+        if (widthFirst()) return fit === 'automatic' ? Math.min(1 / pixelRatio(), widthScale) : widthScale;
         const windowScale = Math.min(widthScale, canvas.clientHeight / height);
         // 100% is one physical screen pixel per viewport CSS pixel, not native CSS zoom.
         return fit === 'automatic' ? Math.min(1 / pixelRatio(), windowScale) : windowScale;
@@ -51,9 +53,10 @@ export function createPreviewViewport(container, stage, dimensions, saved = {}, 
             left: `${left}px`, top: `${top}px`, transform: `scale(${scale})`,
         });
         const overflow = width * scale > canvas.clientWidth + 0.01 || height * scale > canvas.clientHeight + 0.01;
-        canvas.tabIndex = ['width', 'custom'].includes(fit) && overflow ? 0 : -1;
+        const navigable = fit === 'custom' || widthFirst();
+        canvas.tabIndex = navigable && overflow ? 0 : -1;
         canvas.scrollLeft = fit === 'custom' ? pan.x * scale : 0;
-        canvas.scrollTop = ['width', 'custom'].includes(fit) ? pan.y * scale : 0;
+        canvas.scrollTop = navigable ? pan.y * scale : 0;
     }
 
     function stopAnimation() {
@@ -82,11 +85,10 @@ export function createPreviewViewport(container, stage, dimensions, saved = {}, 
                 if (width * target > canvas.clientWidth + 0.01) canvas.style.overflowX = 'scroll';
                 if (height * target > canvas.clientHeight + 0.01) canvas.style.overflowY = 'scroll';
             }
-        } else {
-            // Reserve width-fitting's scrollbar independently of its own width to avoid
-            // a resize loop when the final painted height is near the available limit.
-            canvas.style.overflowY = fit === 'width' && container.clientWidth / width * height > container.clientHeight
-                ? 'scroll' : 'hidden';
+        } else if (widthFirst()) {
+            // Decide from the unobstructed canvas, before its native gutter narrows the
+            // available width. This keeps width-first fitting stable at the height limit.
+            if (height * scaleFor(width, height) > container.clientHeight) canvas.style.overflowY = 'scroll';
         }
         if (!canvas.clientWidth || !canvas.clientHeight) return;
         const target = scaleFor(width, height);

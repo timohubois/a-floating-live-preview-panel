@@ -269,15 +269,28 @@ test('Enter closes valid custom zoom, but incomplete drafts cannot submit or clo
     assert.deepEqual(h.calls.at(-1), { name: 'zoom', args: [80] });
 });
 
+test('Zoom descriptions use short, plain English without changing the mode labels', () => {
+    assert.deepEqual([
+        panelStrings.automaticHelp, panelStrings.fitToWindowHelp, panelStrings.fitToWidthHelp,
+        panelStrings.fixedZoomHelp, panelStrings.customZoomHelp,
+    ], [
+        'Picks a size for you.', 'Shows the whole view.', 'Fits side to side.',
+        'You pick the size.', 'Choose 10% to 400%.',
+    ]);
+});
+
 test('DPR is separate read-only display information, not another setting or device preset', () => {
     const h = fixture();
     h.controls.update({ ...h.state, fit: 'custom', customZoom: 80, zoomPercent: 80, dpr: 2 });
     h.nodes('Dropdown')[0].props.onToggle(true);
     const dpr = () => h.nodes('span').find(({ props }) => props.className === 'aflpp-dpr-value').children[0];
     assert.equal(dpr(), 'Display DPR: 2');
-    assert.equal(h.nodes('strong').find(({ props }) => props.className === 'aflpp-dpr-title').children[0], 'Display information');
-    assert.equal(h.nodes('div').find(({ props }) => props.className === 'aflpp-dpr-note').props['aria-label'], 'Display information');
-    assert.ok(h.nodes('span').some(({ children }) => children[0] === 'Detected automatically. Read-only.'));
+    const display = h.nodes('div').find(({ props }) => props.className === 'aflpp-dpr-note');
+    assert.equal(display.props['aria-label'], 'Display information');
+    assert.deepEqual(Array.from(display.children, ({ type }) => type), ['span', 'span']);
+    assert.equal(display.children[1].children[0], '100% = pixel for pixel.');
+    assert.equal(display.props.hidden, undefined, 'Display information is always visible, never collapsible.');
+    assert.equal(h.nodes('strong').some(({ props }) => props.className === 'aflpp-dpr-title'), false);
     assert.equal(h.nodes('TextControl').length, 1, 'Only the fixed percentage is editable.');
     assert.equal(h.nodes('Button').find(({ props }) => props['data-action'] === 'zoom').props['aria-label'], 'Zoom: 80%');
     h.controls.update({ ...h.state, fit: 'custom', customZoom: 80, zoomPercent: 80, dpr: 1.25 });

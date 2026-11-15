@@ -448,7 +448,18 @@ async function nativeViewportControlTests(strings) {
                 const dialog = popup.matches('[role="dialog"]') ? popup : popup.querySelector('[role="dialog"]');
                 check(dialog?.getAttribute('aria-label') === strings.fitting && toggle().getAttribute('aria-haspopup') === 'dialog', 'Expose a named dialog with native radio and number controls.');
                 const display = popup.querySelector('.aflpp-dpr-note');
-                check(display.getAttribute('aria-label') === strings.displayInformation && display.querySelector('strong').textContent === strings.displayInformation, 'Separate read-only display information from mode selection.');
+                check(display.getAttribute('aria-label') === strings.displayInformation && display.children.length === 2 && !display.querySelector('strong,details,summary,button,[aria-expanded]'), 'Keep display information as two always-visible lines, without a heading or disclosure.');
+                check(display.querySelector('.aflpp-pixel-note').textContent === strings.pixelZoomHelp, 'Keep the 100% reference visible in every mode.');
+                for (const text of [strings.automaticHelp, strings.fitToWindowHelp, strings.fitToWidthHelp, strings.fixedZoomHelp,
+                    ...(state.fit === 'custom' ? [strings.customZoomHelp] : []), strings.pixelZoomHelp]) {
+                    const description = [...popup.querySelectorAll('*')].find((element) => element.childNodes.length === 1 && element.firstChild.nodeType === 3 && element.textContent === text);
+                    check(description, `Keep the short explanation visible: ${text}`);
+                    const range = panel.ownerDocument.createRange();
+                    range.selectNodeContents(description);
+                    // RTL can split a single visual line into separate text/punctuation rectangles.
+                    const lines = new Set([...range.getClientRects()].map(({ top }) => Math.round(top)));
+                    check(lines.size === 1, `Keep the complete explanation on one line: ${text}`);
+                }
                 check(display.querySelector('.aflpp-dpr-value').textContent === `${strings.displayDpr}: ${Number(viewport.dpr.toFixed(2))}` && !display.querySelector('input,select,button'), 'DPR belongs to the displaying window and is not editable.');
                 check(popup.querySelectorAll('input[type="number"]').length === (state.fit === 'custom' ? 1 : 0), 'Only Fixed zoom reveals a percentage field.');
                 check(getComputedStyle(display).borderTopStyle === 'solid', 'Portaled content retains its scoped visual variables.');

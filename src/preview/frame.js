@@ -61,9 +61,13 @@ export function createPreviewFrame(view, scrolling, strings, report, excludedSel
                     const marker = candidate?.querySelector('meta[name="a-floating-live-preview-panel"]');
                     if (marker?.content === token) doc = candidate;
                 } catch { /* Cross-origin and browser-owned documents are not inspectable. */ }
-                // Freeze only an accepted, verified document, before any restoration/reveal styles.
+                // Freeze only an accepted, verified document, before any preview-only styles.
                 // Native navigation is not a new editor submission and receives no old hints.
-                if (doc) comparison.capture(doc, replacing ? comparisonValues : undefined);
+                if (doc) {
+                    comparison.capture(doc, replacing ? comparisonValues : undefined);
+                    // Keep page-boundary scrolling from moving the separate preview canvas.
+                    doc.documentElement.style.setProperty('overscroll-behavior', 'contain', 'important');
+                }
                 let target;
                 if (doc && replacing) {
                     scrolling.remember(activeDocument);

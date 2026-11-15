@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { createPreviewViewport } from '../src/panel/viewport.js';
@@ -75,8 +76,11 @@ const views = [
     { device: 'mobile', mobileOrientation: 'landscape', width: 844, height: 390 },
 ];
 const fits = ['automatic', 'window', 'width', 'custom'];
-const expectedScale = (fit, aw, ah, width, height, dpr = 1) => fit === 'custom' ? 1 / dpr : fit === 'width' ? aw / width
-    : Math.min(fit === 'automatic' ? 1 / dpr : Infinity, aw / width, ah / height);
+const expectedScale = (fit, aw, ah, width, height, dpr = 1) => {
+    if (fit === 'custom') return 1 / dpr;
+    const widthFirst = fit === 'width' || (fit === 'automatic' && width < height);
+    return Math.min(fit === 'automatic' ? 1 / dpr : Infinity, aw / width, widthFirst ? Infinity : ah / height);
+};
 
 for (const [name, width, height] of [['floating', 480, 248], ['expanded', 1240, 636], ['fullscreen', 1280, 708], ['PiP', 640, 448]]) {
     for (const view of views) for (const fit of fits) for (const dpr of [0.75, 1, 1.25, 2]) {
@@ -91,7 +95,8 @@ for (const [name, width, height] of [['floating', 480, 248], ['expanded', 1240, 
             assert.equal(h.stage.style.top, `${top}px`);
             assert.equal(h.space.style.width, `${Math.max(width, view.width * scale)}px`);
             assert.equal(h.space.style.height, `${Math.max(height, top + view.height * scale)}px`);
-            assert.equal(h.canvas.tabIndex, ['width', 'custom'].includes(fit) && (view.height * scale > height + 0.01 || view.width * scale > width + 0.01) ? 0 : -1);
+            const navigable = ['width', 'custom'].includes(fit) || (fit === 'automatic' && view.width < view.height);
+            assert.equal(h.canvas.tabIndex, navigable && (view.height * scale > height + 0.01 || view.width * scale > width + 0.01) ? 0 : -1);
             assert.equal(h.dimensions.textContent, `${view.width} × ${view.height}`);
             assert.equal(h.viewport.zoomPercent, Math.round(scale * dpr * 100));
         });
@@ -162,13 +167,13 @@ test('manual zoom preserves logical canvas navigation on both axes and resets it
     assert.equal(h.viewport.customZoom, 80, 'Fitting keeps the custom value for later reuse.');
 });
 
-test('fixed 100% can overflow while Auto shrinks, without changing the internal viewport', () => {
-    const h = fixture({ device: 'mobile' }, 480, 248, false, 0, 2);
+test('fixed 100% can overflow both axes while Auto limits the width, without changing the internal viewport', () => {
+    const h = fixture({ device: 'mobile' }, 240, 248);
     assert.ok(h.viewport.zoomPercent < 100);
     h.viewport.setZoom(100);
     assert.equal(h.viewport.fit, 'custom');
     assert.equal(h.viewport.zoomPercent, 100);
-    assert.equal(h.stage.style.transform, 'scale(0.5)');
+    assert.equal(h.stage.style.transform, 'scale(1)');
     assert.equal(h.canvas.tabIndex, 0);
     assert.equal(h.stage.style.height, '844px');
     h.viewport.setFit('automatic');
@@ -247,13 +252,75 @@ test('Automatic corrects DPR before deciding whether a 1:1 mobile viewport fits'
     assert.equal(h.viewport.zoomPercent, 100);
 });
 
-test('Automatic shrinks further only when the DPR-corrected viewport cannot fit', () => {
-    const h = fixture({ device: 'mobile' }, 900, 300, false, 0, 2);
-    assert.equal(h.stage.style.transform, `scale(${300 / 844})`);
+for (const [device, orientation, scale, percent, overflow] of [
+    ['mobile', 'portrait', 0.5, 100, true],
+    ['tablet', 'portrait', 0.5, 100, true],
+    ['desktop', 'landscape', 440 / 1280, 69, false],
+    ['tablet', 'landscape', 300 / 768, 78, false],
+    ['mobile', 'landscape', 0.5, 100, false],
+]) test(`Auto prioritizes ${device} ${orientation} without changing the selected mode`, () => {
+    const h = fixture({ device, [`${device}Orientation`]: orientation }, 440, 300, false, 15, 2);
+    assert.equal(h.stage.style.transform, `scale(${scale})`);
+    assert.equal(h.viewport.zoomPercent, percent);
+    assert.equal(h.viewport.fit, 'automatic', 'The internal strategy must never select an explicit override.');
+    assert.equal(h.canvas.style.overflowX, 'hidden');
+    assert.equal(h.canvas.style.overflowY, overflow ? 'scroll' : 'hidden');
+    assert.equal(h.canvas.tabIndex, overflow ? 0 : -1);
+});
+
+test('portrait Auto shrinks to the available width and reserves the native scrollbar before measuring it', () => {
+    const h = fixture({ device: 'mobile' }, 320, 339, false, 15);
+    assert.equal(h.stage.style.transform, `scale(${305 / 390})`);
     assert.equal(h.stage.style.width, '390px');
     assert.equal(h.stage.style.height, '844px');
     assert.equal(h.dimensions.textContent, '390 × 844');
-    assert.equal(h.viewport.zoomPercent, 71);
+    assert.equal(h.viewport.zoomPercent, 78);
+    assert.equal(h.canvas.tabIndex, 0);
+    assert.equal(h.canvas.style.overflowY, 'scroll');
+    assert.equal(h.canvas.style.overflowX, 'hidden');
+});
+
+test('portrait Auto accounts for a vertical gutter that makes even the 1:1 width too wide', () => {
+    const h = fixture({ device: 'mobile' }, 200, 300, false, 15, 2);
+    assert.equal(h.stage.style.transform, `scale(${185 / 390})`);
+    assert.equal(h.viewport.zoomPercent, 95);
+    assert.equal(h.canvas.tabIndex, 0);
+    assert.equal(h.space.style.width, '185px');
+});
+
+test('portrait Auto reserves no scrollbar when both dimensions fit at exactly 100%', () => {
+    const h = fixture({ device: 'mobile' }, 195, 422, false, 15, 2);
+    assert.equal(h.stage.style.transform, 'scale(0.5)');
+    assert.equal(h.viewport.zoomPercent, 100);
+    assert.equal(h.canvas.style.overflowY, 'hidden');
+    assert.equal(h.canvas.tabIndex, -1);
+});
+
+test('portrait Auto keeps its gutter stable when reserving it makes the whole viewport fit', () => {
+    const h = fixture({ device: 'mobile' }, 200, 415, false, 15, 2);
+    const before = { ...h.stage.style };
+    for (let i = 0; i < 10; i++) h.observers[0].callback([]);
+    assert.deepEqual(h.stage.style, before);
+    assert.equal(h.canvas.style.overflowY, 'scroll');
+    assert.equal(h.viewport.zoomPercent, 95);
+    assert.equal(h.canvas.tabIndex, -1, 'A gutter alone does not require a keyboard stop.');
+});
+
+test('portrait Auto preserves logical canvas navigation across panel and DPR changes, but resets on rotation', () => {
+    const h = fixture({ device: 'mobile' }, 320, 248, false, 15);
+    h.canvas.scrollTop = 100 * 305 / 390;
+    h.container.clientWidth = 280;
+    h.viewport.layout();
+    assert.ok(Math.abs(h.canvas.scrollTop - 100 * 265 / 390) < 0.001);
+    h.mainWindow.setPixelRatio(2);
+    assert.equal(h.canvas.scrollTop, 50);
+    assert.equal(h.viewport.zoomPercent, 100);
+    assert.equal(h.viewport.fit, 'automatic');
+    h.viewport.rotate();
+    assert.equal(h.canvas.scrollTop, 0);
+    assert.equal(h.canvas.tabIndex, -1);
+    assert.equal(h.stage.style.width, '844px');
+    assert.equal(h.stage.style.height, '390px');
 });
 
 test('DPR changes relayout the camera and rearm exactly one resolution listener without resizing the panel', () => {
@@ -348,6 +415,11 @@ test('Fit to width reserves a native scrollbar before measuring the available pr
     assert.equal(h.space.style.width, '465px');
     assert.equal(h.stage.style.height, '844px');
     h.viewport.setFit('automatic');
+    assert.equal(h.canvas.style.overflowY, 'scroll', 'Portrait Auto also allows vertical navigation.');
+    assert.equal(h.space.style.width, '465px');
+    assert.equal(h.stage.style.transform, 'scale(1)', 'Unlike explicit Fit width, Auto never enlarges beyond 100%.');
+    assert.equal(h.canvas.tabIndex, 0);
+    h.viewport.rotate();
     assert.equal(h.canvas.style.overflowY, 'hidden');
     assert.equal(h.space.style.width, '480px');
     assert.equal(h.canvas.tabIndex, -1);
@@ -561,15 +633,16 @@ async function browserTests({ source, css }) {
             close(initial.vh, height, '100vh stays fixed');
             close(frame.contentDocument.querySelector('footer').getBoundingClientRect().bottom, height, 'Fixed bottom stays in the selected viewport');
             check(initial.tablet === (width >= 768) && initial.tall === (height >= 800) && initial.landscape === (width >= height), 'Width, height and aspect-ratio media queries must use the selected CSS viewport.');
-            const scale = fit === 'custom' ? 1 / devicePixelRatio : fit === 'width' ? canvas.clientWidth / width
-                : Math.min(fit === 'automatic' ? 1 / devicePixelRatio : Infinity, canvas.clientWidth / width, canvas.clientHeight / height);
+            const widthFirst = fit === 'width' || (fit === 'automatic' && device !== 'desktop' && orientation === 'portrait');
+            const scale = fit === 'custom' ? 1 / devicePixelRatio
+                : Math.min(fit === 'automatic' ? 1 / devicePixelRatio : Infinity, canvas.clientWidth / width, widthFirst ? Infinity : canvas.clientHeight / height);
             const rect = stage.getBoundingClientRect(), bounds = canvas.getBoundingClientRect();
             close(rect.width, width * scale, 'Painted width');
             close(rect.height, height * scale, 'Painted height');
             check(panel.querySelector('.aflpp-dimensions').textContent === `${width} × ${height}`, 'The readout must report only the fixed CSS dimensions.');
             check(viewport.zoomPercent === Math.round(scale * devicePixelRatio * 100), 'Publish the computed DPR-corrected zoom for the single Zoom control.');
             const overflowX = fit === 'custom' && rect.width > canvas.clientWidth + 0.01;
-            const overflowY = ['width', 'custom'].includes(fit) && rect.height > canvas.clientHeight + 0.01;
+            const overflowY = (widthFirst || fit === 'custom') && rect.height > canvas.clientHeight + 0.01;
             check(canvas.tabIndex === (overflowX || overflowY ? 0 : -1), 'Only a navigable canvas needs an extra keyboard stop.');
             if (overflowX) {
                 check(canvas.scrollWidth > canvas.clientWidth, 'Fixed zoom needs a real horizontal navigation range.');
@@ -621,26 +694,42 @@ test('Chromium verifies fixed geometry, zoom and independent scrolling in all 80
 });
 
 test('trusted Chromium verifies independent scrolling and DPR-corrected physical pixel geometry', { timeout: 30000 }, async (t) => {
-    const source = await sourceForVm(new URL('../src/panel/viewport.js', import.meta.url));
+    const modules = new Map(await Promise.all(['panel/viewport.js', 'preview/frame.js', 'preview/comparison.js', 'preview/scroll.js'].map(async (path) =>
+        [`/src/${path}`, await readFile(new URL(`../src/${path}`, import.meta.url), 'utf8')])));
     const css = await readFile(new URL('../src/panel/panel.css', import.meta.url), 'utf8');
-    const page = '<!doctype html><style>html,body{margin:0}main{height:300vh}</style><main>Scrollable page</main>';
+    const page = '<!doctype html><meta name="a-floating-live-preview-panel" content="trusted-scroll"><style>html,body{margin:0}html{overscroll-behavior:auto!important}main{height:300vh}</style><main>Scrollable page</main>';
     const html = `<!doctype html><style>body{margin:0}${css}</style>
         <section class="aflpp-panel" style="left:0;top:0;width:480px;height:340px">
             <header class="aflpp-header"></header><div class="aflpp-viewport">
                 <div class="aflpp-canvas" role="region" aria-label="Preview canvas" tabindex="-1">
-                    <div class="aflpp-canvas-space"><div class="aflpp-stage"><iframe class="aflpp-frame" title="Test preview"></iframe></div></div>
+                    <div class="aflpp-canvas-space"><div class="aflpp-stage"></div></div>
                 </div>
             </div><footer class="aflpp-devicebar" style="height:48px"><span class="aflpp-dimensions"></span></footer>
-        </section><script>${source}
+        </section><script type="module">
+        import { createPreviewViewport } from '/src/panel/viewport.js';
+        import { createPreviewFrame } from '/src/preview/frame.js';
+        import { createPreviewScroll } from '/src/preview/scroll.js';
+        const stage = document.querySelector('.aflpp-stage');
+        const preview = createPreviewFrame({stage,followChanges:false}, createPreviewScroll(), {title:'Test preview',failed:'Failed',browser:'Same-origin required'}, () => {});
+        await preview.load(new URL('/page?aflpp_token=trusted-scroll', location.href).href, () => true);
         const canvas = document.querySelector('.aflpp-canvas'), frame = document.querySelector('iframe');
-        frame.contentDocument.open(); frame.contentDocument.write(${JSON.stringify(page)}); frame.contentDocument.close();
-        const viewport = createPreviewViewport(document.querySelector('.aflpp-viewport'), document.querySelector('.aflpp-stage'), document.querySelector('.aflpp-dimensions'), {device:'mobile',fit:'width'});
+        const viewport = createPreviewViewport(document.querySelector('.aflpp-viewport'), stage, document.querySelector('.aflpp-dimensions'), {device:'mobile',fit:'width'});
         viewport.layout();
-        window.canvasInputState = () => ({pan:canvas.scrollTop,panX:canvas.scrollLeft,page:frame.contentWindow.scrollY,pageX:frame.contentWindow.scrollX,width:frame.contentWindow.innerWidth,height:frame.contentWindow.innerHeight,zoom:viewport.zoomPercent});
+        let wheels = 0;
+        frame.contentDocument.addEventListener('wheel', (event) => { if (event.isTrusted) wheels++; }, {passive:true});
+        Object.assign(window, {canvas,frame,viewport,preview});
+        window.canvasInputState = () => ({pan:canvas.scrollTop,panX:canvas.scrollLeft,page:frame.contentWindow.scrollY,pageX:frame.contentWindow.scrollX,width:frame.contentWindow.innerWidth,height:frame.contentWindow.innerHeight,zoom:viewport.zoomPercent,wheels});
         </script>`;
-    await withChromiumPage(html, async ({ args, url }) => {
+    await withChromiumPage(html, async ({ args }) => {
         const pending = new Map();
         let chrome, sessionId, nextId = 0, buffer = '', stderr = '';
+        const responses = new Map([...modules, ['/', html], ['/page', page],
+            ['/unmarked', page.replace(/<meta[^>]+>/, '')], ['/plain', 'Native text output']]);
+        const server = createServer((request, response) => {
+            const path = new URL(request.url, 'http://localhost').pathname;
+            response.setHeader('Content-Type', path === '/plain' ? 'text/plain' : modules.has(path) ? 'text/javascript' : 'text/html');
+            response.end(responses.get(path) ?? '');
+        });
         const rejectPending = (error) => {
             for (const entry of pending.values()) entry.reject(error);
             pending.clear();
@@ -675,7 +764,8 @@ test('trusted Chromium verifies independent scrolling and DPR-corrected physical
                 pending.set(id, { resolve, reject });
                 chrome.stdio[3].write(`${JSON.stringify({ id, method, params, sessionId: targetSession })}\0`);
             });
-            const { targetId } = await send('Target.createTarget', { url });
+            await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+            const { targetId } = await send('Target.createTarget', { url: `http://127.0.0.1:${server.address().port}/` });
             ({ sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }));
             const evaluate = async (expression) => {
                 const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
@@ -766,6 +856,48 @@ test('trusted Chromium verifies independent scrolling and DPR-corrected physical
                 // Native screenshot crops quantize fractional clip bounds, unlike layout geometry.
                 assert.ok(Math.abs(png.readUInt32BE(20) - 675.2) <= 2, `Captured height: ${png.readUInt32BE(20)}; CSS clip: ${JSON.stringify(rect)}`);
             });
+            await t.test('portrait Auto supports native canvas keys and wheel input independently of the webpage', async () => {
+                await evaluate(`Object.assign(document.querySelector('.aflpp-panel').style, {width:'480px',height:'340px'}); viewport.setFit('automatic'); viewport.layout(); canvas.focus({preventScroll:true})`);
+                await waitFor('canvas.tabIndex === 0 && canvas.scrollHeight > canvas.clientHeight');
+                const page = (await evaluate('canvasInputState()')).page;
+                await key('PageDown', 34, 'canvas.scrollTop > 0');
+                assert.equal((await evaluate('canvasInputState()')).page, page);
+                await key('End', 35, 'Math.abs(canvas.scrollTop + canvas.clientHeight - canvas.scrollHeight) <= 1');
+                await key('Home', 36, 'canvas.scrollTop === 0');
+                // Gray canvas outside the centered iframe navigates the viewport, not its webpage.
+                await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 10, y: 100, deltaX: 0, deltaY: 60 });
+                await waitFor('canvas.scrollTop > 0');
+                assert.equal((await evaluate('canvasInputState()')).page, page);
+                await key('Home', 36, 'canvas.scrollTop === 0');
+                await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 200, y: 100, deltaX: 0, deltaY: 120 });
+                await waitFor(`frame.contentWindow.scrollY > ${page}`);
+                const after = await evaluate('({...canvasInputState(), fit:viewport.fit})');
+                assert.equal(after.pan, 0, 'Page-interior wheel input must not pan the Auto canvas.');
+                assert.equal(after.fit, 'automatic');
+                assert.equal(after.zoom, 100);
+                assert.equal(after.width, 390);
+                assert.equal(after.height, 844);
+            });
+            for (const fit of ['automatic', 'width', 'custom']) for (const boundary of ['top', 'bottom']) {
+                await t.test(`${fit}: trusted iframe wheel at the page ${boundary} stays out of the canvas`, async () => {
+                    await evaluate(`viewport.${fit === 'custom' ? 'setZoom(100)' : `setFit('${fit}')`}; viewport.layout(); canvas.scrollTop = ${boundary === 'top' ? 100 : 0}; frame.contentWindow.scrollTo(0, ${boundary === 'top' ? 0 : 'frame.contentDocument.documentElement.scrollHeight'})`);
+                    await waitFor(`canvas.scrollTop === ${boundary === 'top' ? 100 : 0} && ${boundary === 'top' ? 'frame.contentWindow.scrollY === 0' : 'frame.contentWindow.scrollY + frame.contentWindow.innerHeight >= frame.contentDocument.documentElement.scrollHeight'}`);
+                    // Paint the new canvas position before sending actual input into the iframe.
+                    await send('Page.captureScreenshot', { format: 'png' });
+                    const before = await evaluate('canvasInputState()');
+                    await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 200, y: 100, deltaX: 0, deltaY: boundary === 'top' ? -120 : 120 });
+                    await waitFor(`canvasInputState().wheels > ${before.wheels}`);
+                    await delay(150); // Observe the wheel's native default action, not just its delivery.
+                    const after = await evaluate('canvasInputState()');
+                    assert.equal(after.pan, before.pan, 'Reaching a webpage boundary must not pan its separate canvas.');
+                    assert.equal(after.page, before.page, 'The page must remain at its own boundary.');
+                    assert.equal(after.width, 390);
+                    assert.equal(after.height, 844);
+                    assert.equal(after.zoom, before.zoom);
+                    assert.equal(await evaluate('viewport.fit'), fit);
+                    assert.equal(await evaluate('frame.contentWindow.getComputedStyle(frame.contentDocument.documentElement).overscrollBehavior'), 'contain');
+                });
+            }
             await t.test('trusted arrow keys navigate both axes at fixed zoom without scrolling the page', async () => {
                 await evaluate(`Object.assign(document.querySelector('.aflpp-panel').style, {width:'480px',height:'340px'}); viewport.select('desktop'); viewport.setZoom(400); frame.contentWindow.scrollTo(0, 100); canvas.focus({preventScroll:true})`);
                 await waitFor('canvas.scrollWidth > canvas.clientWidth && canvas.scrollHeight > canvas.clientHeight');
@@ -793,11 +925,23 @@ test('trusted Chromium verifies independent scrolling and DPR-corrected physical
                 await waitFor('Math.abs(frame.getBoundingClientRect().width - 5120) < 0.01');
                 assert.equal((await evaluate('canvasInputState()')).zoom, 400, 'A host DPR change preserves the selected manual percentage.');
             });
+            for (const path of ['unmarked', 'plain']) await t.test(`${path}: native output is displayed without scroll containment`, async () => {
+                await evaluate(`preview.load(new URL('/${path}?aflpp_token=trusted-scroll', location.href).href, () => true)`);
+                const output = await evaluate(`(() => {
+                    const frame = document.querySelector('iframe'), doc = frame.contentDocument;
+                    return {type:doc.contentType,style:doc.documentElement.getAttribute('style'),text:doc.body.textContent,path:new URL(frame.src).pathname};
+                })()`);
+                assert.equal(output.path, `/${path}`);
+                assert.equal(output.type, path === 'plain' ? 'text/plain' : 'text/html');
+                assert.equal(output.style, null, 'Do not add preview-only root styles to unverified output.');
+                if (path === 'plain') assert.equal(output.text, 'Native text output');
+            });
         } finally {
             t.signal.removeEventListener('abort', abort);
             if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {
                 await new Promise((resolve) => { chrome.once('exit', resolve); chrome.kill(); });
             }
+            await new Promise((resolve) => server.close(resolve));
         }
     });
 });

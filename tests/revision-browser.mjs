@@ -68,7 +68,10 @@ function fixture({ visible = true, selected = revision(11), isolated = false, ex
             comparisonSelectors = selectors;
             const values = new WeakMap();
             return {
-                capture(doc, submitted) { values.set(doc, submitted); captures.push({ doc, values: submitted }); },
+                capture(doc, submitted) {
+                    values.set(doc, submitted);
+                    captures.push({ doc, values: submitted, containment: doc.documentElement.style.getPropertyValue('overscroll-behavior') });
+                },
                 findChange(previous, next) {
                     comparisons.push({ previous, next, before: values.get(previous), after: values.get(next),
                         previousMounted: children.some((frame) => frame.contentDocument === previous) });
@@ -89,7 +92,15 @@ function fixture({ visible = true, selected = revision(11), isolated = false, ex
             await flush();
         },
         async load(frame = allFrames.at(-1), marked = true) {
-            frame.contentDocument = { querySelector: () => marked ? { content: new URL(frame.src).searchParams.get('aflpp_token') } : null };
+            const declarations = new Map();
+            frame.contentDocument = marked === null ? null : {
+                querySelector: () => marked ? { content: new URL(frame.src).searchParams.get('aflpp_token') } : null,
+                documentElement: { style: {
+                    setProperty: (name, value, priority) => declarations.set(name, { value, priority }),
+                    getPropertyValue: (name) => declarations.get(name)?.value ?? '',
+                    getPropertyPriority: (name) => declarations.get(name)?.priority ?? '',
+                } },
+            };
             frame.onload?.(); await flush();
         },
         hide: (persisted = false) => events.get('pagehide')({ persisted }),
@@ -128,6 +139,19 @@ test('frame capture precedes comparison and deletion analysis runs before the ol
     assert.deepEqual(restored, ['restore', comparison.next, 'target']);
     assert.equal(restored.length, 3, 'Scrolling receives only a document and one identified element.');
     assert.equal(h.children.length, 1);
+});
+
+test('verified iframe scrolling is contained after capture on initial, replacement and native loads', async () => {
+    const h = fixture();
+    await h.load();
+    h.select(revision(12)); await h.runTimers(); await h.load();
+    await h.load();
+    assert.equal(h.captures.length, 3);
+    for (const { doc, containment } of h.captures) {
+        assert.equal(containment, '', 'Capture the original root style before adding preview-only containment.');
+        assert.equal(doc.documentElement.style.getPropertyValue('overscroll-behavior'), 'contain');
+        assert.equal(doc.documentElement.style.getPropertyPriority('overscroll-behavior'), 'important');
+    }
 });
 
 test('disabled following still captures a baseline without calling comparison', async () => {
@@ -266,11 +290,17 @@ test('PiP adoption reloads the selected source and does not reopen a closed pane
     assert.equal(h.allFrames.length, 2);
 });
 
-test('browser-native and unmarked output loads without HTML scroll enhancement', async () => {
-    const h = fixture(); await h.load(undefined, false);
-    assert.equal(h.last.state, 'ready');
-    assert.equal(h.scrolls.length, 0);
-});
+for (const marked of [false, null]) {
+    test(`${marked === null ? 'browser-native' : 'unmarked HTML'} output loads without HTML scroll enhancement`, async () => {
+        const h = fixture(); await h.load(undefined, marked);
+        assert.equal(h.last.state, 'ready');
+        assert.equal(h.scrolls.length, 0);
+        assert.equal(h.captures.length, 0);
+        if (h.children[0].contentDocument) {
+            assert.equal(h.children[0].contentDocument.documentElement.style.getPropertyValue('overscroll-behavior'), '');
+        }
+    });
+}
 
 test('a timed-out frame can be retried without accepting its stale load', async () => {
     const h = fixture();
