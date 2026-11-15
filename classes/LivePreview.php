@@ -354,14 +354,21 @@ final class LivePreview
 
         require_once ABSPATH . 'wp-admin/includes/post.php';
 
-        if (
-            !$this->isAvailable($post) || wp_check_post_lock($postId)
-            || !hash_equals($this->fingerprint($postId), $input['base'])
-        ) {
+        if (wp_check_post_lock($postId)) {
+            return new WP_Error(
+                'aflpp_post_locked',
+                __(
+                    'Another user is editing this post. Take over editing to continue.',
+                    'a-floating-live-preview-panel'
+                ),
+                ['status' => 409]
+            );
+        }
+        if (!$this->isAvailable($post) || !hash_equals($this->fingerprint($postId), $input['base'])) {
             return new WP_Error(
                 'aflpp_preview_conflict',
                 __(
-                    'This post has changed, someone else is editing it, or WordPress can’t save versions of it.',
+                    'The saved post has changed, or WordPress can’t save versions of it.',
                     'a-floating-live-preview-panel'
                 ),
                 ['status' => 409]

@@ -87,6 +87,29 @@ try {
         'Preview revisions must retain block serialization.'
     );
 
+    $previewRoute = '/a-floating-live-preview-panel/v1/posts/' . $draft . '/preview';
+    update_post_meta($draft, '_edit_lock', time() . ':' . $subscriber);
+    foreach ([$base, str_repeat('0', 64)] as $lockedBase) {
+        $response = $send($previewRoute, ['base' => $lockedBase, 'content' => 'Locked edits'], null);
+        $check(
+            $response->get_status() === 409 && $response->get_data()['code'] === 'aflpp_post_locked',
+            'An edit lock must have its own recoverable response, even when the saved source also changed.'
+        );
+        $check(
+            get_post($revision->ID)->post_content === $revision->post_content && $live->fingerprint($draft) === $base,
+            'A locked preview must not change the last preview or the saved parent.'
+        );
+    }
+    wp_set_post_lock($draft);
+    $response = $send($previewRoute, ['base' => $base, 'content' => 'Editing after takeover'], null);
+    $check($response->get_status() === 200, 'The preview must accept the new editing lock after native takeover.');
+    $response = $send($previewRoute, ['base' => str_repeat('0', 64)], null);
+    $check(
+        $response->get_status() === 409 && $response->get_data()['code'] === 'aflpp_preview_conflict',
+        'Resolving an edit lock must not bypass stale-source protection.'
+    );
+    delete_post_meta($draft, '_edit_lock');
+
     $images = [];
     foreach (['saved', 'edited'] as $label) {
         $upload = wp_upload_bits(
@@ -105,7 +128,6 @@ try {
     }
     update_post_meta($draft, '_thumbnail_id', $images[0]);
     $base = $live->fingerprint($draft);
-    $previewRoute = '/a-floating-live-preview-panel/v1/posts/' . $draft . '/preview';
     foreach ([$images[1], 0, null] as $selection) {
         $data = ['base' => $base, 'content' => '<!-- wp:paragraph --><p>Image preview</p><!-- /wp:paragraph -->'];
         if ($selection !== null) {

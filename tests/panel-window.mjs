@@ -633,6 +633,32 @@ for (const hasPreview of [false, true]) {
     });
 }
 
+const postLockedMessage = (await readFile(new URL('../classes/LivePreview.php', import.meta.url), 'utf8'))
+    .match(/'aflpp_post_locked',\s*__\(\s*'([^']+)'/)[1];
+for (const hasPreview of [false, true]) {
+    test(`an edit lock points to native takeover without a retry with ${hasPreview ? 'a retained preview' : 'no preview'}`, () => {
+        const h = fixture(true, { labels: panelStrings });
+        const message = postLockedMessage;
+        h.view.report(message, 'paused', { hasPreview, reason: 'post-locked', canRetry: false, canTakeOver: true });
+        const content = hasPreview ? h.state.notice : h.state.empty;
+        assert.equal(content.heading, 'Preview paused');
+        assert.equal(content.description, 'Another user is editing this post. Take over editing to continue.');
+        assert.doesNotMatch(`${content.heading} ${content.description}`, /reload|copy any changes|couldn’t load|try again|retry/i);
+        assert.equal(content.retry, false, 'WordPress’s native takeover restarts the preview; no plugin action is needed.');
+        assert.equal(content.close, false);
+        assert.equal(h.state.canRefresh, false);
+        if (hasPreview) {
+            assert.equal(content.status, 'info');
+            assert.equal(content.dismissible, false);
+        } else {
+            assert.equal(content.icon, 'info');
+            assert.equal(content.busy, false);
+        }
+        h.actions.retry();
+        assert.deepEqual(h.retryCalls, [], 'A stale retry callback must not bypass the native editing lock.');
+    });
+}
+
 // Exercise complete messages, not just individual strings: server errors must not repeat the reload warning.
 const reloadDetails = [acfStrings.nativePreviewAcf, panelStrings.nativePreviewFailed, blockEditorStrings.nativeSaveFailed,
     panelStrings.integrationFailed, acfStrings.acfUnavailable];

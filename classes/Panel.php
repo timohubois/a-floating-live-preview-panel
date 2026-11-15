@@ -192,7 +192,7 @@ final class Panel
             'preparing' => __('Preparing your first preview.', 'a-floating-live-preview-panel'),
             'updating' => __('Updating preview…', 'a-floating-live-preview-panel'),
             'current' => __('Preview updated', 'a-floating-live-preview-panel'),
-            'pausedTitle' => __('Live preview is paused', 'a-floating-live-preview-panel'),
+            'pausedTitle' => __('Preview paused', 'a-floating-live-preview-panel'),
             'stale' => __('Waiting to update preview…', 'a-floating-live-preview-panel'),
             'failed' => __('Couldn’t load preview', 'a-floating-live-preview-panel'),
             'failedHelp' => __('Try loading the preview again.', 'a-floating-live-preview-panel'),

@@ -12,13 +12,16 @@ let nextSite = 0;
 // Use native lock queues and cross-context messages; only the panel and frame are fakes.
 function fixture(t) {
     const endpoint = `/ownership-test-${process.pid}-${++nextSite}`;
-    return ({ site = endpoint, userId = 1, broadcast = true, pending = false } = {}) => {
+    return ({ site = endpoint, userId = 1, broadcast = true, pending = false, error, hasPreview = false } = {}) => {
         const write = Promise.withResolvers(), started = Promise.withResolvers();
         const reports = [], timers = new Map();
+        const frames = { loads: 0, cancels: 0, clears: 0, hasPreview,
+            load() { this.loads++; }, cancel() { this.cancels++; }, clear() { this.clears++; },
+        };
         let callbacks, channel, exit, writes = 0;
         const view = { visible: true, setTitle() {}, returnToEditor() {},
             setVisible(value) { this.visible = value; },
-            report(text, state, details) { reports.push({ state, ...details }); },
+            report(text, state, details) { reports.push({ text, state, ...details }); },
         };
         const session = vm.runInNewContext(`"use strict";\n${source}\ncreateLivePreview`, {
             AbortController, navigator: { locks },
@@ -32,11 +35,17 @@ function fixture(t) {
             imports: {
                 '../panel/window.js': { createPreviewPanel: (strings, options) => { callbacks = options; return view; } },
                 '../preview/scroll.js': { createPreviewScroll: () => ({}) },
-                '../preview/frame.js': { createPreviewFrame: () => ({ load() {}, cancel() {}, clear() {} }) },
+                '../preview/frame.js': { createPreviewFrame: () => frames },
             },
         })({ endpoint: site, postId: 12, userId, available: true, strings: {} }, {
             idle: Promise.resolve(), saving: false,
-            preparePreview() { writes++; started.resolve(); return write.promise; },
+            preparePreview() {
+                writes++; started.resolve();
+                return write.promise.then((result) => {
+                    if (error) throw error;
+                    return result;
+                });
+            },
         });
         if (!pending) write.resolve({ url: '/preview' });
         t.after(async () => {
@@ -46,10 +55,43 @@ function fixture(t) {
             await session.pending;
             await settle();
         });
-        return { session, callbacks, channel, reports, timers, started: started.promise,
+        return { session, callbacks, channel, reports, timers, frames, started: started.promise,
             release: () => write.resolve({ url: '/preview' }), get writes() { return writes; },
         };
     };
+}
+
+for (const hasPreview of [false, true]) {
+    test(`an edit lock pauses ${hasPreview ? 'a retained preview' : 'an initial preview'} until WordPress takeover reloads the editor`, { timeout: 5000 }, async (t) => {
+        const open = fixture(t);
+        const error = Object.assign(new Error('Take over editing to continue.'), { code: 'aflpp_post_locked' });
+        const h = open({ error, hasPreview });
+        h.session.start(); await h.started; await h.session.pending; await settle();
+        const report = h.reports.at(-1);
+        assert.equal(report.state, 'paused');
+        assert.equal(report.reason, 'post-locked');
+        assert.equal(report.text, error.message);
+        assert.equal(report.canRetry, false);
+        assert.equal(report.canRefresh, false);
+        assert.equal(report.hasPreview, hasPreview);
+        assert.ok(h.frames.cancels > 0);
+        assert.equal(h.frames.clears, 0, 'Keep the last good frame instead of clearing it.');
+        h.session.changed();
+        assert.equal(h.timers.size, 0, 'Edits must not keep retrying while WordPress holds the lock.');
+        assert.equal(h.writes, 1);
+
+        const other = open({ userId: 2 });
+        other.session.start(); await other.started;
+        assert.equal(other.writes, 1, 'Pausing must release local preview ownership.');
+        other.callbacks.onClose(); await other.session.pending; await settle();
+
+        h.callbacks.onClose(); // The old document is discarded by WordPress’s native takeover navigation.
+        const reloaded = open();
+        reloaded.session.start(); await reloaded.started; await reloaded.session.pending;
+        assert.equal(reloaded.writes, 1, 'The reloaded editor must start its open preview without a manual retry.');
+        assert.equal(reloaded.frames.loads, 1);
+        assert.equal(h.writes, 1, 'The previous locked session must remain stopped.');
+    });
 }
 
 for (const broadcast of [false, true]) {
