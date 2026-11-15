@@ -334,14 +334,31 @@ test('compact geometry is restored without writing preferences on load', () => {
     assert.equal(h.writes.length, 0);
 });
 
-test('remembering size and position defaults to on with a small compact bottom-right panel', () => {
+test('remembering size and position defaults to on with a 480×400 bottom-right panel', () => {
     const h = fixture(true);
     assert.equal(h.state.rememberPosition, true);
-    assert.equal(h.rect().width, 480);
-    assert.equal(h.rect().height, 340);
+    assert.deepEqual(h.rect(), { left: 940, top: 580, width: 480, height: 400 });
     assert.equal(h.actions.size, undefined, 'Named size presets are no longer actions.');
     assert.equal(h.state.dock, 'right');
     assert.equal(h.state.mode, 'expand');
+    assert.equal(h.state.device, 'desktop');
+    assert.equal(h.state.fit, 'automatic');
+    assert.equal(h.node('aflpp-panel .aflpp-stage').style.width, '1280px');
+    assert.equal(h.node('aflpp-panel .aflpp-stage').style.height, '800px');
+    assert.equal(h.writes.length, 0);
+});
+
+test('the new default fits a small window temporarily without saving smaller dimensions', () => {
+    const h = fixture(true, { width: 390, height: 300 });
+    inside(h);
+    assert.ok(h.rect().width < 480);
+    assert.ok(h.rect().height < 400);
+    h.window.innerWidth = 1440;
+    h.window.innerHeight = 1000;
+    h.window.fire('resize');
+    assert.deepEqual(h.rect(), { left: 940, top: 580, width: 480, height: 400 });
+    assert.equal(h.state.fit, 'automatic');
+    assert.equal(h.preferences.get('layout'), undefined);
     assert.equal(h.writes.length, 0);
 });
 
@@ -374,7 +391,7 @@ for (const position of ['left', 'center', 'right']) {
         assert.equal(reopened.rect().width, 480);
         assert.deepEqual(reopened.rect(), {
             left: position === 'left' ? 20 : position === 'center' ? 260 : 500,
-            top: 440, width: 480, height: 340,
+            top: 380, width: 480, height: 400,
         });
         assert.equal(reopened.writes.length, 0);
     });
@@ -688,7 +705,7 @@ for (const rememberPosition of [false, true]) {
         h.resizeTo(640, 440);
         h.actions.mode();
         h.actions.reset();
-        assert.deepEqual(h.rect(), { left: 940, top: 640, width: 480, height: 340 });
+        assert.deepEqual(h.rect(), { left: 940, top: 580, width: 480, height: 400 });
         assert.equal(h.state.rememberPosition, rememberPosition);
         assert.equal(h.preferences.get('position'), 'right');
         assert.equal(!!h.preferences.get('layout'), rememberPosition);
@@ -742,7 +759,7 @@ for (const dock of ['left', 'center', 'right']) {
         h.window.fire('resize');
         assert.equal(h.writes.length, writes, 'automatic fitting must not overwrite user choices');
         assert.equal(h.rect().left, dock === 'left' ? 20 : dock === 'center' ? 260 : 500);
-        assert.equal(h.rect().top, 440);
+        assert.equal(h.rect().top, 380);
         inside(h);
         const reopened = fixture(true, { preferences: h.preferences, width: 1000, height: 800 });
         assert.equal(reopened.state.dock, dock);
@@ -970,7 +987,7 @@ for (const invalid of [
         const h = fixture(true, { layout: invalid });
         assert.equal(h.state.dock, 'right');
         assert.equal(h.state.mode, 'expand');
-        assert.deepEqual(h.rect(), { left: 940, top: 640, width: 480, height: 340 });
+        assert.deepEqual(h.rect(), { left: 940, top: 580, width: 480, height: 400 });
     });
 }
 
@@ -990,7 +1007,7 @@ test('temporary viewport fitting does not lose the preferred custom size or posi
 test('reset restores compact default size and bottom-right position', () => {
     const h = fixture(true, { layout: layout({ expanded: true }) });
     h.actions.reset();
-    assert.deepEqual(h.rect(), { left: 940, top: 640, width: 480, height: 340 });
+    assert.deepEqual(h.rect(), { left: 940, top: 580, width: 480, height: 400 });
     assert.equal(h.state.mode, 'expand');
     assert.equal(h.preferences.get('layout').dock, 'right');
 });
@@ -1144,13 +1161,17 @@ for (const direction of ['ltr', 'rtl']) for (const anchor of ['left', 'center', 
 }
 
 for (const [width, height] of [[480, 340], [640, 440]]) {
-    test(`older saved ${width}×${height} dimensions survive removal of named size presets`, () => {
+    test(`older saved ${width}×${height} dimensions survive the new default and expand/restore`, () => {
         const h = fixture(true, { layout: layout({ bounds: { x: 150, y: 180, width, height }, expanded: true }) });
         assert.equal(h.state.mode, 'compact');
+        assert.equal(h.writes.length, 0);
         h.actions.mode();
         assert.equal(h.rect().width, width);
         assert.equal(h.rect().height, height);
         assert.equal(h.state.mode, 'expand');
+        const reopened = fixture(true, { preferences: h.preferences });
+        assert.deepEqual(reopened.rect(), { left: 150, top: 180, width, height });
+        assert.equal(reopened.writes.length, 0);
     });
 }
 
@@ -1187,7 +1208,7 @@ test('reset restores the default dimensions and docking even in a small expanded
     assert.equal(h.state.mode, 'expand');
     assert.equal(h.state.dock, 'right');
     assert.equal(h.preferences.get('layout').bounds.width, 480);
-    assert.equal(h.preferences.get('layout').bounds.height, 340);
+    assert.equal(h.preferences.get('layout').bounds.height, 400);
     inside(h);
 });
 

@@ -167,7 +167,7 @@ function browserTests({ core, css, geometry, source }) {
                 }
                 if (during.left < viewportLeft - 1 || during.right > viewportRight + 1 || during.bottom > height + 1) throw new Error('The moving panel must remain inside the viewport.');
                 const preferred = preferences.get('layout').bounds;
-                if (preferred.width !== 480 || preferred.height !== 340) throw new Error('Moving must not replace preferred dimensions with temporary fitting.');
+                if (preferred.width !== 480 || preferred.height !== 400) throw new Error('Moving must not replace preferred dimensions with temporary fitting.');
             }
             results.push({ name });
         } catch (error) { results.push({ name, error: error.message }); }

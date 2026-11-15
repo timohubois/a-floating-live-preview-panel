@@ -6,7 +6,7 @@ export function createPanelGeometry(saved, area, position = 'right') {
         && [null, 'left', 'center', 'right'].includes(saved.dock) && typeof saved.expanded === 'boolean'
         && (saved.anchor === undefined || ['left', 'center', 'right'].includes(saved.anchor));
     let expanded = validLayout ? saved.expanded : false;
-    const defaultSize = { width: 480, height: 340 };
+    const defaultSize = { width: 480, height: 400 };
     const bounds = validLayout ? { ...saved.bounds } : { x: 0, y: 0, ...defaultSize };
     let dock = validLayout ? saved.dock : position;
     // Keep the same collapse/resize corner when dragging away from a dock. Older layouts default to the right.
