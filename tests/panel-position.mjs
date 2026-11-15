@@ -35,7 +35,7 @@ function browserTests({ core, css, geometry, source }) {
                     <header class="aflpp-header"><div class="aflpp-move-control"><button>Move</button></div>
                         <div class="aflpp-titlebar"><h2 id="aflpp-title" class="aflpp-caption">Live preview</h2></div>
                         <div class="aflpp-controls"><button data-action="actions">Actions</button></div></header>
-                    <div class="aflpp-feedback" hidden></div><div class="aflpp-viewport"><div class="aflpp-stage"></div><div class="aflpp-empty"></div></div>
+                    <div class="aflpp-feedback" hidden></div><div class="aflpp-viewport"><div class="aflpp-canvas" role="region" aria-label="Preview canvas" tabindex="-1"><div class="aflpp-canvas-space"><div class="aflpp-stage"></div></div></div><div class="aflpp-empty"></div></div>
                     <footer class="aflpp-devicebar"><span class="aflpp-dimensions"></span></footer>
                     <button class="aflpp-resize"></button><span role="status"></span>
                 </section></body></html>`);

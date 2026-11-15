@@ -6,8 +6,8 @@ export function createPanelGeometry(saved, area, position = 'right') {
         && [null, 'left', 'center', 'right'].includes(saved.dock) && typeof saved.expanded === 'boolean'
         && (saved.anchor === undefined || ['left', 'center', 'right'].includes(saved.anchor));
     let expanded = validLayout ? saved.expanded : false;
-    const sizes = { small: { width: 480, height: 340 }, large: { width: 640, height: 440 } };
-    const bounds = validLayout ? { ...saved.bounds } : { x: 0, y: 0, ...sizes.small };
+    const defaultSize = { width: 480, height: 340 };
+    const bounds = validLayout ? { ...saved.bounds } : { x: 0, y: 0, ...defaultSize };
     let dock = validLayout ? saved.dock : position;
     // Keep the same collapse/resize corner when dragging away from a dock. Older layouts default to the right.
     let anchor = dock || (validLayout && saved.anchor) || 'right';
@@ -46,20 +46,9 @@ export function createPanelGeometry(saved, area, position = 'right') {
     }
 
     function dockTo(side = 'right', resetSize = false) {
-        if (resetSize) Object.assign(bounds, sizes.small);
+        if (resetSize) Object.assign(bounds, defaultSize);
         expanded = false;
         anchor = dock = side;
-    }
-
-    function setSize(name) {
-        if (!Object.hasOwn(sizes, name)) return false;
-        const rect = compactRect();
-        Object.assign(bounds, sizes[name], {
-            x: rect.x + (rect.width - sizes[name].width) * anchorFactor(),
-            y: rect.y + rect.height - sizes[name].height,
-        });
-        expanded = false;
-        return true;
     }
 
     // Docked edges that cannot move must not advertise a resize cursor or eat pointer input.
@@ -111,15 +100,9 @@ export function createPanelGeometry(saved, area, position = 'right') {
         get anchorFactor() { return anchorFactor(); },
         get dock() { return dock; },
         get expanded() { return expanded; },
-        get size() {
-            return expanded ? undefined : Object.keys(sizes).find((name) =>
-                bounds.width === sizes[name].width && bounds.height === sizes[name].height
-            );
-        },
         get layout() { return { bounds: { ...bounds }, dock, anchor, expanded }; },
         toggleExpanded() { expanded = !expanded; },
         dockTo,
-        setSize,
         resize(start, edge, dx, dy) { Object.assign(bounds, resizeBounds(start, edge, dx, dy)); },
         move: moveBounds,
     };

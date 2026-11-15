@@ -13,7 +13,7 @@ function fixture() {
     const calls = [];
     const container = {};
     const h = (type, props, ...children) => ({ type, props: props || {}, children });
-    const components = Object.fromEntries(['Button', 'DropdownMenu', 'MenuGroup', 'MenuItem', 'MenuItemsChoice', 'Notice', 'Placeholder', 'Spinner', 'Toolbar', 'ToolbarButton', 'SlotFillProvider'].map((name) => [name, name]));
+    const components = Object.fromEntries(['Button', 'DropdownMenu', 'MenuGroup', 'MenuItem', 'MenuItemsChoice', 'Notice', 'Placeholder', 'SelectControl', 'Spinner', 'Toolbar', 'ToolbarButton', 'SlotFillProvider'].map((name) => [name, name]));
     components.Popover = { Slot: 'Popover.Slot' };
     const element = {
         createElement: h, Fragment: 'Fragment', createPortal: (child, target) => h('Portal', { target }, child), flushSync: (callback) => callback(),
@@ -23,7 +23,7 @@ function fixture() {
             return mount;
         },
     };
-    const callbacks = Object.fromEntries(['refresh', 'retry', 'dismissNotice', 'mode', 'close', 'popOut', 'fullscreen', 'dock', 'size', 'reset', 'follow', 'rememberVisibility', 'rememberPosition', 'device']
+    const callbacks = Object.fromEntries(['refresh', 'retry', 'dismissNotice', 'mode', 'close', 'popOut', 'fullscreen', 'dock', 'fit', 'reset', 'follow', 'rememberVisibility', 'rememberPosition', 'device']
         .map((name) => [name, (...args) => calls.push({ name, args })]));
     const strings = panelStrings;
     const querySelector = (selector) => selector === '.aflpp-controls' ? container : {
@@ -43,7 +43,7 @@ function fixture() {
     const state = {
         inPage: true, inPip: false, movable: true, mode: 'expand', modeLabel: strings.expand, canRefresh: true,
         hasPreview: true, previewUrl: '/preview',
-        canPip: true, canFullscreen: true, dock: 'center', size: 'small', rememberVisibility: true, rememberPosition: true, followChanges: false, device: 'desktop',
+        canPip: true, canFullscreen: true, dock: 'center', fit: 'automatic', orientation: 'landscape', rememberVisibility: true, rememberPosition: true, followChanges: false, device: 'desktop',
     };
     controls.update(state);
     function nodes(type) {
@@ -68,16 +68,12 @@ test('the PiP menu action delegates to the window owner', () => {
 
 test('native layout choices delegate selection and hide outside in-page mode', () => {
     const h = fixture();
-    for (const [index, action, value, choices] of [
-        [0, 'dock', 'center', ['left', 'center', 'right']],
-        [1, 'size', 'small', ['small', 'large']],
-    ]) {
-        const control = h.nodes('MenuItemsChoice')[index];
-        assert.equal(control.props.value, value);
-        assert.deepEqual(Array.from(control.props.choices, ({ value }) => value), choices);
-        control.props.onSelect(choices[0]);
-        assert.deepEqual(h.calls.at(-1), { name: action, args: [choices[0]] });
-    }
+    const control = h.nodes('MenuItemsChoice')[0];
+    assert.equal(control.props.value, 'center');
+    assert.deepEqual(Array.from(control.props.choices, ({ value }) => value), ['left', 'center', 'right']);
+    control.props.onSelect('left');
+    assert.deepEqual(h.calls.at(-1), { name: 'dock', args: ['left'] });
+    assert.equal(h.nodes('MenuItemsChoice').length, 1, 'No named size choices remain.');
     h.controls.update({ ...h.state, inPage: false });
     assert.equal(h.nodes('MenuItemsChoice').length, 0);
 });
@@ -105,6 +101,54 @@ test('viewport choices use native Toolbar buttons and pressed-state behavior', (
     buttons[2].props.onClick();
     assert.deepEqual(h.calls.at(-1), { name: 'device', args: ['mobile'] });
 });
+
+test('the desktop button has no rotation label or icon state', () => {
+    const h = fixture();
+    for (const orientation of ['portrait', 'landscape']) {
+        h.controls.update({ ...h.state, orientation });
+        const button = h.nodes('ToolbarButton').find(({ props }) => props['data-viewport'] === 'desktop');
+        assert.equal(button.props.label, panelStrings.desktop);
+        assert.equal(button.props.icon, icons.desktop);
+        assert.equal(button.props.className, undefined);
+        assert.equal(button.props.isPressed, true);
+    }
+});
+
+test('selected tablet and phone buttons offer rotation with an unwrapped native icon', () => {
+    const h = fixture();
+    for (const device of ['tablet', 'mobile']) {
+        h.controls.update({ ...h.state, device, orientation: 'portrait' });
+        let button = h.nodes('ToolbarButton').find(({ props }) => props['data-viewport'] === device);
+        assert.equal(button.props.label, `${panelStrings[device]} — Turn sideways`);
+        assert.equal(button.props.icon, icons[device], 'Pass the official SVG directly so core sizes it.');
+        assert.equal(button.props.className, undefined);
+        assert.equal(button.props.isPressed, true);
+        button.props.onClick();
+        assert.deepEqual(h.calls.at(-1), { name: 'device', args: [device] });
+        h.controls.update({ ...h.state, device, orientation: 'landscape' });
+        button = h.nodes('ToolbarButton').find(({ props }) => props['data-viewport'] === device);
+        assert.match(button.props.label, /Turn upright$/);
+        assert.equal(button.props.icon, icons[device]);
+        assert.equal(button.props.className, 'aflpp-device-rotated');
+        assert.equal(h.nodes('ToolbarButton').length, 3);
+        assert.equal(h.nodes('Button').some(({ props }) => props['data-action'] === 'rotate'), false);
+    }
+});
+
+for (const inPip of [false, true]) {
+    test(`native fitting select offers all three approved zoom modes${inPip ? ' in PiP' : ''}`, () => {
+        const h = fixture();
+        h.controls.update({ ...h.state, inPip, fit: 'width' });
+        const select = h.nodes('SelectControl')[0];
+        assert.equal(select.props.label, 'How the screen fits');
+        assert.equal(select.props.hideLabelFromVision, true);
+        assert.equal(select.props.value, 'width');
+        assert.deepEqual(Array.from(select.props.options, ({ value }) => value), ['automatic', 'window', 'width']);
+        assert.deepEqual(Array.from(select.props.options, ({ label }) => label), ['Automatic', 'Fit to window', 'Fit to width']);
+        select.props.onChange('window');
+        assert.deepEqual(h.calls.at(-1), { name: 'fit', args: ['window'] });
+    });
+}
 
 for (const mode of ['in-page', 'fullscreen', 'PiP']) {
     test(`${mode} controls stay compact and refresh remains focusable while loading`, () => {

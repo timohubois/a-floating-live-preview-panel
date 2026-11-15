@@ -1,12 +1,41 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { createPreviewViewport } from '../src/panel/viewport.js';
+import { sourceForVm } from './helpers/modules.mjs';
+import { runChromiumTests, withChromiumPage } from './helpers/chromium.mjs';
 
-test('viewport resize observers detach before adoption and rebind to the new window on each move', () => {
-    const observers = [];
+function fixture(saved = {}, width = 480, height = 248, motion = false, scrollbar = 0, dpr = 1) {
+    const observers = [], frames = new Map();
+    let nextFrame = 0;
     function makeWindow(name) {
+        const mediaQueries = [], resizeListeners = new Set();
         return {
-            matchMedia: () => ({ matches: false, addEventListener() {} }),
+            devicePixelRatio: dpr, mediaQueries, resizeListeners,
+            addEventListener(type, callback) { if (type === 'resize') resizeListeners.add(callback); },
+            removeEventListener(type, callback) { if (type === 'resize') resizeListeners.delete(callback); },
+            resize() { for (const callback of [...resizeListeners]) callback(); },
+            setPixelRatio(value) {
+                this.devicePixelRatio = value;
+                for (const query of [...mediaQueries]) if (query.media.startsWith('(resolution:')) {
+                    for (const callback of [...query.listeners]) callback();
+                }
+            },
+            performance: { now: () => 0 },
+            requestAnimationFrame(callback) { frames.set(++nextFrame, callback); return nextFrame; },
+            cancelAnimationFrame(id) { frames.delete(id); },
+            matchMedia(media) {
+                const listeners = new Set();
+                const query = {
+                    media, matches: motion, listeners,
+                    addEventListener(type, callback) { if (type === 'change') listeners.add(callback); },
+                    removeEventListener(type, callback) { if (type === 'change') listeners.delete(callback); },
+                };
+                mediaQueries.push(query);
+                return query;
+            },
             ResizeObserver: class {
                 constructor(callback) { this.window = name; this.callback = callback; observers.push(this); }
                 observe(element) { this.element = element; this.connected = true; }
@@ -14,25 +43,571 @@ test('viewport resize observers detach before adoption and rebind to the new win
             },
         };
     }
-    const mainWindow = makeWindow('editor');
-    const pipWindow = makeWindow('pip');
-    const container = { ownerDocument: { defaultView: mainWindow }, clientWidth: 640, clientHeight: 400 };
-    const stage = { style: {} };
-    const dimensions = {};
-    const viewport = createPreviewViewport(container, stage, dimensions, 'tablet');
-    assert.equal(observers[0].connected, true);
-    viewport.beforeMove();
-    assert.equal(observers[0].connected, false);
-    container.ownerDocument = { defaultView: pipWindow };
-    viewport.afterMove();
-    assert.equal(observers[1].window, 'pip');
-    assert.equal(observers[1].connected, true);
-    assert.equal(viewport.device, 'tablet');
-    assert.equal(stage.style.width, '768px');
-    viewport.beforeMove();
-    assert.equal(observers[1].connected, false);
-    container.ownerDocument = { defaultView: mainWindow };
-    viewport.afterMove();
-    assert.equal(observers[2].window, 'editor');
-    assert.equal(observers.filter(({ connected }) => connected).length, 1);
+    const mainWindow = makeWindow('editor'), pipWindow = makeWindow('pip');
+    const canvas = {
+        style: {}, scrollTop: 0,
+        get clientWidth() { return container.clientWidth - (this.style.overflowY === 'scroll' ? scrollbar : 0); },
+        get clientHeight() { return container.clientHeight; },
+    };
+    const space = { style: {} };
+    const container = {
+        ownerDocument: { defaultView: mainWindow }, clientWidth: width, clientHeight: height,
+        querySelector: (selector) => selector === '.aflpp-canvas' ? canvas : space,
+    };
+    const stage = { style: {} }, dimensions = { textContent: '' };
+    const viewport = createPreviewViewport(container, stage, dimensions, saved);
+    viewport.layout();
+    return {
+        viewport, container, canvas, space, stage, dimensions, observers, mainWindow, pipWindow, frames,
+        advance(time) {
+            const id = [...frames.keys()].at(-1), callback = frames.get(id);
+            frames.delete(id);
+            callback(time);
+        },
+    };
+}
+
+const views = [
+    { device: 'desktop', width: 1280, height: 800 },
+    { device: 'tablet', width: 768, height: 1024 },
+    { device: 'tablet', tabletOrientation: 'landscape', width: 1024, height: 768 },
+    { device: 'mobile', width: 390, height: 844 },
+    { device: 'mobile', mobileOrientation: 'landscape', width: 844, height: 390 },
+];
+const fits = ['automatic', 'window', 'width'];
+const expectedScale = (fit, aw, ah, width, height, dpr = 1) => fit === 'width' ? aw / width
+    : Math.min(fit === 'automatic' ? 1 / dpr : Infinity, aw / width, ah / height);
+
+for (const [name, width, height] of [['floating', 480, 248], ['expanded', 1240, 636], ['fullscreen', 1280, 708], ['PiP', 640, 448]]) {
+    for (const view of views) for (const fit of fits) for (const dpr of [0.75, 1, 1.25, 2]) {
+        test(`${name}: ${view.width}×${view.height}, ${fit}, DPR ${dpr} zoom with fixed geometry`, () => {
+            const h = fixture({ ...view, fit }, width, height, false, 0, dpr);
+            const scale = expectedScale(fit, width, height, view.width, view.height, dpr);
+            const top = Math.max(0, (height - view.height * scale) / 2);
+            assert.equal(h.stage.style.width, `${view.width}px`);
+            assert.equal(h.stage.style.height, `${view.height}px`);
+            assert.equal(h.stage.style.transform, `scale(${scale})`);
+            assert.equal(h.stage.style.left, `${Math.max(0, (width - view.width * scale) / 2)}px`);
+            assert.equal(h.stage.style.top, `${top}px`);
+            assert.equal(h.space.style.width, `${width}px`);
+            assert.equal(h.space.style.height, `${Math.max(height, top + view.height * scale)}px`);
+            assert.equal(h.canvas.tabIndex, fit === 'width' && view.height * scale > height ? 0 : -1);
+            assert.equal(h.dimensions.textContent, `${view.width} × ${view.height} · ${Math.round(scale * dpr * 100)}%`);
+        });
+    }
+}
+
+test('Automatic is the default and allows blank canvas on all four sides without upscaling', () => {
+    const h = fixture({ device: 'mobile' }, 900, 1200);
+    assert.equal(h.viewport.fit, 'automatic');
+    assert.equal(h.stage.style.transform, 'scale(1)');
+    assert.equal(h.stage.style.left, '255px');
+    assert.equal(h.stage.style.top, '178px');
+    assert.equal(h.stage.style.width, '390px');
+    assert.equal(h.stage.style.height, '844px');
+    assert.equal(h.dimensions.textContent, '390 × 844 · 100%');
+});
+
+test('Automatic corrects DPR before deciding whether a 1:1 mobile viewport fits', () => {
+    const h = fixture({ device: 'mobile' }, 900, 744, false, 0, 2);
+    assert.equal(h.stage.style.transform, 'scale(0.5)');
+    assert.equal(h.stage.style.width, '390px');
+    assert.equal(h.stage.style.height, '844px');
+    assert.equal(h.stage.style.left, '352.5px');
+    assert.equal(h.stage.style.top, '161px');
+    assert.equal(h.dimensions.textContent, '390 × 844 · 100%');
+});
+
+test('Automatic shrinks further only when the DPR-corrected viewport cannot fit', () => {
+    const h = fixture({ device: 'mobile' }, 900, 300, false, 0, 2);
+    assert.equal(h.stage.style.transform, `scale(${300 / 844})`);
+    assert.equal(h.stage.style.width, '390px');
+    assert.equal(h.stage.style.height, '844px');
+    assert.equal(h.dimensions.textContent, '390 × 844 · 71%');
+});
+
+test('DPR changes relayout the camera and rearm exactly one resolution listener without resizing the panel', () => {
+    const h = fixture({ device: 'mobile' }, 900, 1200);
+    for (const dpr of [2, 1.25, 0.75, 1]) {
+        h.mainWindow.setPixelRatio(dpr);
+        assert.equal(h.stage.style.transform, `scale(${1 / dpr})`);
+        assert.equal(h.stage.style.width, '390px');
+        assert.equal(h.stage.style.height, '844px');
+        assert.equal(h.dimensions.textContent, '390 × 844 · 100%');
+        const active = h.mainWindow.mediaQueries.filter((query) => query.media.startsWith('(resolution:') && query.listeners.size);
+        assert.equal(active.length, 1);
+        assert.equal(active[0].media, `(resolution: ${dpr}dppx)`);
+    }
+});
+
+test('window resize is a fallback when a DPR change does not dispatch a resolution event', () => {
+    const h = fixture({ device: 'mobile' }, 900, 1200);
+    h.mainWindow.devicePixelRatio = 2;
+    h.mainWindow.resize();
+    assert.equal(h.stage.style.transform, 'scale(0.5)');
+    assert.equal(h.dimensions.textContent, '390 × 844 · 100%');
+    assert.equal(h.mainWindow.resizeListeners.size, 1);
+});
+
+test('DPR changes update width-fit reporting without changing its CSS zoom or logical canvas navigation', () => {
+    const h = fixture({ device: 'mobile', fit: 'width' });
+    h.canvas.scrollTop = 200 * 480 / 390;
+    const before = h.canvas.scrollTop;
+    h.mainWindow.setPixelRatio(2);
+    assert.equal(h.stage.style.transform, `scale(${480 / 390})`);
+    assert.equal(h.dimensions.textContent, '390 × 844 · 246%');
+    assert.equal(h.canvas.scrollTop, before);
+});
+
+test('PiP uses its own DPR and removes resolution listeners from the previous window', () => {
+    const h = fixture({ device: 'mobile' }, 900, 1200, false, 0, 2);
+    h.pipWindow.devicePixelRatio = 1.25;
+    h.viewport.beforeMove();
+    h.mainWindow.setPixelRatio(1);
+    h.mainWindow.resize();
+    assert.equal(h.mainWindow.resizeListeners.size, 0);
+    assert.equal(h.stage.style.transform, 'scale(0.5)', 'A detached window must no longer drive layout.');
+    h.container.ownerDocument = { defaultView: h.pipWindow };
+    h.viewport.afterMove();
+    assert.equal(h.stage.style.transform, 'scale(0.8)');
+    h.pipWindow.setPixelRatio(2);
+    assert.equal(h.stage.style.transform, 'scale(0.5)');
+    h.viewport.beforeMove();
+    assert.ok(h.pipWindow.mediaQueries.every((query) => !query.listeners.size));
+    assert.equal(h.pipWindow.resizeListeners.size, 0);
+    h.container.ownerDocument = { defaultView: h.mainWindow };
+    h.viewport.afterMove();
+    assert.equal(h.stage.style.transform, 'scale(1)');
+    assert.equal(h.dimensions.textContent, '390 × 844 · 100%');
+});
+
+test('unavailable or invalid DPR values safely fall back to one', () => {
+    const h = fixture({ device: 'mobile' }, 900, 1200);
+    for (const value of [undefined, null, 0, -1, NaN, Infinity, '2']) {
+        h.mainWindow.devicePixelRatio = value;
+        h.viewport.layout();
+        assert.equal(h.stage.style.transform, 'scale(1)');
+        assert.equal(h.dimensions.textContent, '390 × 844 · 100%');
+    }
+});
+
+test('Fit to window and Fit to width can both enlarge beyond 100%, without changing iframe height', () => {
+    const h = fixture({ device: 'mobile' }, 900, 1200);
+    h.viewport.setFit('window');
+    assert.equal(h.stage.style.transform, `scale(${1200 / 844})`);
+    assert.equal(h.dimensions.textContent, '390 × 844 · 142%');
+    h.viewport.setFit('width');
+    assert.equal(h.stage.style.transform, `scale(${900 / 390})`);
+    assert.equal(h.stage.style.height, '844px');
+    assert.equal(h.stage.style.top, '0px');
+    assert.equal(h.canvas.tabIndex, 0);
+    assert.equal(h.dimensions.textContent, '390 × 844 · 231%');
+});
+
+test('Fit to width reserves a native scrollbar before measuring the available preview width', () => {
+    const h = fixture({ device: 'mobile', fit: 'width' }, 480, 248, false, 15);
+    assert.equal(h.canvas.style.overflowY, 'scroll');
+    assert.equal(h.stage.style.transform, `scale(${465 / 390})`);
+    assert.equal(h.space.style.width, '465px');
+    assert.equal(h.stage.style.height, '844px');
+    h.viewport.setFit('automatic');
+    assert.equal(h.canvas.style.overflowY, 'hidden');
+    assert.equal(h.space.style.width, '480px');
+    assert.equal(h.canvas.tabIndex, -1);
+});
+
+test('scrollbar reservation is stable at the height limit instead of toggling the scrollbar in a resize loop', () => {
+    const h = fixture({ fit: 'width' }, 400, 249, false, 15);
+    const before = { ...h.stage.style };
+    for (let i = 0; i < 10; i++) h.observers[0].callback([]);
+    assert.deepEqual(h.stage.style, before);
+    assert.equal(h.canvas.style.overflowY, 'scroll');
+});
+
+test('canvas navigation retains its logical position across zoom-only panel resizes, and resets on mode/device changes', () => {
+    const h = fixture({ device: 'mobile', fit: 'width' });
+    h.canvas.scrollTop = 200 * 480 / 390;
+    h.container.clientWidth = 600;
+    h.viewport.layout();
+    assert.ok(Math.abs(h.canvas.scrollTop - 200 * 600 / 390) < 0.001);
+    assert.equal(h.stage.style.width, '390px');
+    assert.equal(h.stage.style.height, '844px');
+    h.viewport.rotate();
+    assert.equal(h.canvas.scrollTop, 0);
+    h.canvas.scrollTop = 50;
+    h.viewport.setFit('automatic');
+    assert.equal(h.canvas.scrollTop, 0);
+});
+
+test('orientation is independent per device and never changes panel dimensions or fitting', () => {
+    const h = fixture({ device: 'tablet', fit: 'width' });
+    h.viewport.rotate();
+    assert.equal(h.viewport.orientation, 'landscape');
+    assert.equal(h.stage.style.width, '1024px');
+    h.viewport.select('mobile');
+    assert.equal(h.viewport.orientation, 'portrait');
+    h.viewport.rotate();
+    assert.equal(h.stage.style.width, '844px');
+    h.viewport.select('tablet');
+    assert.equal(h.viewport.orientation, 'landscape');
+    h.viewport.rotate();
+    assert.equal(h.stage.style.width, '768px');
+    h.viewport.select('mobile');
+    assert.equal(h.viewport.orientation, 'landscape');
+    h.viewport.select('desktop');
+    assert.equal(h.viewport.orientation, 'landscape');
+    h.viewport.rotate();
+    assert.equal(h.viewport.orientation, 'landscape');
+    assert.equal(h.stage.style.width, '1280px');
+    h.viewport.select('mobile');
+    assert.equal(h.viewport.orientation, 'landscape');
+    h.viewport.select('desktop');
+    assert.equal(h.viewport.orientation, 'landscape');
+    h.viewport.rotate();
+    assert.equal(h.stage.style.width, '1280px');
+    assert.equal(h.viewport.fit, 'width');
+    assert.equal(h.container.clientWidth, 480);
+    assert.equal(h.container.clientHeight, 248);
+});
+
+test('desktop stays in landscape and ignores rotation and old orientation preferences', () => {
+    for (const desktopOrientation of [undefined, 'portrait', 'landscape']) {
+        const h = fixture({ desktopOrientation, fit: 'width' }, 480, 248, true);
+        assert.equal(h.viewport.orientation, 'landscape');
+        assert.equal(h.stage.style.width, '1280px');
+        assert.equal(h.stage.style.height, '800px');
+        h.canvas.scrollTop = 50;
+        const before = { ...h.stage.style };
+        const dimensions = h.dimensions.textContent;
+        h.viewport.rotate();
+        h.viewport.rotate(true);
+        assert.equal(h.viewport.orientation, 'landscape');
+        assert.deepEqual(h.stage.style, before);
+        assert.equal(h.dimensions.textContent, dimensions);
+        assert.equal(h.canvas.scrollTop, 50, 'Reselecting desktop must not reset canvas navigation.');
+        assert.equal(h.frames.size, 0, 'Desktop rotation must not start an animation.');
+    }
+});
+
+test('invalid preferences and actions cannot create arbitrary dimensions or fitting modes', () => {
+    for (const value of [null, false, {}, [], '__proto__', 'constructor', 'fit', '100', 100]) {
+        const h = fixture({ device: value, fit: value, desktopOrientation: value, tabletOrientation: value, mobileOrientation: value });
+        h.viewport.select(value);
+        h.viewport.setFit(value);
+        assert.equal(h.viewport.device, 'desktop');
+        assert.equal(h.viewport.fit, 'automatic');
+        h.viewport.select('tablet');
+        assert.equal(h.viewport.orientation, 'portrait');
+    }
+});
+
+for (const fit of fits) {
+    test(`resizing a panel only changes zoom, never the selected dimensions: ${fit}`, () => {
+        const h = fixture({ device: 'mobile', fit });
+        for (const [width, height] of [[900, 1200], [600, 400], [320, 280]]) {
+            h.container.clientWidth = width;
+            h.container.clientHeight = height;
+            h.viewport.layout();
+            assert.equal(h.stage.style.transform, `scale(${expectedScale(fit, width, height, 390, 844)})`);
+            assert.equal(h.stage.style.height, '844px');
+            assert.equal(h.stage.style.width, '390px');
+        }
+    });
+}
+
+test('hidden panels establish CSS viewport geometry immediately and wait for measurement before computing zoom', () => {
+    const h = fixture({ device: 'mobile' }, 0, 0);
+    assert.deepEqual(h.stage.style, { width: '390px', height: '844px' });
+    h.container.clientWidth = 480;
+    h.container.clientHeight = 248;
+    h.viewport.layout();
+    assert.equal(h.stage.style.width, '390px');
+    assert.ok(!JSON.stringify(h.stage.style).includes('NaN'));
+});
+
+test('orientation motion animates only zoom; CSS dimensions immediately match the selected orientation', () => {
+    const h = fixture({ device: 'mobile' }, 480, 248, true);
+    h.viewport.rotate(true);
+    assert.equal(h.stage.style.width, '844px');
+    assert.equal(h.stage.style.height, '390px');
+    h.advance(100);
+    assert.equal(h.stage.style.width, '844px');
+    assert.equal(h.stage.style.height, '390px');
+    assert.match(h.dimensions.textContent, /^844 × 390 · /);
+    h.viewport.layout();
+    assert.equal(h.frames.size, 0);
+    assert.equal(h.stage.style.transform, `scale(${480 / 844})`);
+    h.viewport.select('desktop', true);
+    h.viewport.beforeMove();
+    assert.equal(h.frames.size, 0);
+    h.container.ownerDocument = { defaultView: h.pipWindow };
+    h.viewport.afterMove();
+    assert.equal(h.stage.style.width, '1280px');
+    assert.equal(h.stage.style.height, '800px');
+});
+
+test('reduced motion skips camera animation without changing fixed viewport dimensions', () => {
+    const h = fixture({ device: 'mobile' });
+    h.viewport.rotate(true);
+    assert.equal(h.frames.size, 0);
+    assert.equal(h.stage.style.width, '844px');
+    assert.equal(h.stage.style.height, '390px');
+});
+
+test('viewport observers rebind after adoption without losing fitting or orientation', () => {
+    const h = fixture({ device: 'tablet', tabletOrientation: 'landscape', fit: 'width' });
+    h.viewport.beforeMove();
+    assert.equal(h.observers[0].connected, false);
+    h.container.ownerDocument = { defaultView: h.pipWindow };
+    h.viewport.afterMove();
+    assert.equal(h.observers[1].window, 'pip');
+    assert.equal(h.viewport.device, 'tablet');
+    assert.equal(h.viewport.orientation, 'landscape');
+    assert.equal(h.viewport.fit, 'width');
+    assert.equal(h.stage.style.width, '1024px');
+    assert.equal(h.stage.style.height, '768px');
+    h.viewport.beforeMove();
+    h.container.ownerDocument = { defaultView: h.mainWindow };
+    h.viewport.afterMove();
+    assert.equal(h.observers[2].window, 'editor');
+    assert.equal(h.observers.filter(({ connected }) => connected).length, 1);
+});
+
+async function browserTests({ source, css }) {
+    const createPreviewViewport = new Function(`${source}\nreturn createPreviewViewport;`)();
+    const results = [];
+    const check = (condition, message) => { if (!condition) throw new Error(message); };
+    const close = (actual, expected, label) => check(Math.abs(actual - expected) <= 1, `${label}: ${actual}, expected ${expected}`);
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+    const sizes = [[480, 340], [1240, 728], [1280, 800], [640, 540]];
+    const variants = [['desktop', 'landscape', 1280, 800], ['tablet', 'portrait', 768, 1024], ['tablet', 'landscape', 1024, 768], ['mobile', 'portrait', 390, 844], ['mobile', 'landscape', 844, 390]];
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.append(style);
+    for (const [pw, ph] of sizes) for (const [device, orientation, width, height] of variants) for (const fit of ['automatic', 'window', 'width']) {
+        const name = `${pw}×${ph}: ${device} ${orientation}, ${fit} fixed viewport`;
+        const panel = document.createElement('section');
+        panel.className = 'aflpp-panel';
+        panel.dir = pw === 480 ? 'rtl' : 'ltr';
+        panel.dataset.hasPreview = 'false';
+        panel.style.cssText = `position:relative;width:${pw}px;height:${ph}px`;
+        panel.innerHTML = '<header class="aflpp-header"></header><div class="aflpp-viewport"><div class="aflpp-canvas" role="region" aria-label="Preview canvas" tabindex="-1"><div class="aflpp-canvas-space"><div class="aflpp-stage"><iframe class="aflpp-frame" title="Test preview"></iframe></div></div></div></div><footer class="aflpp-devicebar" style="height:48px"><span class="aflpp-dimensions"></span></footer>';
+        document.body.append(panel);
+        const container = panel.querySelector('.aflpp-viewport'), stage = panel.querySelector('.aflpp-stage');
+        const canvas = panel.querySelector('.aflpp-canvas');
+        const viewport = createPreviewViewport(container, stage, panel.querySelector('.aflpp-dimensions'), { device, fit, [`${device}Orientation`]: orientation });
+        try {
+            const frame = panel.querySelector('iframe');
+            frame.contentDocument.open();
+            frame.contentDocument.write('<!doctype html><style>html,body{margin:0}main{height:100vh}article{height:200vh}p{margin:0;font:16px/1.5 sans-serif}footer{position:fixed;bottom:0;height:30px;width:100%;background:blue}</style><main><p>Fixed viewport text wrapping must never change when only zoom or panel size changes. Fixed viewport text wrapping must never change when only zoom or panel size changes.</p></main><article></article><footer></footer><script>window.initialViewport=[innerWidth,innerHeight]</script>');
+            frame.contentDocument.close();
+            check(frame.contentWindow.initialViewport[0] === width && frame.contentWindow.initialViewport[1] === height, 'Frontend initialization must see the selected viewport, even while loading.');
+            close(frame.contentWindow.innerWidth, width, 'A loading page must bootstrap at the selected CSS width');
+            close(frame.contentWindow.innerHeight, height, 'A loading page must bootstrap at the selected CSS height');
+            check(getComputedStyle(canvas).visibility === 'hidden', 'Do not expose a loading canvas to interaction.');
+            canvas.focus();
+            check(document.activeElement !== canvas, 'A loading canvas must not accept keyboard focus.');
+            panel.dataset.hasPreview = 'true';
+            viewport.layout();
+            await settle();
+            const cssState = () => ({
+                width: frame.contentWindow.innerWidth, height: frame.contentWindow.innerHeight,
+                vh: frame.contentDocument.querySelector('main').getBoundingClientRect().height,
+                textHeight: frame.contentDocument.querySelector('p').getBoundingClientRect().height,
+                tablet: frame.contentWindow.matchMedia('(min-width:768px)').matches,
+                tall: frame.contentWindow.matchMedia('(min-height:800px)').matches,
+                landscape: frame.contentWindow.matchMedia('(min-aspect-ratio:1/1)').matches,
+            });
+            const initial = cssState();
+            close(initial.width, width, 'Real CSS viewport width');
+            close(initial.height, height, 'Real CSS viewport height');
+            close(initial.vh, height, '100vh stays fixed');
+            close(frame.contentDocument.querySelector('footer').getBoundingClientRect().bottom, height, 'Fixed bottom stays in the selected viewport');
+            check(initial.tablet === (width >= 768) && initial.tall === (height >= 800) && initial.landscape === (width >= height), 'Width, height and aspect-ratio media queries must use the selected CSS viewport.');
+            const scale = fit === 'width' ? canvas.clientWidth / width
+                : Math.min(fit === 'automatic' ? 1 / devicePixelRatio : Infinity, canvas.clientWidth / width, canvas.clientHeight / height);
+            const rect = stage.getBoundingClientRect(), bounds = canvas.getBoundingClientRect();
+            close(rect.width, width * scale, 'Painted width');
+            close(rect.height, height * scale, 'Painted height');
+            check(panel.querySelector('.aflpp-dimensions').textContent === `${width} × ${height} · ${Math.round(scale * devicePixelRatio * 100)}%`, 'The readout must report fixed CSS dimensions and DPR-corrected zoom.');
+            check(canvas.scrollWidth === canvas.clientWidth, 'Unscaled iframe dimensions must not cause phantom horizontal overflow.');
+            const overflowing = fit === 'width' && rect.height > canvas.clientHeight;
+            check(canvas.tabIndex === (overflowing ? 0 : -1), 'Only a navigable canvas needs an extra keyboard stop.');
+            if (overflowing) {
+                check(canvas.scrollHeight > canvas.clientHeight, 'Width fitting must expose a real canvas scroll range.');
+                canvas.focus({ preventScroll: true });
+                check(document.activeElement === canvas && getComputedStyle(canvas).outlineStyle !== 'none', 'The canvas needs keyboard focus and a visible focus indicator.');
+                canvas.scrollTop = canvas.scrollHeight;
+                close(stage.getBoundingClientRect().bottom, bounds.top + canvas.clientHeight, 'The bottom of the complete viewport must be reachable');
+                canvas.scrollTop = 0;
+                close(stage.getBoundingClientRect().top, bounds.top, 'The top must remain reachable');
+            } else {
+                check(rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1 && rect.top >= bounds.top - 1 && rect.bottom <= bounds.bottom + 1, 'Whole-viewport modes must fit both dimensions.');
+                check(canvas.scrollHeight === canvas.clientHeight, 'Whole-viewport modes must not leave phantom vertical overflow.');
+            }
+            const pan = canvas.scrollTop;
+            frame.contentWindow.scrollTo(0, height / 2);
+            check(frame.contentWindow.scrollY > 0, 'The page must still scroll inside its iframe.');
+            check(canvas.scrollTop === pan, 'Scrolling the page must not pan the surrounding canvas.');
+            const pageScroll = frame.contentWindow.scrollY;
+            canvas.scrollTop = canvas.scrollHeight;
+            check(frame.contentWindow.scrollY === pageScroll, 'Panning the canvas must not scroll the page.');
+            viewport.setFit(fit === 'window' ? 'width' : 'window');
+            await settle();
+            check(JSON.stringify(cssState()) === JSON.stringify(initial), 'Switching fitting must preserve viewport dimensions, vh, text wrapping and all media queries.');
+            check(frame.contentWindow.scrollY === pageScroll, 'Switching fitting preserves page scrolling.');
+            panel.style.width = `${pw + 131}px`;
+            panel.style.height = `${ph + 97}px`;
+            viewport.layout();
+            await settle();
+            check(JSON.stringify(cssState()) === JSON.stringify(initial), 'Panel resizing must only change zoom, not iframe layout.');
+            results.push({ name });
+        } catch (error) { results.push({ name, error: error.stack }); }
+        finally { viewport.beforeMove(); panel.remove(); }
+    }
+    style.remove();
+    return results;
+}
+
+test('Chromium verifies fixed geometry, zoom and independent scrolling in all 60 viewport/presentation variants', async (t) => {
+    const source = await sourceForVm(new URL('../src/panel/viewport.js', import.meta.url));
+    const css = await readFile(new URL('../src/panel/panel.css', import.meta.url), 'utf8');
+    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify({ source, css })})`, count: 60 });
+});
+
+test('trusted Chromium verifies independent scrolling and DPR-corrected physical pixel geometry', { timeout: 30000 }, async (t) => {
+    const source = await sourceForVm(new URL('../src/panel/viewport.js', import.meta.url));
+    const css = await readFile(new URL('../src/panel/panel.css', import.meta.url), 'utf8');
+    const page = '<!doctype html><style>html,body{margin:0}main{height:300vh}</style><main>Scrollable page</main>';
+    const html = `<!doctype html><style>body{margin:0}${css}</style>
+        <section class="aflpp-panel" style="left:0;top:0;width:480px;height:340px">
+            <header class="aflpp-header"></header><div class="aflpp-viewport">
+                <div class="aflpp-canvas" role="region" aria-label="Preview canvas" tabindex="-1">
+                    <div class="aflpp-canvas-space"><div class="aflpp-stage"><iframe class="aflpp-frame" title="Test preview"></iframe></div></div>
+                </div>
+            </div><footer class="aflpp-devicebar" style="height:48px"><span class="aflpp-dimensions"></span></footer>
+        </section><script>${source}
+        const canvas = document.querySelector('.aflpp-canvas'), frame = document.querySelector('iframe');
+        frame.contentDocument.open(); frame.contentDocument.write(${JSON.stringify(page)}); frame.contentDocument.close();
+        const viewport = createPreviewViewport(document.querySelector('.aflpp-viewport'), document.querySelector('.aflpp-stage'), document.querySelector('.aflpp-dimensions'), {device:'mobile',fit:'width'});
+        viewport.layout();
+        window.canvasInputState = () => ({pan:canvas.scrollTop,page:frame.contentWindow.scrollY,width:frame.contentWindow.innerWidth,height:frame.contentWindow.innerHeight});
+        </script>`;
+    await withChromiumPage(html, async ({ args, url }) => {
+        const pending = new Map();
+        let chrome, sessionId, nextId = 0, buffer = '', stderr = '';
+        const rejectPending = (error) => {
+            for (const entry of pending.values()) entry.reject(error);
+            pending.clear();
+        };
+        const abort = () => { rejectPending(t.signal.reason); chrome?.kill(); };
+        t.signal.addEventListener('abort', abort, { once: true });
+        try {
+            // Match the existing native-save input test: an isolated local DevTools pipe,
+            // rather than synthetic DOM keys (which cannot exercise native scrolling).
+            chrome = spawn(process.env.CHROMIUM_BIN || 'chromium', [...args, '--disable-smooth-scrolling', '--remote-debugging-pipe'],
+                { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
+            chrome.stderr.on('data', (data) => { stderr += data; });
+            chrome.on('error', rejectPending);
+            chrome.on('exit', (code) => rejectPending(new Error(`Chromium exited (${code}).\n${stderr}`)));
+            chrome.stdio[3].on('error', rejectPending);
+            chrome.stdio[4].setEncoding('utf8');
+            chrome.stdio[4].on('data', (data) => {
+                buffer += data;
+                let end;
+                while ((end = buffer.indexOf('\0')) !== -1) {
+                    const message = JSON.parse(buffer.slice(0, end));
+                    buffer = buffer.slice(end + 1);
+                    const entry = pending.get(message.id);
+                    if (!entry) continue;
+                    pending.delete(message.id);
+                    if (message.error) entry.reject(new Error(JSON.stringify(message.error)));
+                    else entry.resolve(message.result);
+                }
+            });
+            const send = (method, params = {}, targetSession = sessionId) => new Promise((resolve, reject) => {
+                const id = ++nextId;
+                pending.set(id, { resolve, reject });
+                chrome.stdio[3].write(`${JSON.stringify({ id, method, params, sessionId: targetSession })}\0`);
+            });
+            const { targetId } = await send('Target.createTarget', { url });
+            ({ sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }));
+            const evaluate = async (expression) => {
+                const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+                assert.equal(result.exceptionDetails, undefined, JSON.stringify(result.exceptionDetails));
+                return result.result.value;
+            };
+            for (let i = 0; i < 100 && !(await evaluate('typeof window.canvasInputState === "function"')); i++) await delay(10);
+            assert.equal(await evaluate('typeof window.canvasInputState'), 'function', stderr);
+            const waitFor = async (expression) => {
+                for (let i = 0; i < 100; i++) {
+                    if (await evaluate(expression)) return;
+                    await delay(10);
+                }
+                assert.fail(`Browser state did not settle: ${expression}\n${JSON.stringify(await evaluate('({dpr:devicePixelRatio,transform:document.querySelector(".aflpp-stage").style.transform,currentResolution:matchMedia(`(resolution: ${devicePixelRatio}dppx)`).matches,canvas:[canvas.clientWidth,canvas.clientHeight]})'))}`);
+            };
+            const key = async (name, code, settled) => {
+                for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: name, code: name, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
+                await waitFor(settled);
+            };
+            await evaluate('canvas.focus({preventScroll:true})');
+            await key('PageDown', 34, 'canvas.scrollTop > 0');
+            let state = await evaluate('canvasInputState()');
+            assert.ok(state.pan > 0, 'PageDown must navigate the focused canvas.');
+            assert.equal(state.page, 0, 'Canvas keys must not scroll the webpage.');
+            await key('End', 35, 'Math.abs(canvas.scrollTop + canvas.clientHeight - canvas.scrollHeight) <= 1');
+            assert.ok(await evaluate('Math.abs(canvas.scrollTop + canvas.clientHeight - canvas.scrollHeight) <= 1'), 'End must reach the bottom of the viewport.');
+            await key('Home', 36, 'canvas.scrollTop === 0');
+            assert.equal((await evaluate('canvasInputState()')).pan, 0, 'Home must return to the viewport top.');
+            await evaluate('frame.contentWindow.focus()');
+            await key('PageDown', 34, 'frame.contentWindow.scrollY > 0');
+            state = await evaluate('canvasInputState()');
+            assert.ok(state.page > 0, 'Keys inside the iframe must scroll its webpage normally.');
+            assert.equal(state.pan, 0, 'Page keys must not pan the canvas.');
+            const before = state.page;
+            await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 100, y: 100, deltaX: 0, deltaY: 120 });
+            await waitFor(`frame.contentWindow.scrollY > ${before}`);
+            state = await evaluate('canvasInputState()');
+            assert.ok(state.page > before, 'Wheel input over the iframe must scroll the page.');
+            assert.equal(state.pan, 0, 'Page wheel input must leave the canvas in place.');
+            assert.equal(state.width, 390);
+            assert.equal(state.height, 844);
+            await evaluate(`Object.assign(document.querySelector('.aflpp-panel').style, {width:'640px',height:'1300px'}); viewport.setFit('automatic'); viewport.layout()`);
+            await waitFor('canvas.clientWidth === 640 && canvas.clientHeight >= 1200');
+            const canvasSize = await evaluate('[canvas.clientWidth, canvas.clientHeight]');
+            for (const dpr of [2, 1.25, 0.75, 1, 2]) await t.test(`DPR ${dpr}: 100% paints the viewport at 390×844 physical pixels`, async () => {
+                // The panel stays fixed, so ResizeObserver cannot drive these updates.
+                // Also exercise the window-resize fallback when returning from zoomed-out DPR.
+                await send('Emulation.setDeviceMetricsOverride', {width:dpr === 1 ? 1281 : 1280,height:1400,deviceScaleFactor:dpr,mobile:false});
+                // Headless Chromium needs a rendered frame to deliver resolution media events.
+                await send('Page.captureScreenshot', {format:'png'});
+                await waitFor(`Math.abs(document.querySelector('.aflpp-stage').getBoundingClientRect().width - ${390 / dpr}) < 0.01`);
+                const after = await evaluate(`({...canvasInputState(), dpr:devicePixelRatio, readout:document.querySelector('.aflpp-dimensions').textContent})`);
+                assert.equal(after.dpr, dpr);
+                assert.equal(after.width, 390);
+                assert.equal(after.height, 844);
+                assert.equal(after.page, state.page);
+                assert.equal(after.readout, '390 × 844 · 100%');
+                assert.deepEqual(await evaluate('[canvas.clientWidth, canvas.clientHeight]'), canvasSize, 'DPR changes must not resize the panel.');
+                const rect = await evaluate(`(() => {const r=frame.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height,scale:1};})()`);
+                const {data} = await send('Page.captureScreenshot', {format:'png',captureBeyondViewport:true,clip:rect});
+                const png = Buffer.from(data, 'base64');
+                assert.equal(png.readUInt32BE(16), 390, 'Native screenshot width must match the 1:1 pixel reference.');
+                assert.equal(png.readUInt32BE(20), 844, 'Native screenshot height must match the 1:1 pixel reference.');
+            });
+            for (const fit of ['automatic', 'window', 'width']) {
+                await evaluate(`viewport.setFit(${JSON.stringify(fit)})`);
+                const after = await evaluate(`({...canvasInputState(), readout:document.querySelector('.aflpp-dimensions').textContent, zoom:Math.round(document.querySelector('.aflpp-stage').getBoundingClientRect().width / 390 * devicePixelRatio * 100)})`);
+                assert.equal(after.readout, `390 × 844 · ${after.zoom}%`);
+                assert.equal(after.width, 390);
+                assert.equal(after.height, 844);
+                assert.equal(after.page, state.page, 'Changing zoom must preserve the native page scroll position.');
+            }
+        } finally {
+            t.signal.removeEventListener('abort', abort);
+            if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {
+                await new Promise((resolve) => { chrome.once('exit', resolve); chrome.kill(); });
+            }
+        }
+    });
 });

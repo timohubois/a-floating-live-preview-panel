@@ -13,8 +13,12 @@ export function createPreviewPanel(strings, {
     const scope = 'a-floating-live-preview-panel';
     const preferences = select(preferencesStore);
     const preferenceActions = dispatch(preferencesStore);
+    // The old 'window' fit was capped at 100%. A new key distinguishes it from
+    // the now-uncapped Fit to window without changing saved users' viewing behavior.
+    const defaultFit = preferences.get(scope, 'fit') === 'width' ? 'width' : 'automatic';
     preferenceActions.setDefaults(scope, {
         rememberVisibility: true, rememberPosition: true, panelOpen: true, scrollToChanges: true, viewport: 'desktop',
+        fitMode: defaultFit, tabletOrientation: 'portrait', mobileOrientation: 'portrait',
     });
     let rememberVisibility = preferences.get(scope, 'rememberVisibility') !== false;
     let rememberPosition = preferences.get(scope, 'rememberPosition') !== false;
@@ -31,13 +35,17 @@ export function createPreviewPanel(strings, {
     const header = panel.querySelector('.aflpp-header');
     const caption = panel.querySelector('.aflpp-caption');
     const viewport = panel.querySelector('.aflpp-viewport');
+    const canvas = panel.querySelector('.aflpp-canvas');
     const stage = panel.querySelector('.aflpp-stage');
     const empty = panel.querySelector('.aflpp-empty');
     const devicebar = panel.querySelector('.aflpp-devicebar');
     const dimensions = panel.querySelector('.aflpp-dimensions');
     const feedback = panel.querySelector('.aflpp-feedback');
     const status = panel.querySelector('[role="status"]');
-    const responsiveViewport = createPreviewViewport(viewport, stage, dimensions, preferences.get(scope, 'viewport'));
+    const responsiveViewport = createPreviewViewport(viewport, stage, dimensions, {
+        device: preferences.get(scope, 'viewport'), fit: preferences.get(scope, 'fitMode') ?? defaultFit,
+        tabletOrientation: preferences.get(scope, 'tabletOrientation'), mobileOrientation: preferences.get(scope, 'mobileOrientation'),
+    });
 
     const editorWrap = mainDocument.querySelector('#wpbody-content > .wrap');
     const adminBar = mainDocument.getElementById('wpadminbar');
@@ -123,7 +131,8 @@ export function createPreviewPanel(strings, {
 
     function restoreFocus(focused, wasInside) {
         if (!focused || !wasInside) return;
-        if (panel.contains(focused) && !focused.closest('[hidden]') && !focused.disabled) return;
+        if (panel.contains(focused) && !focused.closest('[hidden]') && !focused.disabled
+            && (current.hasPreview || !canvas.contains(focused))) return;
         controls.focus(empty.hidden ? 'actions' : 'empty-title');
     }
 
@@ -167,6 +176,7 @@ export function createPreviewPanel(strings, {
         const focused = panel.ownerDocument.activeElement;
         const wasInside = panel.contains(focused);
         const resetEmptyScroll = !hasPreview && (current.state !== state || current.text !== text || current.reason !== reason);
+        const previewChanged = current.hasPreview !== hasPreview;
         current = { text, state, canTakeOver, hasPreview, previewUrl, canRefresh, canRetry, reason };
         if (['error', 'conflict', 'handover', 'paused'].includes(state)) windowNotice = '';
         panel.dataset.state = state;
@@ -179,6 +189,7 @@ export function createPreviewPanel(strings, {
         // Placeholder announces its instructions; the live region supplies the heading without repeating them.
         status.textContent = hasPreview ? [heading, description, note].filter(Boolean).join(' ') : heading;
         syncControls();
+        if (previewChanged) responsiveViewport.layout();
         restoreFocus(focused, wasInside);
     }
 
@@ -259,13 +270,6 @@ export function createPreviewPanel(strings, {
         syncControls();
     }
 
-    function sizeWindow(name) {
-        if (!geometry.setSize(name)) return;
-        draw();
-        rememberLayout();
-        syncControls();
-    }
-
     function supportsPip() {
         return typeof mainWindow.documentPictureInPicture?.requestWindow === 'function';
     }
@@ -288,7 +292,7 @@ export function createPreviewPanel(strings, {
                 action: takeOverAction ? (current.state === 'handover' ? strings.takingOver : strings.takeOver) : strings.retry,
             },
             notice: feedbackState(),
-            size: geometry.size,
+            fit: responsiveViewport.fit, orientation: responsiveViewport.orientation,
             canRefresh: current.canRefresh, hasPreview: current.hasPreview,
             canPip: inPage && supportsPip(),
             canFullscreen: inPage && !!mainDocument.fullscreenEnabled,
@@ -535,11 +539,24 @@ export function createPreviewPanel(strings, {
             controls.focus('actions');
         },
         mode: toggleMode, close: closePanel, popOut, fullscreen: enterFullscreen,
-        dock: (side) => dockWindow(side), size: sizeWindow, reset: () => dockWindow('right', true),
+        dock: (side) => dockWindow(side), reset: () => dockWindow('right', true),
         follow: toggleFollow, rememberVisibility: toggleRememberVisibility, rememberPosition: toggleRememberPosition,
         device(name) {
-            if (responsiveViewport.device !== name) preferenceActions.set(scope, 'viewport', name);
-            responsiveViewport.select(name, visible);
+            if (name === responsiveViewport.device) {
+                if (name === 'desktop') return;
+                responsiveViewport.rotate(visible);
+                preferenceActions.set(scope, `${name}Orientation`, responsiveViewport.orientation);
+            } else {
+                const previous = responsiveViewport.device;
+                responsiveViewport.select(name, visible);
+                if (responsiveViewport.device !== previous) preferenceActions.set(scope, 'viewport', responsiveViewport.device);
+            }
+            syncControls();
+        },
+        fit(value) {
+            const previous = responsiveViewport.fit;
+            responsiveViewport.setFit(value);
+            if (responsiveViewport.fit !== previous) preferenceActions.set(scope, 'fitMode', responsiveViewport.fit);
             syncControls();
         },
     });

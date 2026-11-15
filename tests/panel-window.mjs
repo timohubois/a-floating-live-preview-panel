@@ -3,6 +3,7 @@ import { getEventListeners, setMaxListeners } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import { sourceForVm } from './helpers/modules.mjs';
 import { createPanelGeometry } from '../src/panel/geometry.js';
+import { createPreviewViewport } from '../src/panel/viewport.js';
 import { panelStrings, blockEditorStrings, acfStrings } from './helpers/panel-strings.mjs';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -91,6 +92,8 @@ function fixture(open = false, {
     const window = target({
         innerWidth: width, innerHeight: height, scrollX: 0, requestAnimationFrame: () => 1, cancelAnimationFrame() {},
         getComputedStyle: () => ({ direction, cursor: 'ew-resize', getPropertyValue: () => '' }),
+        matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+        ResizeObserver: class { observe() {} disconnect() {} },
         wp: { data: {
             select: () => ({ get: (scope, key) => preferences.get(key) }),
             dispatch: () => ({ setDefaults() {}, set: (scope, key, value) => {
@@ -98,6 +101,14 @@ function fixture(open = false, {
                 writes.push({ key, value });
             } }),
         } },
+    });
+    document.defaultView = window;
+    detachedDocument.defaultView = detached;
+    detached.ResizeObserver = window.ResizeObserver;
+    detached.matchMedia = window.matchMedia;
+    for (const selector of ['aflpp-panel .aflpp-viewport', 'aflpp-panel .aflpp-viewport .aflpp-canvas']) Object.defineProperties(node(selector), {
+        clientWidth: { get: () => parseFloat(node('aflpp-panel').style.width) || 0 },
+        clientHeight: { get: () => Math.max(0, (parseFloat(node('aflpp-panel').style.height) || 0) - 92) },
     });
     setMaxListeners(0, window); // Browser windows have no Node listener warning limit.
     if (pip) window.documentPictureInPicture = { requestWindow: async (options) => { requests.push(options); return detached; } };
@@ -116,9 +127,7 @@ function fixture(open = false, {
         '@wordpress/preferences': { store: { name: 'core/preferences' } },
         './geometry.js': { createPanelGeometry },
         './controls.js': { createPreviewControls: createControls, createPreviewLauncher: () => launcher },
-        './viewport.js': { createPreviewViewport: () => ({
-            device: 'desktop', layout() {}, beforeMove() {}, afterMove() {},
-        }) },
+        './viewport.js': { createPreviewViewport },
     };
     delete window.wp;
     const createPreviewPanel = vm.runInNewContext(`${source}\ncreatePreviewPanel`, { window, document, imports });
@@ -132,6 +141,15 @@ function fixture(open = false, {
         requests, focusCalls, retryCalls,
         get state() { return state; },
         rect: () => Object.fromEntries(['left', 'top', 'width', 'height'].map((key) => [key, parseFloat(panel.style[key])])),
+        resizeTo(width, height) {
+            const currentWidth = parseFloat(panel.style.width), currentHeight = parseFloat(panel.style.height);
+            const dx = state.dock === 'left' ? width - currentWidth
+                : (currentWidth - width) / (state.dock === 'center' ? 2 : 1);
+            const grip = node('aflpp-panel .aflpp-resize');
+            grip.fire('pointerdown');
+            grip.fire('pointermove', { clientX: 100 + dx, clientY: 100 + currentHeight - height });
+            grip.fire('pointerup');
+        },
     };
 }
 
@@ -319,7 +337,9 @@ test('compact geometry is restored without writing preferences on load', () => {
 test('remembering size and position defaults to on with a small compact bottom-right panel', () => {
     const h = fixture(true);
     assert.equal(h.state.rememberPosition, true);
-    assert.equal(h.state.size, 'small');
+    assert.equal(h.rect().width, 480);
+    assert.equal(h.rect().height, 340);
+    assert.equal(h.actions.size, undefined, 'Named size presets are no longer actions.');
     assert.equal(h.state.dock, 'right');
     assert.equal(h.state.mode, 'expand');
     assert.equal(h.writes.length, 0);
@@ -330,7 +350,7 @@ for (const position of ['left', 'center', 'right']) {
         const h = fixture(true, { rememberPosition: false });
         h.actions.dock(position);
         assert.equal(h.preferences.get('position'), position);
-        h.actions.size('large');
+        h.resizeTo(640, 440);
         h.node('aflpp-panel .aflpp-resize').fire('keydown', { key: 'ArrowUp' });
         const move = h.node('aflpp-panel .aflpp-move-control');
         move.fire('keydown', { key: position === 'left' ? 'ArrowRight' : 'ArrowLeft' });
@@ -351,7 +371,7 @@ for (const position of ['left', 'center', 'right']) {
         assert.equal(reopened.state.rememberPosition, false);
         assert.equal(reopened.state.dock, position);
         assert.equal(reopened.state.mode, 'expand');
-        assert.equal(reopened.state.size, 'small');
+        assert.equal(reopened.rect().width, 480);
         assert.deepEqual(reopened.rect(), {
             left: position === 'left' ? 20 : position === 'center' ? 260 : 500,
             top: 440, width: 480, height: 340,
@@ -371,7 +391,7 @@ for (const position of ['left', 'center', 'right']) {
             assert.equal(h.preferences.get('position'), position);
             const reopened = fixture(true, { preferences: h.preferences });
             assert.equal(reopened.state.dock, position);
-            assert.equal(reopened.state.size, 'small');
+            assert.equal(reopened.rect().width, 480);
             assert.equal(reopened.state.mode, 'expand');
         });
     }
@@ -380,9 +400,9 @@ for (const position of ['left', 'center', 'right']) {
 test('re-enabling remembers the current layout rather than restoring an older one', () => {
     const h = fixture(true, { rememberPosition: false, position: 'left', layout: layout({ expanded: true }) });
     assert.equal(h.state.dock, 'left', 'Disabled remembering ignores stale saved geometry.');
-    assert.equal(h.state.size, 'small');
+    assert.equal(h.rect().width, 480);
     assert.equal(h.state.mode, 'expand');
-    h.actions.size('large');
+    h.resizeTo(640, 440);
     h.node('aflpp-panel .aflpp-move-control').fire('keydown', { key: 'ArrowRight', shiftKey: true });
     const compact = h.rect();
     h.actions.mode();
@@ -420,6 +440,159 @@ test('toggling layout remembering preserves preferred bounds during temporary vi
     assert.deepEqual(h.rect(), { left: 150, top: 180, width: 560, height: 420 });
 });
 
+test('reselecting a device rotates it; fitting and independent orientations persist without resizing the panel', () => {
+    const h = fixture(true, { rememberPosition: false });
+    const before = h.rect();
+    h.actions.device('tablet');
+    assert.equal(h.state.orientation, 'portrait', 'The first click selects without rotating.');
+    h.actions.device('tablet');
+    assert.equal(h.state.orientation, 'landscape');
+    h.actions.fit('width');
+    h.actions.device('mobile');
+    assert.equal(h.state.orientation, 'portrait');
+    h.actions.device('mobile');
+    h.actions.device('tablet');
+    assert.equal(h.state.orientation, 'landscape');
+    assert.equal(h.state.fit, 'width');
+    assert.deepEqual(h.rect(), before, 'Device, rotation and fitting never resize or move the panel.');
+    assert.equal(h.writes.some(({ key }) => key === 'layout'), false);
+    assert.equal(h.preferences.get('tabletOrientation'), 'landscape');
+    assert.equal(h.preferences.get('mobileOrientation'), 'landscape');
+    const reopened = fixture(true, { preferences: h.preferences });
+    assert.equal(reopened.state.device, 'tablet');
+    assert.equal(reopened.state.fit, 'width');
+    assert.equal(reopened.state.orientation, 'landscape');
+    reopened.actions.device('mobile');
+    assert.equal(reopened.state.orientation, 'landscape');
+    reopened.actions.device('mobile');
+    assert.equal(reopened.state.orientation, 'portrait', 'Repeated activation rotates back.');
+    reopened.actions.reset();
+    assert.equal(reopened.state.fit, 'width', 'Reset size and position does not reset fitting.');
+    assert.equal(reopened.state.orientation, 'portrait');
+});
+
+for (const legacy of [undefined, 'window', 'width', 'unknown']) {
+    test(`legacy fitting ${String(legacy)} restores its intent without confusing the new uncapped window mode`, () => {
+        const h = fixture(true, { preferences: [['fit', legacy]] });
+        assert.equal(h.state.fit, legacy === 'width' ? 'width' : 'automatic');
+        assert.equal(h.writes.length, 0, 'Restoring a preference must not write or resize saved geometry.');
+        h.actions.fit('window');
+        assert.equal(h.preferences.get('fitMode'), 'window');
+        assert.equal(h.preferences.get('fit'), legacy, 'Do not reinterpret or overwrite the legacy key.');
+        const reopened = fixture(true, { preferences: h.preferences });
+        assert.equal(reopened.state.fit, 'window', 'A newly selected Fit to window must not migrate back to Automatic.');
+        reopened.actions.fit('automatic');
+        assert.equal(fixture(true, { preferences: reopened.preferences }).state.fit, 'automatic');
+    });
+}
+
+for (const fit of ['automatic', 'window', 'width']) {
+    test(`the new ${fit} preference takes precedence over a legacy fitting value`, () => {
+        const h = fixture(true, { preferences: [['fit', 'width'], ['fitMode', fit]] });
+        h.view.report('Loaded', 'current', { hasPreview: true });
+        assert.equal(h.state.fit, fit);
+        assert.equal(h.node('aflpp-panel .aflpp-stage').style.height, '800px');
+        assert.equal(h.writes.length, 0);
+    });
+}
+
+test('invalid new fitting preferences fall back to Automatic', () => {
+    for (const value of ['__proto__', {}, false, 100]) {
+        const h = fixture(true, { preferences: [['fit', 'width'], ['fitMode', value]] });
+        assert.equal(h.state.fit, 'automatic');
+        assert.equal(h.writes.length, 0);
+    }
+});
+
+test('an unavailable canvas returns focus to recovery without collapsing the iframe layout', () => {
+    const h = fixture(true);
+    const canvas = h.node('aflpp-panel .aflpp-canvas');
+    assert.equal(h.panel.dataset.hasPreview, 'false');
+    h.view.report('Loaded', 'current', { hasPreview: true });
+    assert.equal(h.panel.dataset.hasPreview, 'true');
+    canvas.closest = () => null;
+    canvas.focus();
+    h.view.report('Failed', 'error', { hasPreview: false });
+    assert.equal(h.panel.dataset.hasPreview, 'false');
+    assert.equal(canvas.hidden, undefined, 'Use CSS visibility, not display:none, while a page is loading.');
+    assert.equal(h.focusCalls.at(-1), 'empty-title');
+});
+
+test('invalid viewport actions and unchanged fitting do not write preferences', () => {
+    const h = fixture(true);
+    for (const value of ['__proto__', 'constructor', null, {}, 100, '0', '300']) {
+        h.actions.device(value);
+        h.actions.fit(value);
+    }
+    h.actions.fit('automatic');
+    assert.equal(h.writes.length, 0);
+    assert.equal(h.state.device, 'desktop');
+    assert.equal(h.state.fit, 'automatic');
+});
+
+test('desktop stays in landscape on reactivation, device switches and reopening, ignoring old orientation preferences', () => {
+    for (const desktopOrientation of [undefined, 'portrait', 'landscape']) {
+        const h = fixture(true, { preferences: [['desktopOrientation', desktopOrientation]] });
+        const before = h.rect();
+        assert.equal(h.state.orientation, 'landscape');
+        h.actions.device('desktop');
+        assert.equal(h.state.orientation, 'landscape');
+        assert.equal(h.node('aflpp-panel .aflpp-stage').style.width, '1280px');
+        assert.equal(h.node('aflpp-panel .aflpp-stage').style.height, '800px');
+        assert.equal(h.writes.length, 0, 'Reactivating desktop must not write preferences.');
+        h.actions.device('mobile');
+        assert.equal(h.state.orientation, 'portrait');
+        h.actions.device('mobile');
+        assert.equal(h.state.orientation, 'landscape', 'Phone rotation remains available.');
+        h.actions.device('desktop');
+        assert.equal(h.state.orientation, 'landscape');
+        const reopened = fixture(true, { preferences: h.preferences });
+        assert.equal(reopened.state.device, 'desktop');
+        assert.equal(reopened.state.orientation, 'landscape');
+        reopened.actions.device('desktop');
+        assert.equal(reopened.state.orientation, 'landscape');
+        assert.equal(reopened.node('aflpp-panel .aflpp-stage').style.width, '1280px');
+        assert.equal(reopened.writes.length, 0);
+        assert.equal(h.writes.some(({ key }) => key === 'desktopOrientation'), false);
+        assert.deepEqual(h.rect(), before);
+    }
+});
+
+for (const fit of ['automatic', 'window', 'width']) test(`${fit} and fixed viewport geometry survive fullscreen and PiP round trips`, async () => {
+    const h = fixture(true, { pip: true });
+    h.actions.device('mobile');
+    h.actions.device('mobile');
+    h.actions.fit(fit);
+    const stage = h.node('aflpp-panel .aflpp-stage');
+    assert.equal(stage.style.width, '844px');
+    assert.equal(stage.style.height, '390px');
+    const preferred = plain([...h.preferences]);
+    const writes = h.writes.length;
+    h.document.fullscreenElement = h.panel;
+    h.document.fire('fullscreenchange');
+    assert.equal(h.state.fit, fit);
+    assert.equal(stage.style.width, '844px');
+    assert.equal(stage.style.height, '390px');
+    assert.equal(h.state.orientation, 'landscape');
+    h.document.fullscreenElement = null;
+    h.document.fire('fullscreenchange');
+    await h.actions.popOut();
+    assert.equal(h.state.inPip, true);
+    assert.equal(h.state.fit, fit);
+    assert.equal(stage.style.width, '844px');
+    assert.equal(stage.style.height, '390px');
+    assert.equal(h.state.orientation, 'landscape');
+    h.detached.close();
+    assert.equal(h.state.inPage, true);
+    assert.equal(h.state.device, 'mobile');
+    assert.equal(h.state.fit, fit);
+    assert.equal(stage.style.width, '844px');
+    assert.equal(stage.style.height, '390px');
+    assert.equal(h.state.orientation, 'landscape');
+    assert.equal(h.writes.length, writes);
+    assert.deepEqual(plain([...h.preferences]), preferred);
+});
+
 test('moving the closed launcher with remembering off keeps its preset for the next load', () => {
     const h = fixture(true, { rememberPosition: false });
     h.actions.dock('center');
@@ -441,7 +614,7 @@ for (const rememberPosition of [false, true]) {
     test(`reset saves the default preset without ${rememberPosition ? 'disabling' : 'enabling'} layout remembering`, () => {
         const h = fixture(true, { rememberPosition });
         h.actions.dock('left');
-        h.actions.size('large');
+        h.resizeTo(640, 440);
         h.actions.mode();
         h.actions.reset();
         assert.deepEqual(h.rect(), { left: 940, top: 640, width: 480, height: 340 });
@@ -458,7 +631,7 @@ for (const position of ['invalid', false, [], {}]) {
     test(`invalid position preference falls back safely: ${JSON.stringify(position)}`, () => {
         const h = fixture(true, { rememberPosition: false, position });
         assert.equal(h.state.dock, 'right');
-        assert.equal(h.state.size, 'small');
+        assert.equal(h.rect().width, 480);
         assert.equal(h.writes.length, 0);
     });
 }
@@ -466,7 +639,7 @@ for (const position of ['invalid', false, [], {}]) {
 test('an invalid saved layout falls back to the preferred static position', () => {
     const h = fixture(true, { position: 'left', layout: layout({ expanded: 'invalid' }) });
     assert.equal(h.state.dock, 'left');
-    assert.equal(h.state.size, 'small');
+    assert.equal(h.rect().width, 480);
     assert.equal(h.state.mode, 'expand');
     assert.equal(h.writes.length, 0);
 });
@@ -899,15 +1072,13 @@ for (const direction of ['ltr', 'rtl']) for (const anchor of ['left', 'center', 
     });
 }
 
-for (const size of ['small', 'large']) {
-    test(`the remembered ${size} preset remains selectable while expanded and restores compact mode`, () => {
-        const h = fixture(true);
-        h.actions.size(size);
-        assert.equal(h.state.size, size);
+for (const [width, height] of [[480, 340], [640, 440]]) {
+    test(`older saved ${width}×${height} dimensions survive removal of named size presets`, () => {
+        const h = fixture(true, { layout: layout({ bounds: { x: 150, y: 180, width, height }, expanded: true }) });
+        assert.equal(h.state.mode, 'compact');
         h.actions.mode();
-        assert.equal(h.state.size, undefined, 'An expanded panel must not mark a compact preset selected.');
-        h.actions.size(size);
-        assert.equal(h.state.size, size);
+        assert.equal(h.rect().width, width);
+        assert.equal(h.rect().height, height);
         assert.equal(h.state.mode, 'expand');
     });
 }
@@ -937,24 +1108,16 @@ test('returning a resize drag to its origin restores both original preferred dim
     assert.deepEqual(h.rect(), before);
 });
 
-test('size presets preserve docking and preferred dimensions on small viewports and exit expanded mode', () => {
-    const h = fixture(true, { width: 390, height: 400 });
+test('reset restores the default dimensions and docking even in a small expanded viewport', () => {
+    const h = fixture(true, { width: 390, height: 400, layout: layout({ bounds: { x: 20, y: 80, width: 640, height: 440 } }) });
     h.actions.dock('left');
     h.actions.mode();
-    h.actions.size('large');
+    h.actions.reset();
     assert.equal(h.state.mode, 'expand');
-    assert.equal(h.state.dock, 'left');
-    assert.equal(h.state.size, 'large');
-    assert.equal(h.preferences.get('layout').bounds.width, 640);
-    assert.equal(h.preferences.get('layout').bounds.height, 440);
-    inside(h);
-    const writes = h.writes.length;
-    h.actions.size('__proto__');
-    assert.equal(h.writes.length, writes);
-    h.actions.size('small');
-    assert.equal(h.state.size, 'small');
+    assert.equal(h.state.dock, 'right');
     assert.equal(h.preferences.get('layout').bounds.width, 480);
     assert.equal(h.preferences.get('layout').bounds.height, 340);
+    inside(h);
 });
 
 test('keyboard opening focuses actions and closing focuses the launcher, without automatic focus on load or visibility changes', () => {

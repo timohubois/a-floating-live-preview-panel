@@ -1,7 +1,7 @@
 import { createElement as h, createPortal, createRoot, flushSync, Fragment } from '@wordpress/element';
 import {
     Button, DropdownMenu, MenuGroup, MenuItem, MenuItemsChoice, Notice, Placeholder,
-    Popover, SlotFillProvider, Spinner, Toolbar, ToolbarButton,
+    Popover, SelectControl, SlotFillProvider, Spinner, Toolbar, ToolbarButton,
 } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import { InlineNotices, store as noticesStore } from '@wordpress/notices';
@@ -27,6 +27,7 @@ export function createPreviewControls(panel, strings, callbacks) {
     const refreshContainer = panel.querySelector('.aflpp-refresh-control');
     const moveContainer = panel.querySelector('.aflpp-move-control');
     const devicesContainer = panel.querySelector('.aflpp-device-controls');
+    const fitContainer = panel.querySelector('.aflpp-fit-control');
     const pipContainer = panel.querySelector('.aflpp-pip-control');
     const emptyContainer = panel.querySelector('.aflpp-empty');
     const feedbackContainer = panel.querySelector('.aflpp-feedback');
@@ -86,7 +87,7 @@ export function createPreviewControls(panel, strings, callbacks) {
     function Controls() {
         const {
             inPage, inPip, mode, modeLabel, movable, busy, canRefresh, hasPreview,
-            canPip, canFullscreen, dock, size, rememberVisibility, rememberPosition, followChanges, device, empty,
+            canPip, canFullscreen, dock, rememberVisibility, rememberPosition, followChanges, device, orientation, fit, empty,
         } = state;
         const command = (action) => () => { closeMenu(); action(); };
         return h(SlotFillProvider, null,
@@ -128,14 +129,6 @@ export function createPreviewControls(panel, strings, callbacks) {
                     ],
                     onSelect: (side) => { closeMenu(); callbacks.dock(side); },
                 })),
-                inPage && h(MenuGroup, { label: strings.size }, h(MenuItemsChoice, {
-                    value: size,
-                    choices: [
-                        { value: 'small', label: strings.small },
-                        { value: 'large', label: strings.large },
-                    ],
-                    onSelect: (name) => { closeMenu(); callbacks.size(name); },
-                })),
                 h(MenuGroup, { label: strings.preferences },
                     h(MenuItem, {
                         role: 'menuitemcheckbox', isSelected: rememberVisibility, icon: rememberVisibility ? icons.check : undefined,
@@ -169,11 +162,28 @@ export function createPreviewControls(panel, strings, callbacks) {
                 onClick: callbacks.close, 'data-action': 'close',
             }),
             createPortal(h(Toolbar, { className: 'aflpp-devices', label: strings.viewport, variant: 'unstyled' },
-                ...['desktop', 'tablet', 'mobile'].map((name) => h(ToolbarButton, {
-                    key: name, icon: icons[name], label: strings[name],
-                    isPressed: device === name, 'data-viewport': name, onClick: () => callbacks.device(name),
-                })),
+                ...['desktop', 'tablet', 'mobile'].map((name) => {
+                    const selected = device === name;
+                    const rotatable = selected && name !== 'desktop';
+                    const rotated = rotatable && orientation === 'landscape';
+                    const rotateLabel = orientation === 'portrait' ? strings.rotateLandscape : strings.rotatePortrait;
+                    return h(ToolbarButton, {
+                        key: name, icon: icons[name], className: rotated ? 'aflpp-device-rotated' : undefined,
+                        label: rotatable ? `${strings[name]} — ${rotateLabel}` : strings[name],
+                        isPressed: selected, 'data-viewport': name, onClick: () => callbacks.device(name),
+                    });
+                }),
             ), devicesContainer),
+            createPortal(h(SelectControl, {
+                label: strings.fitting, hideLabelFromVision: true, size: 'compact',
+                __nextHasNoMarginBottom: true, __next40pxDefaultSize: true,
+                value: fit, options: [
+                    { value: 'automatic', label: strings.automatic },
+                    { value: 'window', label: strings.fitToWindow },
+                    { value: 'width', label: strings.fitToWidth },
+                ],
+                onChange: callbacks.fit, 'data-action': 'fit',
+            }), fitContainer),
             createPortal(empty && h(Placeholder, {
                 className: 'aflpp-placeholder', icon: empty.busy ? h(Spinner) : icons[empty.icon],
                 label: h('h3', { className: 'aflpp-empty-title', tabIndex: -1, 'data-action': 'empty-title' }, empty.heading),

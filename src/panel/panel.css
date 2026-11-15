@@ -34,8 +34,13 @@
 .aflpp-panel button:not(.components-button):focus-visible,
 .aflpp-feedback:focus-visible { outline: var(--wp-admin-border-width-focus, 2px) solid var(--aflpp-accent); outline-offset: 1px; }
 
-.aflpp-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #dcdcde; }
-.aflpp-stage { position: absolute; top: 0; transform-origin: top left; }
+.aflpp-viewport { position: relative; flex: 1; min-height: 0; overflow: clip; background: #dcdcde; }
+.aflpp-canvas { position: absolute; inset: 0; overflow: hidden; overscroll-behavior: contain; direction: ltr; }
+/* Hide loading canvases from interaction without collapsing a bootstrapping iframe. */
+.aflpp-panel[data-has-preview="false"] .aflpp-canvas { visibility: hidden; }
+.aflpp-canvas:focus-visible { outline: var(--wp-admin-border-width-focus, 2px) solid var(--aflpp-accent); outline-offset: -2px; }
+.aflpp-canvas-space { position: relative; overflow: clip; }
+.aflpp-stage { position: absolute; transform-origin: top left; }
 .aflpp-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
 .aflpp-loading { opacity: 0; pointer-events: none; }
 .aflpp-panel[data-has-preview="false"] .aflpp-viewport { background: var(--aflpp-bg); border-radius: 0 0 var(--aflpp-radius) var(--aflpp-radius); }
@@ -59,7 +64,13 @@
 /* Match editor inline notices: the header supplies the top separator. */
 .aflpp-inline-notices .components-notice,
 .aflpp-inline-notices .notices-inline-notices__notice { border-top-width: 0; border-inline-width: 0; }
-.aflpp-devicebar { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; border-top: 1px solid var(--aflpp-border); border-radius: 0 0 var(--aflpp-radius) var(--aflpp-radius); }
+.aflpp-devicebar { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 8px; padding: 0 8px; border-top: 1px solid var(--aflpp-border); border-radius: 0 0 var(--aflpp-radius) var(--aflpp-radius); }
+.aflpp-device-controls, .aflpp-viewport-controls { display: flex; align-items: center; gap: 8px; }
+.aflpp-viewport-controls { margin-inline-start: auto; min-height: 40px; padding-block: 4px; }
+.aflpp-fit-control { flex-shrink: 0; }
+.aflpp-fit-control .components-base-control__field { margin-bottom: 0; }
+/* Pass SVGs directly to ToolbarButton so core owns their sizing; rotate without a wrapper. */
+.aflpp-devices .aflpp-device-rotated svg { transform: rotate(90deg); }
 .aflpp-devices.components-toolbar { border: 0; background: transparent; }
 .aflpp-dimensions { color: var(--aflpp-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; direction: ltr; unicode-bidi: isolate; }
 .aflpp-actions { flex-shrink: 0; }

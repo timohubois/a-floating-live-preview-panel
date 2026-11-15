@@ -217,7 +217,7 @@ async function nativePreferenceTests(strings) {
         const panel = document.createElement('section');
         panel.className = 'aflpp-panel';
         panel.style.cssText = 'left:20px;top:20px;width:480px;height:340px';
-        panel.innerHTML = ['controls', 'refresh-control', 'move-control', 'device-controls', 'pip-control', 'empty', 'feedback']
+        panel.innerHTML = ['controls', 'refresh-control', 'move-control', 'device-controls', 'fit-control', 'pip-control', 'empty', 'feedback']
             .map((name) => `<div class="aflpp-${name}"></div>`).join('');
         document.body.append(panel);
         let controls;
@@ -225,7 +225,7 @@ async function nativePreferenceTests(strings) {
             let state = {
                 inPage: mode === 'in-page', inPip: mode === 'PiP', movable: mode === 'in-page', mode: 'expand', modeLabel: strings.expand,
                 canPip: mode === 'in-page', canFullscreen: mode === 'in-page',
-                hasPreview: true, previewUrl: '/preview', dock: 'center', size: 'small', device: 'desktop',
+                hasPreview: true, previewUrl: '/preview', dock: 'center', device: 'desktop', fit: 'window', orientation: 'landscape',
                 rememberVisibility: true, rememberPosition: true, followChanges: true,
             };
             let toggles = 0, closes = 0;
@@ -306,13 +306,13 @@ async function nativeNoticeTests(strings) {
         const panel = document.createElement('section');
         panel.className = 'aflpp-panel';
         panel.style.cssText = 'left:20px;top:20px;width:480px;height:340px';
-        panel.innerHTML = ['controls', 'refresh-control', 'move-control', 'device-controls', 'pip-control', 'empty', 'feedback']
+        panel.innerHTML = ['controls', 'refresh-control', 'move-control', 'device-controls', 'fit-control', 'pip-control', 'empty', 'feedback']
             .map((name) => `<div class="aflpp-${name}"></div>`).join('');
         document.body.append(panel);
         let controls, frame;
         try {
             let state = {
-                inPage: mode === 'in-page', inPip: mode === 'PiP', hasPreview: true, device: 'desktop',
+                inPage: mode === 'in-page', inPip: mode === 'PiP', hasPreview: true, device: 'desktop', fit: 'window', orientation: 'landscape',
                 notice: { heading: 'Could not update preview.', description: 'Showing the previous preview.', status: 'warning', dismissible: false, retry: true, action: strings.retry },
             };
             let retries = 0, dismissals = 0;
@@ -378,12 +378,110 @@ async function nativeNoticeTests(strings) {
     return results;
 }
 
+async function nativeViewportControlTests(strings) {
+    const results = [];
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 50));
+    const check = (condition, message) => { if (!condition) throw new Error(message); };
+    for (const mode of ['floating', 'expanded', 'fullscreen', 'PiP']) for (const width of [320, 480, 900]) {
+        const name = `${mode}, ${width}px: three fitting choices, device-button rotation and responsive footer`;
+        const panel = document.createElement('section');
+        panel.className = 'aflpp-panel';
+        panel.dir = width === 480 ? 'rtl' : 'ltr';
+        panel.dataset.hasPreview = 'true';
+        panel.style.cssText = `position:relative;width:${width}px;height:340px`;
+        panel.innerHTML = '<header class="aflpp-header"><div class="aflpp-move-control"></div><div class="aflpp-refresh-control"></div><div class="aflpp-titlebar">Preview</div><div class="aflpp-controls"></div></header><div class="aflpp-feedback" hidden></div><div class="aflpp-viewport"><div class="aflpp-canvas" role="region" aria-label="Preview canvas" tabindex="-1"><div class="aflpp-canvas-space"><div class="aflpp-stage"></div></div></div><div class="aflpp-empty" hidden></div><div class="aflpp-pip-control"></div></div><footer class="aflpp-devicebar"><div class="aflpp-device-controls"></div><div class="aflpp-viewport-controls"><div class="aflpp-fit-control"></div><span class="aflpp-dimensions"></span></div></footer>';
+        document.body.append(panel);
+        let controls, viewport;
+        try {
+            viewport = window.previewControls.createPreviewViewport(panel.querySelector('.aflpp-viewport'), panel.querySelector('.aflpp-stage'), panel.querySelector('.aflpp-dimensions'), { device: 'tablet' });
+            let state = {
+                inPage: mode === 'floating' || mode === 'expanded', inPip: mode === 'PiP', movable: mode === 'floating',
+                mode: 'expand', modeLabel: strings.expand, hasPreview: true, canRefresh: true,
+                device: viewport.device, fit: viewport.fit, orientation: viewport.orientation,
+            };
+            const sync = () => {
+                state = { ...state, device: viewport.device, fit: viewport.fit, orientation: viewport.orientation };
+                controls.update(state);
+            };
+            controls = window.previewControls.createPreviewControls(panel, strings, {
+                fit(value) { viewport.setFit(value); sync(); },
+                device(value) {
+                    if (value === viewport.device) viewport.rotate();
+                    else viewport.select(value);
+                    sync();
+                },
+            });
+            sync();
+            await pause();
+            const checkIcons = () => {
+                for (const button of panel.querySelectorAll('[data-viewport]')) {
+                    const svg = button.querySelector('svg');
+                    check(svg?.parentElement === button, 'Native SVGs must not be nested in an unsized icon wrapper.');
+                    const rect = svg.getBoundingClientRect();
+                    check(rect.width === 24 && rect.height === 24, `Native toolbar icons must paint at 24×24, not shrink to dots: ${rect.width}×${rect.height}.`);
+                    const glyph = svg.querySelector('path').getBoundingClientRect();
+                    check(glyph.width >= 8 && glyph.height >= 8, 'The actual icon paths must remain visible at native size.');
+                }
+            };
+            checkIcons();
+            const select = panel.querySelector('select[data-action="fit"]');
+            check(select && select.labels[0]?.textContent === strings.fitting, 'The native select needs an accessible label.');
+            check([...select.options].map(({ value }) => value).join(',') === 'automatic,window,width', 'Offer all three approved fitting choices.');
+            check(select.options[0].textContent === strings.automatic && select.options[1].textContent === strings.fitToWindow && select.options[2].textContent === strings.fitToWidth, 'Use translated fitting labels.');
+            check(select.value === 'automatic', 'Automatic is the default.');
+            select.focus();
+            for (const fit of ['width', 'window', 'automatic']) {
+                select.value = fit;
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                await pause();
+                check(state.fit === fit && select.value === fit, 'Changing the select updates the viewport and selected option.');
+                check(document.activeElement === select, 'Changing fitting preserves keyboard focus.');
+            }
+            const tablet = panel.querySelector('[data-viewport="tablet"]');
+            check(tablet.getAttribute('aria-label') === `${strings.tablet} — ${strings.rotateLandscape}`, 'The selected button explains how to rotate.');
+            tablet.click();
+            await pause();
+            check(state.orientation === 'landscape' && panel.querySelector('.aflpp-dimensions').textContent.startsWith('1024 × 768'), 'Reselecting the device rotates the viewport.');
+            check(tablet.getAttribute('aria-label') === `${strings.tablet} — ${strings.rotatePortrait}`, 'The next rotation action has the correct accessible name.');
+            check(tablet.classList.contains('aflpp-device-rotated'), 'The selected device icon shows landscape orientation.');
+            checkIcons();
+            check(!panel.querySelector('[data-action="rotate"]'), 'No separate rotate control remains.');
+            const footer = panel.querySelector('.aflpp-devicebar').getBoundingClientRect();
+            for (const element of panel.querySelectorAll('.aflpp-devicebar button, .aflpp-devicebar select, .aflpp-dimensions')) {
+                const rect = element.getBoundingClientRect();
+                check(rect.left >= footer.left - 1 && rect.right <= footer.right + 1 && rect.top >= footer.top - 1 && rect.bottom <= footer.bottom + 1, 'All footer controls and dimensions must fit without clipping.');
+            }
+            check(panel.scrollWidth <= panel.clientWidth + 1, 'The footer must wrap instead of widening a narrow panel.');
+            panel.querySelector('[data-viewport="desktop"]').click();
+            await pause();
+            check(state.device === 'desktop' && panel.querySelectorAll('[data-viewport]').length === 3, 'Device selection keeps just the three existing buttons.');
+            const desktop = panel.querySelector('[data-viewport="desktop"]');
+            check(desktop.getAttribute('aria-pressed') === 'true', 'Keep native toolbar selected state.');
+            check(!desktop.classList.contains('aflpp-device-rotated'), 'Desktop starts with its normal landscape icon.');
+            desktop.click();
+            await pause();
+            check(state.orientation === 'landscape' && panel.querySelector('.aflpp-dimensions').textContent.startsWith('1280 × 800'), 'Reselecting desktop keeps its landscape viewport.');
+            check(!desktop.classList.contains('aflpp-device-rotated'), 'The desktop icon never rotates.');
+            check(desktop.getAttribute('aria-label') === strings.desktop, 'Desktop must not offer rotation in its accessible name or tooltip.');
+            checkIcons();
+            desktop.click();
+            await pause();
+            check(state.orientation === 'landscape' && !desktop.classList.contains('aflpp-device-rotated'), 'Repeated desktop activation remains a no-op.');
+            checkIcons();
+            results.push({ name });
+        } catch (error) { results.push({ name, error: error.stack }); }
+        finally { controls?.beforeMove(); viewport?.beforeMove(); panel.remove(); }
+    }
+    return results;
+}
+
 test('native WordPress launcher, menu and notices render and handle focus and clicks in Chromium', async (t) => {
     const directory = await mkdtemp(join(tmpdir(), 'aflpp-native-launcher-'));
     try {
         // Expose public APIs only in the fixture so native-store isolation can be checked too.
         await writeFile(join(directory, 'entry.js'), `
             export { createPreviewControls, createPreviewLauncher } from ${JSON.stringify(fileURLToPath(new URL('../src/panel/controls.js', import.meta.url)))};
+            export { createPreviewViewport } from ${JSON.stringify(fileURLToPath(new URL('../src/panel/viewport.js', import.meta.url)))};
             export { dispatch, select } from '@wordpress/data';
             export { store as noticesStore } from '@wordpress/notices';
             export { ThemeProvider } from '@wordpress/theme';
@@ -406,8 +504,8 @@ test('native WordPress launcher, menu and notices render and handle focus and cl
         await runChromiumTests(t, {
             script: `(async () => {
                 window.wp = { theme: { ThemeProvider: window.previewControls.ThemeProvider } };
-                return [...(${nativeLauncherTests.toString()})(), ...await (${nativePreferenceTests.toString()})(${JSON.stringify(panelStrings)}), ...await (${nativeNoticeTests.toString()})(${JSON.stringify(panelStrings)})];
-            })()`, count: 8,
+                return [...(${nativeLauncherTests.toString()})(), ...await (${nativePreferenceTests.toString()})(${JSON.stringify(panelStrings)}), ...await (${nativeNoticeTests.toString()})(${JSON.stringify(panelStrings)}), ...await (${nativeViewportControlTests.toString()})(${JSON.stringify(panelStrings)})];
+            })()`, count: 20,
             head: `<style>${tokens}\n${core}\n${css}</style><script src="${bundle}"></script>`,
         });
     } finally { await rm(directory, { recursive: true, force: true }); }

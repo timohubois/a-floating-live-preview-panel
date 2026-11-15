@@ -24,18 +24,31 @@ defined('ABSPATH') || exit;
     </header>
     <div class="aflpp-feedback" hidden></div>
     <div class="aflpp-viewport">
-        <div class="aflpp-stage"></div>
+        <div class="aflpp-canvas" role="region" tabindex="-1"
+            aria-label="<?php esc_attr_e('Preview canvas', 'a-floating-live-preview-panel'); ?>"
+            aria-describedby="aflpp-canvas-help">
+            <div class="aflpp-canvas-space"><div class="aflpp-stage"></div></div>
+        </div>
+        <span id="aflpp-canvas-help" class="aflpp-sr-only">
+            <?php esc_html_e(
+                'Use this area’s scrollbar, or focus it and use the arrow keys, to move around the preview screen. The page scrolls separately inside the preview.',
+                'a-floating-live-preview-panel'
+            ); ?>
+        </span>
         <div class="aflpp-empty"></div>
         <div class="aflpp-pip-control"></div>
     </div>
     <footer class="aflpp-devicebar" hidden>
         <div class="aflpp-device-controls"></div>
-        <span class="aflpp-dimensions"
-            title="<?php esc_attr_e(
-                'Shows the screen width, height and zoom level. This changes the preview size, not your device.',
-                'a-floating-live-preview-panel'
-            ); ?>">
-        </span>
+        <div class="aflpp-viewport-controls">
+            <div class="aflpp-fit-control"></div>
+            <span class="aflpp-dimensions"
+                title="<?php esc_attr_e(
+                    'Shows the CSS viewport width, height and zoom. At 100%, each viewport pixel occupies one physical screen pixel. Display scaling is included.',
+                    'a-floating-live-preview-panel'
+                ); ?>">
+            </span>
+        </div>
     </footer>
     <?php foreach (['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] as $edge) : ?>
         <span class="aflpp-edge aflpp-edge-<?php echo esc_attr($edge); ?>"
