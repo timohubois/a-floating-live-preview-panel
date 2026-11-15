@@ -17,8 +17,11 @@ export function createPreviewFrame(view, scrolling, strings, report) {
         // Isolated editors cannot inspect otherwise same-origin, non-isolated preview documents.
         if (window.crossOriginIsolated) url.searchParams.set('aflpp_isolated', '1');
         cancel();
+        url.searchParams.delete('aflpp_source');
         address = url.href;
-        // Keep the new-tab action available for every output type, including browser-native viewers.
+        // Capture only following iframe loads; keep ordinary/new-tab previews on the native URL.
+        if (view.followChanges) url.searchParams.set('aflpp_source', '1');
+        // Navigate natively so non-HTML output can use the browser's own viewer.
         report(strings.updating);
         return new Promise((resolve, reject) => {
             const frame = view.stage.ownerDocument.createElement('iframe');

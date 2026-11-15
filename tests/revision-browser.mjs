@@ -10,9 +10,9 @@ const revision = (id, address = url(id)) => ({
     id, get: (key) => ({ aflppPreviewUrl: address, dateShort: `Date ${id}`, author: { name: `Author ${id}` } })[key],
 });
 
-function fixture({ visible = true, selected = revision(11), isolated = false } = {}) {
+function fixture({ visible = true, selected = revision(11), isolated = false, excludedSelectors = [] } = {}) {
     const timers = new Map(), listeners = new Map(), events = new Map(), reports = [], allFrames = [], scrolls = [];
-    let options, nextTimer = 0, title = '', clears = 0, returned = 0;
+    let options, scrollSelectors, nextTimer = 0, title = '', clears = 0, returned = 0;
     const children = [];
     const stage = {
         ownerDocument: {
@@ -59,16 +59,19 @@ function fixture({ visible = true, selected = revision(11), isolated = false } =
         '../panel/window.js': { createPreviewPanel: (strings, callbacks) => {
             options = callbacks; title = callbacks.postTitle; return view;
         } },
-        '../preview/scroll.js': { createPreviewScroll: () => ({
-            remember: (doc) => scrolls.push(['remember', doc]),
-            findTarget: (previous, next) => { scrolls.push(['find', previous, next]); return 'target'; },
-            restore: (doc, target) => scrolls.push(['restore', doc, target]),
-        }) },
+        '../preview/scroll.js': { createPreviewScroll: (selectors) => {
+            scrollSelectors = selectors;
+            return {
+                remember: (doc) => scrolls.push(['remember', doc]),
+                findTarget: (previous, next) => { scrolls.push(['find', previous, next]); return 'target'; },
+                restore: (doc, target) => scrolls.push(['restore', doc, target]),
+            };
+        } },
     };
     const init = vm.runInNewContext(`${source}\ninitRevisionPreview`, context);
-    init({ postId: 1, currentPreviewUrl: url(1), strings }, model);
+    init({ postId: 1, currentPreviewUrl: url(1), strings, comparisonExcludedSelectors: excludedSelectors }, model);
     return {
-        view, options, reports, children, allFrames, timers, scrolls, listeners,
+        view, options, reports, children, allFrames, timers, scrolls, scrollSelectors, listeners,
         get title() { return title; }, get clears() { return clears; }, get returned() { return returned; },
         get last() { return reports.at(-1); },
         select(next) { selected = next; listeners.get('update:revisions')?.(); },
@@ -84,10 +87,26 @@ function fixture({ visible = true, selected = revision(11), isolated = false } =
     };
 }
 
+test('read-only comparison receives the complete PHP exclusion policy, including an empty list', () => {
+    for (const excludedSelectors of [[], ['.vendor-runtime']]) {
+        const h = fixture({ visible: false, excludedSelectors });
+        assert.equal(h.scrollSelectors, excludedSelectors);
+    }
+});
+
+test('disabled change following leaves iframe navigation on the native preview URL', async () => {
+    const h = fixture({ visible: false });
+    h.view.followChanges = false;
+    h.options.onOpen();
+    assert.equal(h.children[0].src, url(11));
+    await h.load();
+    assert.equal(h.last.previewUrl, url(11));
+});
+
 test('revision browsing loads the native To source without editor APIs or Web Locks', async () => {
     const h = fixture();
     assert.equal(h.children.length, 1);
-    assert.equal(h.children[0].src, url(11));
+    assert.equal(h.children[0].src, `${url(11)}&aflpp_source=1`);
     await h.load();
     assert.equal(h.last.state, 'ready');
     assert.equal(h.last.hasPreview, true);
@@ -102,9 +121,11 @@ for (const isolated of [false, true]) {
         const address = new URL(h.children[0].src);
         assert.equal(address.searchParams.get('aflpp_isolated'), isolated ? '1' : null);
         assert.equal(address.searchParams.get('aflpp_token'), 'token-11');
+        assert.equal(address.searchParams.get('aflpp_source'), '1');
         await h.load();
         assert.equal(h.last.state, 'ready');
         assert.equal(new URL(h.last.previewUrl).searchParams.get('aflpp_isolated'), isolated ? '1' : null);
+        assert.equal(new URL(h.last.previewUrl).searchParams.get('aflpp_source'), null);
     });
 }
 
@@ -117,7 +138,7 @@ test('rapid slider changes cancel old loads, debounce and display only the lates
     assert.notEqual(h.last.state, 'ready');
     await h.runTimers();
     assert.equal(h.allFrames.length, 2);
-    assert.equal(h.children[0].src, url(14));
+    assert.equal(h.children[0].src, `${url(14)}&aflpp_source=1`);
     await h.load();
     assert.equal(h.title, 'Date 14 — Author 14');
     assert.equal(h.timers.size, 0);

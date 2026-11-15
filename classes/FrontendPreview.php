@@ -12,6 +12,8 @@ final class FrontendPreview
     private string $previewToken = '';
     private bool $isolated = false;
     private bool $saved = false;
+    private bool $sourceRequested = false;
+    private bool $sourceStreamed = false;
 
     public function __construct(
         private readonly string $file,
@@ -101,6 +103,7 @@ final class FrontendPreview
         $this->isolated = isset($_GET['aflpp_isolated']) && $_GET['aflpp_isolated'] === '1';
         $this->source = sanitize_post($source);
         $this->saved = $saved;
+        $this->sourceRequested = isset($_GET['aflpp_source']) && $_GET['aflpp_source'] === '1';
         // Bind core and compatibility reads to the authorized source, not the latest revision.
         remove_filter('the_preview', '_set_preview');
         add_filter('the_preview', [$this, 'readPost']);
@@ -205,6 +208,14 @@ final class FrontendPreview
         }
         // Core canonical redirects drop preview=true without native autosave parameters, losing our core-field overlay.
         remove_action('template_redirect', 'redirect_canonical');
+        // Capture only opted-in iframe requests, never ordinary frontend or new-tab previews.
+        if ($this->sourceRequested) {
+            if (function_exists('wp_start_template_enhancement_output_buffer')) {
+                add_filter('wp_template_enhancement_output_buffer', [$this, 'captureSource'], PHP_INT_MAX);
+            } else {
+                add_filter('template_include', [$this, 'bufferSource'], PHP_INT_MAX);
+            }
+        }
         // Enhance only the original authorized singular HTML; never require it as the routing result.
         add_filter('show_admin_bar', '__return_false', PHP_INT_MAX);
         add_action('wp_head', function (): void {
@@ -220,5 +231,84 @@ final class FrontendPreview
                 false
             );
         });
+    }
+
+    /** Older core has no native template buffer. Do not replace/include the template ourselves. */
+    public function bufferSource($template)
+    {
+        if ($this->sourceRequested && $this->source && is_string($template) && $template !== '') {
+            ob_start([$this, 'captureSource']);
+        }
+        return $template;
+    }
+
+    /** Carry pre-JavaScript HTML in the existing marker, with no second render or executable injection. */
+    public function captureSource(string $output, int $phase = PHP_OUTPUT_HANDLER_FINAL): string
+    {
+        if (($phase & PHP_OUTPUT_HANDLER_FINAL) === 0 || ($phase & PHP_OUTPUT_HANDLER_CLEAN) !== 0) {
+            $this->sourceStreamed = true;
+            return $output;
+        }
+        $status = http_response_code();
+        if (
+            !$this->sourceRequested || !$this->source || $this->sourceStreamed
+            || ($status && ($status < 200 || $status >= 300))
+            || preg_match('//u', $output) !== 1
+        ) {
+            return $output;
+        }
+        $mediaType = ini_get('default_mimetype');
+        foreach (headers_list() as $header) {
+            [$name, $value] = array_pad(explode(':', $header, 2), 2, '');
+            $name = strtolower(trim($name));
+            if ($name === 'content-type') {
+                $mediaType = strtolower(trim(explode(';', $value, 2)[0]));
+            }
+            // Preserve explicit response contracts and already-encoded/native downloads byte for byte.
+            if (in_array($name, ['content-length', 'content-encoding', 'content-disposition'], true)) {
+                return $output;
+            }
+        }
+        if ($mediaType !== 'text/html') {
+            return $output;
+        }
+        try {
+            $processor = new \WP_HTML_Tag_Processor($output);
+            $found = false;
+            $index = 0;
+            while ($processor->next_tag()) {
+                $tag = $processor->get_tag();
+                if (
+                    $tag === 'META' && $processor->get_attribute('name') === 'a-floating-live-preview-panel'
+                    && $processor->get_attribute('content') === $this->previewToken
+                ) {
+                    if ($found || $processor->get_attribute('data-aflpp-source') !== null) {
+                        return $output;
+                    }
+                    $found = $processor->set_bookmark('aflpp-source');
+                }
+                if (!in_array($tag, ['BASE', 'HEAD', 'LINK', 'META', 'SCRIPT', 'STYLE', 'TITLE'], true)) {
+                    // Response-local identities bridge the clean source to elements moved/wrapped by scripts.
+                    $processor->set_attribute('data-aflpp-node', (string) ++$index);
+                }
+            }
+            if (!$found || $processor->paused_at_incomplete_token()) {
+                return $output;
+            }
+            $source = wp_json_encode(
+                $processor->get_updated_html(),
+                JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+            );
+            if (!is_string($source) || !$processor->seek('aflpp-source')) {
+                return $output;
+            }
+            // Hex-escaped entities/quotes survive the HTML API's non-double-encoding attribute escape.
+            // The payload is inert data, including source text containing </script> or existing entities.
+            $processor->set_attribute('data-aflpp-source', $source);
+            return $processor->get_updated_html();
+        } catch (\Throwable) {
+            // Optional navigation assistance must never prevent the actual preview from rendering.
+            return $output;
+        }
     }
 }

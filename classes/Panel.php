@@ -4,9 +4,16 @@ namespace AFloatingLivePreviewPanel;
 
 use WP_Post;
 
-/** Own the shared admin window's assets, presentation and common labels. */
+/** Own the shared admin window's configuration, assets, presentation and common labels. */
 final class Panel
 {
+    private const COMPARISON_EXCLUDED_SELECTORS = [
+        'script', 'style', 'noscript', 'template', 'link', 'meta', 'nav',
+        '[role="navigation"]', '[aria-live]', 'input[type="hidden"]',
+        // Runtime diagnostics are part of the default policy, not a special case in the matcher.
+        'table.xdebug-error',
+    ];
+
     public function __construct(private readonly string $file)
     {
     }
@@ -29,6 +36,24 @@ final class Panel
          * @param array $context Core-owned post identity; no source has been selected.
          */
         $config = apply_filters("aflpp_{$screen}_preview_config", $config, $context);
+        /**
+         * Filter the complete comparison exclusion policy for any preview screen.
+         *
+         * These selectors exclude elements and their descendants from snapshots, not rendered output.
+         * Return an empty array to remove all exclusions. Attribute normalization remains separate.
+         *
+         * @param string[] $selectors Complete default policy, including Xdebug diagnostic tables.
+         * @param array    $context   Core-owned post identity; no source has been selected.
+         */
+        $selectors = apply_filters(
+            'aflpp_preview_comparison_excluded_selectors',
+            self::COMPARISON_EXCLUDED_SELECTORS,
+            $context
+        );
+        $config['comparisonExcludedSelectors'] = is_array($selectors) && !array_filter(
+            $selectors,
+            static fn ($selector): bool => !is_string($selector) || trim($selector) === ''
+        ) ? array_values($selectors) : self::COMPARISON_EXCLUDED_SELECTORS;
         /**
          * Register integration scripts and add their handles so setup runs before the panel entry.
          *

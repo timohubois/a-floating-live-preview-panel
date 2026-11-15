@@ -60,7 +60,7 @@ the panel never guesses a new baseline or prevents WordPress from saving.
 - Loading and no-frame recovery use a centered native Placeholder. Problems with a retained frame appear in a native Notice below the header, without covering the preview. Unresolved problems remain visible; incidental window-operation notices can be dismissed.
 - **Remember open or closed** is on by default. Turning it off starts the preview open on each new screen load without changing its layout. Visibility, viewport, fitting, tablet and phone orientations, **Scroll to my changes** and layout preferences are independent and stored per user across posts, both editors and the revision browser. Preferences remain after deactivation; uninstalling through WordPress removes the plugin's server-stored preferences.
 - **Remember size and position** is on by default. It restores compact dimensions, custom placement or responsive docking, the shared panel/launcher anchor and expanded/compact mode. The initial layout is 480 × 340 px, compact, bottom-right. Turning remembering off leaves the current layout untouched and discards its saved geometry; subsequent screen loads start with the default compact size at the preferred **Move preview to** preset. Moving, resizing or expanding then lasts only for the current page; closing and reopening without reloading keeps that layout. Re-enabling saves the current layout rather than reviving an older one. Restored layouts fit inside the current window without overwriting preferred bounds; fullscreen and PiP are never reopened automatically.
-- **Scroll to my changes** is on by default. It follows detected content, structure and layout-attribute changes without theme-specific integration. Content changes take priority over incidental runtime presentation changes; presentation-only edits remain detectable. It normally centers shorter changed content and shows taller content from its beginning. Detection and header handling are best-effort; disable it to retain manual positioning.
+- **Scroll to my changes** is on by default. It follows identifiable content, structure and layout-attribute changes without theme-specific integration. Where available, it compares response HTML captured before frontend scripts run, rather than their initialization mutations. Content changes take priority over presentation changes. Non-content regions, including Xdebug diagnostic tables, are excluded by default without hiding their output. The PHP [comparison exclusion filter](#comparison-exclusions) can extend or replace that complete policy. If no directly visible change can be targeted, it falls back to the changed element’s nearest visible ancestor; this may be a broader container and never opens hidden widgets. Ambiguous changes retain the current position instead of guessing. It normally centers shorter changed content and shows taller content from its beginning. Detection and header handling are best-effort; disable it to retain manual positioning.
 
 ### Revision browser
 
@@ -199,6 +199,7 @@ wp eval-file /path/to/a-floating-live-preview-panel/tests/editor-extensions.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/timber-terms.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/yoast.php
 wp eval-file /path/to/a-floating-live-preview-panel/tests/preview-isolation.php
+wp eval-file /path/to/a-floating-live-preview-panel/tests/preview-source.php
 ```
 
 The block-editor fixture checks native REST save receipts, source conflicts,
@@ -208,9 +209,14 @@ previews. Client adapter tests cover pre-save draining, request correlation, leg
 meta-box acknowledgement and failure handling, including malformed fingerprints and
 read-only errors in strict mode. The HTTP-free preview-isolation fixture checks that
 existing site policies are preserved with both core APIs and the older-core fallback.
-Frame/scroll tests cover isolation opt-in, incidental presentation changes, content
-edits and presentation-only edits. These do not replace authenticated browser testing
-of native editor controls.
+The HTTP-free preview-source fixture checks the HTML API wire format, Unicode/entity
+escaping, element identities, native buffering/opt-out on supporting core, older-core
+buffering, large responses and unchanged non-HTML, error and partial response fallbacks.
+Frame/scroll tests cover isolation and capture opt-in, nested insertion/deletion,
+repeated content, ambiguity, initialization noise, source-to-live element mapping,
+generic visible-container fallbacks with directly visible changes taking precedence,
+unchanged widget state, and non-executing source parsing. These do not replace
+authenticated browser testing of native editor controls.
 
 The core-blocks fixture renders the actual native Post Excerpt block with explicit,
 cleared, whitespace-only and empty excerpts. It checks preview-content generation,
@@ -356,13 +362,13 @@ read and presentation paths without capturing editor values or writing previews.
 ### Structure and ownership
 
 - `a-floating-live-preview-panel.php` explicitly loads the PHP classes; `classes/Plugin.php` connects the owners. PHP owners live directly in `classes/`, with only compatibility adaptations grouped in a subdirectory. No Composer autoloader is required at runtime.
-- `classes/ClassicEditor.php`, `BlockEditor.php` and `RevisionBrowser.php` connect their respective native screens. `classes/Panel.php` owns shared assets, labels and the PHP view in `views/panel.php`; the view remains a plain markup template, not a separate rendering layer.
+- `classes/ClassicEditor.php`, `BlockEditor.php` and `RevisionBrowser.php` connect their respective native screens. `classes/Panel.php` owns shared assets, labels, the configurable comparison-exclusion defaults and the PHP view in `views/panel.php`; the view remains a plain markup template, not a separate rendering layer.
 - `classes/LivePreview.php` owns internal preview revision writes, fingerprints, native-save coordination and cleanup. `classes/FrontendPreview.php` authorizes reads and overlays only the selected source on frontend output. Live-source ownership and token verification stay together in `LivePreview`.
 - `classes/Compatibility/` lists explicit core and third-party adaptations: `CoreBlocks.php` delegates native Post Excerpt rendering with the authorized source's fields; `Acf.php` owns ACF field preparation, save verification, cache invalidation and source reads; `Timber.php` and `TimberPost.php` own Timber post imports and term lists; `Yoast.php` owns native primary-term preparation and breadcrumb trails, including a scoped indexable write guard. The PHP preview owners expose lifecycle hooks and do not depend on these implementations. `src/compatibility/acf-editor.js` registers ACF's editor hooks; `acf-fields.js` bridges ACF browser events, and `acf-block-editor.js` captures native meta-box forms and observes ACF's own post-save row replacement. `src/compatibility/yoast.js` registers editor hooks and reads Yoast's native primary-term store without dispatching editor changes.
 - `src/screens/` contains native screen integrations. `classic-editor.js` captures core classic fields; `classic-native-editor.js` observes native Preview, heartbeat and validation. `block-editor.js` reads public editor selectors and coordinates native saves through the awaited pre-save hook and narrowly scoped API-fetch middleware. Neither editor names optional plugins. `editor-extensions.js` scopes native WordPress hooks and cleanup to an editor lifetime. Both editors use `src/preview/live-preview.js` for shared live writes, frames and Web Locks.
 - `src/screens/revision-browser.js` owns read-only revision selection. It never acquires editor locks or writes previews. It follows core's `wp.revisions.view.frame.model`; guard and verify that integration when changing supported WordPress versions.
 - `src/panel/window.js` owns window presentation, focus, preferences, fullscreen and PiP. `panel/geometry.js` owns preferred bounds, docking, resizing and temporary viewport fitting; pointer/keyboard event binding stays with the window. `controls.js` renders public WordPress components and `viewport.js` sizes the preview viewport.
-- `src/preview/frame.js` owns iframe replacement and cancellation; `scroll.js` enhances only recognized preview HTML. These are shared by the separate editor and revision lifecycles.
+- `src/preview/frame.js` owns iframe replacement and cancellation; `scroll.js` enhances only recognized preview HTML. These are shared by the separate editor and revision lifecycles. Following iframe loads opt into `aflpp_source=1`; ordinary/new-tab previews do not. `FrontendPreview` uses the native template-enhancement buffer on WordPress 6.9+, or a preview-only `template_include` buffer on older core, to attach inert JSON source data to the existing authorization marker. Response-local `data-aflpp-node` attributes map that source to live elements without theme-specific classes. Invalid/partial/non-HTML responses, explicit response contracts and native buffering opt-outs retain DOM-based comparison. Capture availability transitions establish a fresh baseline rather than comparing source HTML with a live DOM. Missing or cloned live identities do not invent a target. This adds response payload and buffering work, not an additional request or persistent storage.
 
 Keep PHP class names and filenames in PascalCase and browser filenames in kebab-case. Group browser modules by responsibility: `screens/` connects native screens, `preview/` manages preview updates and documents, `panel/` presents the floating window, and `compatibility/` contains optional integrations. Shared behavior stays with its owner rather than in generic helpers, utilities or separate JavaScript/CSS buckets. Preserve runtime identifiers such as preference keys, REST paths and the `aflpp-` CSS namespace when reorganizing internals. Extract concrete shared behavior, not generic controller or module frameworks.
 
@@ -403,8 +409,10 @@ Flynt is a local test theme, not a plugin integration or runtime requirement. A
 compatibility class identifies a deliberate integration, not a guarantee across all
 versions of that dependency. Add a concrete owner and regression tests when adding
 third-party behavior; do not put its hooks in the shared preview owners or introduce a generic
-integration registry. `Plugin.php` instantiates the built-in owners without passing
-compatibility objects into editors. Owners contribute assets/configuration and browser
+integration registry. The shared comparison-exclusion defaults are configuration policy, not an
+adaptation of dependency rendering/read/write APIs: they may identify recognizable non-author
+output such as Xdebug diagnostics, while the matcher itself stays dependency-neutral.
+`Plugin.php` instantiates the built-in owners without passing compatibility objects into editors. Owners contribute assets/configuration and browser
 behavior through the same WordPress hooks that external plugins and themes can use.
 Compatibility setup is imported by the browser entry points, not the core screen modules.
 
@@ -750,6 +758,48 @@ add_filter('aflpp_classic_editor_preview_script_dependencies', function (
 A theme can use `get_theme_file_uri()` instead of `plugins_url()`. Enqueue integration
 styles through normal WordPress APIs. Do not declare an unavailable optional script
 as a dependency: WordPress will also withhold the dependent entry.
+
+#### Comparison exclusions
+
+`aflpp_preview_comparison_excluded_selectors` filters the complete `string[]` exclusion
+policy for Classic, Block Editor and read-only revision previews. It runs once while
+building the selected screen's configuration, after its configuration filter and before
+its script-dependency filter. Arguments follow the standard contract:
+`array $selectors, array $context`, with `post.id` and a null `source`.
+
+Defaults are `script`, `style`, `noscript`, `template`, `link`, `meta`, `nav`,
+`[role="navigation"]`, `[aria-live]`, `input[type="hidden"]` and `table.xdebug-error`.
+Matching elements and their descendants do not participate in comparison; their actual
+rendered output is never hidden or changed. Attribute normalization, content-root
+selection and ambiguous-match handling remain comparison logic, not this policy.
+Current attribute normalization ignores IDs, `aria-*`, event handlers and nonce/token
+attributes; edits limited to those values do not trigger change-following.
+
+A site-specific plugin, MU plugin or theme can extend the policy without browser code:
+
+```php
+add_filter('aflpp_preview_comparison_excluded_selectors', static function (
+    array $selectors,
+    array $context
+): array {
+    $selectors[] = '[data-vendor-runtime]';
+    return $selectors;
+}, 10, 2);
+```
+
+Preserve previous contributors when appending. Callbacks may also remove selectors or
+return a replacement list; return `[]` to remove every configured exclusion. The final
+list is delivered as `comparisonExcludedSelectors`; JavaScript does not merge another
+default list back in. Prefer component/integration selectors across the site rather
+than post-ID lists. Context is available only if a real conditional exception is needed.
+With source capture, selectors match pre-JavaScript HTML; otherwise they match the loaded
+document, so choose stable markup selectors rather than script-only state.
+
+Invalid PHP return shapes (not an array of nonempty strings) retain the shipped
+defaults; sparse keys are reindexed before JSON encoding. Syntactically invalid CSS
+selectors are ignored individually in the browser without disabling valid exclusions
+or scrolling. Keep exclusions limited to known non-author output: editing an excluded
+region will not trigger change-following.
 
 #### Browser setup and lifecycle
 

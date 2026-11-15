@@ -7,7 +7,7 @@ export function createLivePreview(config, nativeEditor) {
 
     const strings = config.strings;
     const mainWindow = window;
-    const scrolling = createPreviewScroll();
+    const scrolling = createPreviewScroll(config.comparisonExcludedSelectors);
     const view = createPreviewPanel(strings, {
         postTitle: nativeEditor.title ?? config.postTitle,
         onOpen: () => startPreview(),

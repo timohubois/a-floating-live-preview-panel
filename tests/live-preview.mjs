@@ -12,13 +12,13 @@ let nextSite = 0;
 // Use native lock queues and cross-context messages; only the panel and frame are fakes.
 function fixture(t) {
     const endpoint = `/ownership-test-${process.pid}-${++nextSite}`;
-    return ({ site = endpoint, userId = 1, broadcast = true, pending = false, error, hasPreview = false } = {}) => {
+    return ({ site = endpoint, userId = 1, broadcast = true, pending = false, error, hasPreview = false, excludedSelectors = [] } = {}) => {
         const write = Promise.withResolvers(), started = Promise.withResolvers();
         const reports = [], timers = new Map();
         const frames = { loads: 0, cancels: 0, clears: 0, hasPreview,
             load() { this.loads++; }, cancel() { this.cancels++; }, clear() { this.clears++; },
         };
-        let callbacks, channel, exit, writes = 0;
+        let callbacks, channel, exit, scrollSelectors, writes = 0;
         const view = { visible: true, setTitle() {}, returnToEditor() {},
             setVisible(value) { this.visible = value; },
             report(text, state, details) { reports.push({ text, state, ...details }); },
@@ -34,10 +34,10 @@ function fixture(t) {
             clearTimeout: (callback) => timers.delete(callback),
             imports: {
                 '../panel/window.js': { createPreviewPanel: (strings, options) => { callbacks = options; return view; } },
-                '../preview/scroll.js': { createPreviewScroll: () => ({}) },
+                '../preview/scroll.js': { createPreviewScroll: (selectors) => { scrollSelectors = selectors; return {}; } },
                 '../preview/frame.js': { createPreviewFrame: () => frames },
             },
-        })({ endpoint: site, postId: 12, userId, available: true, strings: {} }, {
+        })({ endpoint: site, postId: 12, userId, available: true, strings: {}, comparisonExcludedSelectors: excludedSelectors }, {
             idle: Promise.resolve(), saving: false,
             preparePreview() {
                 writes++; started.resolve();
@@ -55,11 +55,19 @@ function fixture(t) {
             await session.pending;
             await settle();
         });
-        return { session, callbacks, channel, reports, timers, frames, started: started.promise,
+        return { session, callbacks, channel, reports, timers, frames, scrollSelectors, started: started.promise,
             release: () => write.resolve({ url: '/preview' }), get writes() { return writes; },
         };
     };
 }
+
+test('live comparison receives the complete PHP exclusion policy, including an empty list', async (t) => {
+    const open = fixture(t);
+    for (const excludedSelectors of [[], ['.vendor-runtime']]) {
+        const h = open({ excludedSelectors });
+        assert.equal(h.scrollSelectors, excludedSelectors);
+    }
+});
 
 for (const hasPreview of [false, true]) {
     test(`an edit lock pauses ${hasPreview ? 'a retained preview' : 'an initial preview'} until WordPress takeover reloads the editor`, { timeout: 5000 }, async (t) => {

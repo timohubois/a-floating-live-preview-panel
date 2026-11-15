@@ -17,7 +17,7 @@ export function initRevisionPreview(config, model) {
         beforeMove() { generation++; frames.clear(); },
         afterMove() { if (view.visible) refresh(); },
     });
-    const frames = createPreviewFrame(view, createPreviewScroll(), strings, report);
+    const frames = createPreviewFrame(view, createPreviewScroll(config.comparisonExcludedSelectors), strings, report);
 
     function label(revision) {
         if (!revision) return '';
