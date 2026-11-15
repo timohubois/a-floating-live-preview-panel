@@ -486,7 +486,7 @@ for (const legacy of [undefined, 'window', 'width', 'unknown']) {
     });
 }
 
-for (const fit of ['automatic', 'window', 'width']) {
+for (const fit of ['automatic', 'window', 'width', 'custom']) {
     test(`the new ${fit} preference takes precedence over a legacy fitting value`, () => {
         const h = fixture(true, { preferences: [['fit', 'width'], ['fitMode', fit]] });
         h.view.report('Loaded', 'current', { hasPreview: true });
@@ -495,6 +495,57 @@ for (const fit of ['automatic', 'window', 'width']) {
         assert.equal(h.writes.length, 0);
     });
 }
+
+test('fixed percentages persist independently of panel geometry, remembering and fitting', () => {
+    const h = fixture(true, { rememberPosition: false });
+    const before = h.rect();
+    h.actions.device('mobile');
+    h.actions.zoom(80);
+    assert.equal(h.state.fit, 'custom');
+    assert.equal(h.state.customZoom, 80);
+    assert.equal(h.state.zoomPercent, 80);
+    assert.equal(h.preferences.get('fitMode'), 'custom');
+    assert.equal(h.preferences.get('customZoom'), 80);
+    assert.deepEqual(h.rect(), before);
+    assert.equal(h.writes.some(({ key }) => key === 'layout'), false);
+    h.actions.reset();
+    assert.equal(h.state.fit, 'custom');
+    assert.equal(h.state.customZoom, 80);
+    h.actions.fit('window');
+    assert.equal(h.preferences.get('customZoom'), 80, 'Fitting does not discard the last custom percentage.');
+    const reopened = fixture(true, { preferences: h.preferences });
+    assert.equal(reopened.state.fit, 'window');
+    assert.equal(reopened.state.customZoom, 80);
+    reopened.actions.zoom(80);
+    assert.equal(reopened.state.zoomPercent, 80);
+    const fixed = fixture(true, { preferences: reopened.preferences });
+    assert.equal(fixed.state.fit, 'custom');
+    assert.equal(fixed.state.zoomPercent, 80);
+    fixed.actions.zoom(100);
+    assert.equal(fixed.state.fit, 'custom', '100% is fixed zoom, not Auto.');
+    assert.equal(fixed.preferences.get('customZoom'), 100);
+});
+
+test('invalid or unchanged manual zoom never writes preferences', () => {
+    const h = fixture(true, { preferences: [['fitMode', 'custom'], ['customZoom', 80]] });
+    for (const value of [undefined, null, {}, '80', 0, 9, 401, NaN, Infinity, 80.5, 80]) h.actions.zoom(value);
+    assert.equal(h.writes.length, 0);
+    assert.equal(h.state.customZoom, 80);
+    assert.equal(h.state.zoomPercent, 80);
+});
+
+test('the Zoom control receives live DPR changes without another user action', () => {
+    const h = fixture(true);
+    h.actions.device('mobile');
+    h.actions.zoom(80);
+    const writes = h.writes.length;
+    h.window.devicePixelRatio = 2;
+    h.window.fire('resize');
+    assert.equal(h.state.dpr, 2);
+    assert.equal(h.state.zoomPercent, 80);
+    assert.equal(h.state.customZoom, 80);
+    assert.equal(h.writes.length, writes, 'Detected DPR must not become a saved preference.');
+});
 
 test('invalid new fitting preferences fall back to Automatic', () => {
     for (const value of ['__proto__', {}, false, 100]) {

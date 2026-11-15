@@ -1,6 +1,7 @@
 import {
     caution,
     check,
+    chevronDown,
     closeSmall as close,
     desktop,
     dragHandle,
@@ -26,6 +27,7 @@ export const icons = {
     info,
     close,
     check,
+    chevron: chevronDown,
     desktop,
     tablet,
     mobile,

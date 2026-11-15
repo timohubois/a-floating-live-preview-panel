@@ -380,31 +380,34 @@ async function nativeNoticeTests(strings) {
 
 async function nativeViewportControlTests(strings) {
     const results = [];
-    const pause = () => new Promise((resolve) => setTimeout(resolve, 50));
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 30));
     const check = (condition, message) => { if (!condition) throw new Error(message); };
-    for (const mode of ['floating', 'expanded', 'fullscreen', 'PiP']) for (const width of [320, 480, 900]) {
-        const name = `${mode}, ${width}px: three fitting choices, device-button rotation and responsive footer`;
+    for (const mode of ['floating', 'expanded', 'fullscreen', 'PiP']) for (const width of mode === 'PiP' ? [240, 320, 480, 900] : [320, 480, 900]) {
+        const name = `${mode}, ${width}px: unified Zoom, custom percentages, rotation and responsive footer`;
         const panel = document.createElement('section');
         panel.className = 'aflpp-panel';
         panel.dir = width === 480 ? 'rtl' : 'ltr';
         panel.dataset.hasPreview = 'true';
         panel.style.cssText = `position:relative;width:${width}px;height:340px`;
-        panel.innerHTML = '<header class="aflpp-header"><div class="aflpp-move-control"></div><div class="aflpp-refresh-control"></div><div class="aflpp-titlebar">Preview</div><div class="aflpp-controls"></div></header><div class="aflpp-feedback" hidden></div><div class="aflpp-viewport"><div class="aflpp-canvas" role="region" aria-label="Preview canvas" tabindex="-1"><div class="aflpp-canvas-space"><div class="aflpp-stage"></div></div></div><div class="aflpp-empty" hidden></div><div class="aflpp-pip-control"></div></div><footer class="aflpp-devicebar"><div class="aflpp-device-controls"></div><div class="aflpp-viewport-controls"><div class="aflpp-fit-control"></div><span class="aflpp-dimensions"></span></div></footer>';
+        panel.innerHTML = '<header class="aflpp-header"><div class="aflpp-move-control"></div><div class="aflpp-refresh-control"></div><div class="aflpp-titlebar">Preview</div><div class="aflpp-controls"></div></header><div class="aflpp-feedback" hidden></div><div class="aflpp-viewport"><div class="aflpp-canvas" role="region" aria-label="Preview canvas" tabindex="-1"><div class="aflpp-canvas-space"><div class="aflpp-stage"></div></div></div><div class="aflpp-empty" hidden></div><div class="aflpp-pip-control"></div></div><footer class="aflpp-devicebar"><div class="aflpp-device-controls"></div><div class="aflpp-viewport-controls"><span class="aflpp-dimensions"></span><div class="aflpp-fit-control"></div></div></footer>';
         document.body.append(panel);
-        let controls, viewport;
+        let controls, viewport, state, frame;
+        const sync = () => {
+            if (!controls) return;
+            state = { ...state, device: viewport.device, fit: viewport.fit, orientation: viewport.orientation,
+                zoomPercent: viewport.zoomPercent, customZoom: viewport.customZoom, dpr: viewport.dpr };
+            controls.update(state);
+        };
         try {
-            viewport = window.previewControls.createPreviewViewport(panel.querySelector('.aflpp-viewport'), panel.querySelector('.aflpp-stage'), panel.querySelector('.aflpp-dimensions'), { device: 'tablet' });
-            let state = {
+            viewport = window.previewControls.createPreviewViewport(panel.querySelector('.aflpp-viewport'), panel.querySelector('.aflpp-stage'), panel.querySelector('.aflpp-dimensions'), { device: 'tablet' }, sync);
+            state = {
                 inPage: mode === 'floating' || mode === 'expanded', inPip: mode === 'PiP', movable: mode === 'floating',
                 mode: 'expand', modeLabel: strings.expand, hasPreview: true, canRefresh: true,
                 device: viewport.device, fit: viewport.fit, orientation: viewport.orientation,
             };
-            const sync = () => {
-                state = { ...state, device: viewport.device, fit: viewport.fit, orientation: viewport.orientation };
-                controls.update(state);
-            };
             controls = window.previewControls.createPreviewControls(panel, strings, {
                 fit(value) { viewport.setFit(value); sync(); },
+                zoom(value) { viewport.setZoom(value); sync(); },
                 device(value) {
                     if (value === viewport.device) viewport.rotate();
                     else viewport.select(value);
@@ -424,19 +427,98 @@ async function nativeViewportControlTests(strings) {
                 }
             };
             checkIcons();
-            const select = panel.querySelector('select[data-action="fit"]');
-            check(select && select.labels[0]?.textContent === strings.fitting, 'The native select needs an accessible label.');
-            check([...select.options].map(({ value }) => value).join(',') === 'automatic,window,width', 'Offer all three approved fitting choices.');
-            check(select.options[0].textContent === strings.automatic && select.options[1].textContent === strings.fitToWindow && select.options[2].textContent === strings.fitToWidth, 'Use translated fitting labels.');
-            check(select.value === 'automatic', 'Automatic is the default.');
-            select.focus();
-            for (const fit of ['width', 'window', 'automatic']) {
-                select.value = fit;
-                select.dispatchEvent(new Event('change', { bubbles: true }));
+            const toggle = () => panel.querySelector('[data-action="zoom"]');
+            check(toggle()?.classList.contains('components-button'), 'Use a native Button to open Zoom.');
+            check(state.fit === 'automatic' && toggle().textContent === `${strings.automatic} · ${state.zoomPercent}%`, 'Auto reports its computed percentage in the same control.');
+            check(!panel.querySelector('select[data-action="fit"]'), 'No separate fitting selector remains.');
+            const toggleWidth = toggle().getBoundingClientRect().width;
+            const choice = (popup, fit) => popup.querySelector(`input[type="radio"][value="${fit}"]`);
+            const showZoom = async () => {
+                const canvasHeight = panel.querySelector('.aflpp-viewport').getBoundingClientRect().height;
+                toggle().focus();
+                toggle().click();
                 await pause();
-                check(state.fit === fit && select.value === fit, 'Changing the select updates the viewport and selected option.');
-                check(document.activeElement === select, 'Changing fitting preserves keyboard focus.');
+                const popup = panel.ownerDocument.querySelector('.aflpp-zoom-popover');
+                check(popup && toggle().getAttribute('aria-expanded') === 'true', 'The native Dropdown opens a labelled popover.');
+                const modes = popup.querySelector('[role="radiogroup"]');
+                check(modes?.querySelector('legend').textContent === strings.zoomMode, 'Name the native radio group with a visible legend.');
+                check(modes.querySelectorAll('input[type="radio"]').length === 4 && modes.querySelectorAll(':checked').length === 1, 'Exactly one of the four modes is selected.');
+                check([...modes.querySelectorAll('label')].map(({ textContent }) => textContent).join(',') === [strings.automatic, strings.fitToWindow, strings.fitToWidth, strings.fixedZoom].join(','), 'Use translated fitting and fixed-zoom labels.');
+                check(choice(popup, state.fit).checked, 'The radio selection follows the actual viewport mode, including custom 80%.');
+                const dialog = popup.matches('[role="dialog"]') ? popup : popup.querySelector('[role="dialog"]');
+                check(dialog?.getAttribute('aria-label') === strings.fitting && toggle().getAttribute('aria-haspopup') === 'dialog', 'Expose a named dialog with native radio and number controls.');
+                const display = popup.querySelector('.aflpp-dpr-note');
+                check(display.getAttribute('aria-label') === strings.displayInformation && display.querySelector('strong').textContent === strings.displayInformation, 'Separate read-only display information from mode selection.');
+                check(display.querySelector('.aflpp-dpr-value').textContent === `${strings.displayDpr}: ${Number(viewport.dpr.toFixed(2))}` && !display.querySelector('input,select,button'), 'DPR belongs to the displaying window and is not editable.');
+                check(popup.querySelectorAll('input[type="number"]').length === (state.fit === 'custom' ? 1 : 0), 'Only Fixed zoom reveals a percentage field.');
+                check(getComputedStyle(display).borderTopStyle === 'solid', 'Portaled content retains its scoped visual variables.');
+                const rect = popup.querySelector('.components-popover__content').getBoundingClientRect();
+                check(rect.left >= -1 && rect.right <= panel.ownerDocument.defaultView.innerWidth + 1, 'Keep the native popover within its owner window.');
+                check(panel.querySelector('.aflpp-viewport').getBoundingClientRect().height === canvasHeight, 'The popup never reserves a hint strip or steals preview height.');
+                return popup;
+            };
+            const escape = async (popup) => {
+                (popup.querySelector('input[type="number"]') || popup.querySelector('input:checked')).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+                await pause();
+                check(!panel.ownerDocument.querySelector('.aflpp-zoom-popover') && panel.ownerDocument.activeElement === toggle(), 'Escape closes Zoom and restores focus.');
+            };
+            let popup = await showZoom();
+            for (const fit of ['width', 'window', 'automatic']) {
+                choice(popup, fit).click();
+                await pause();
+                check(state.fit === fit && toggle().getAttribute('aria-label').startsWith(`${strings.fitting}: `), 'Changing Zoom updates the viewport and accessible label.');
+                check(panel.ownerDocument.querySelector('.aflpp-zoom-popover') === popup && choice(popup, fit).checked, 'Radio selection applies without dismissing the dialog.');
+                check(panel.ownerDocument.activeElement === choice(popup, fit), 'Keep focus in the native radio group when choosing a mode.');
+                check(!popup.querySelector('input[type="number"]'), 'Fitting modes hide the manual percentage.');
+                check(toggle().getBoundingClientRect().width === toggleWidth, 'Changing percentage digit counts must not wrap the footer or trigger fitting loops.');
             }
+            await escape(popup);
+            popup = await showZoom();
+            choice(popup, 'custom').click();
+            await pause();
+            check(state.fit === 'custom' && state.zoomPercent === 100 && toggle().textContent === '100%', 'Fixed zoom starts with the last percentage, initially screen-pixel 1:1.');
+            check(choice(popup, 'custom').checked && panel.ownerDocument.activeElement === choice(popup, 'custom'), 'Revealing the percentage does not steal radio-key focus.');
+            await escape(popup);
+            popup = await showZoom();
+            const field = popup.querySelector('input[data-action="custom-zoom"]');
+            check(field.labels[0]?.textContent === strings.customZoom && field.type === 'number', 'Fixed zoom uses a labelled native number field.');
+            check(panel.ownerDocument.activeElement === field, 'Fixed zoom reopens with keyboard focus in the percentage field.');
+            check(getComputedStyle(popup.querySelector('.aflpp-custom-zoom')).borderTopStyle === 'solid', 'Separate the conditional percentage from the mode group.');
+            const change = async (value) => {
+                Object.getOwnPropertyDescriptor(panel.ownerDocument.defaultView.HTMLInputElement.prototype, 'value').set.call(field, value);
+                field.dispatchEvent(new Event('input', { bubbles: true }));
+                await pause();
+            };
+            await change('8');
+            check(field.getAttribute('aria-invalid') === 'true' && state.zoomPercent === 100, 'An incomplete percentage never changes the preview.');
+            const invalidEnter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+            field.dispatchEvent(invalidEnter);
+            check(invalidEnter.defaultPrevented && panel.ownerDocument.querySelector('.aflpp-zoom-popover') === popup, 'An invalid Enter cannot submit or dismiss the editor.');
+            await change('80');
+            check(state.zoomPercent === 80 && state.customZoom === 80 && toggle().textContent === '80%', 'Custom 80% applies without changing viewport dimensions.');
+            check(field.getAttribute('aria-invalid') === 'false', 'A valid percentage clears invalid state.');
+            check(choice(popup, 'custom').checked && popup.querySelectorAll('input:checked').length === 1, '80% and 100% belong to the same, single Fixed zoom choice.');
+            check(panel.querySelector('.aflpp-stage').style.width === '768px' && panel.querySelector('.aflpp-stage').style.height === '1024px', 'Custom zoom never edits the iframe geometry.');
+            check(!panel.querySelector('.aflpp-dimensions').textContent.includes('%'), 'Do not duplicate zoom in the dimension readout.');
+            await escape(popup);
+            popup = await showZoom();
+            check(popup.querySelector('input[type="number"]').value === '80', 'Reopening retains the fixed percentage.');
+            if (mode === 'floating' && width === 480) {
+                popup.querySelector('input[type="number"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+                await pause();
+                check(!panel.ownerDocument.querySelector('.aflpp-zoom-popover') && panel.ownerDocument.activeElement === toggle(), 'A valid Enter dismisses Zoom and restores focus.');
+                popup = await showZoom();
+                choice(popup, 'automatic').click();
+                await pause();
+                check(!popup.querySelector('input[type="number"]'), 'Returning to fitting removes the percentage field.');
+                choice(popup, 'custom').click();
+                await pause();
+                check(popup.querySelector('input[type="number"]').value === '80' && state.zoomPercent === 80, 'Returning to Fixed zoom restores 80%, not 100% or a stale draft.');
+            }
+            choice(popup, 'automatic').click();
+            await pause();
+            check(!popup.querySelector('input[type="number"]') && state.customZoom === 80, 'Hide the field without discarding the last fixed percentage.');
+            await escape(popup);
             const tablet = panel.querySelector('[data-viewport="tablet"]');
             check(tablet.getAttribute('aria-label') === `${strings.tablet} — ${strings.rotateLandscape}`, 'The selected button explains how to rotate.');
             tablet.click();
@@ -447,7 +529,7 @@ async function nativeViewportControlTests(strings) {
             checkIcons();
             check(!panel.querySelector('[data-action="rotate"]'), 'No separate rotate control remains.');
             const footer = panel.querySelector('.aflpp-devicebar').getBoundingClientRect();
-            for (const element of panel.querySelectorAll('.aflpp-devicebar button, .aflpp-devicebar select, .aflpp-dimensions')) {
+            for (const element of panel.querySelectorAll('.aflpp-devicebar button, .aflpp-dimensions')) {
                 const rect = element.getBoundingClientRect();
                 check(rect.left >= footer.left - 1 && rect.right <= footer.right + 1 && rect.top >= footer.top - 1 && rect.bottom <= footer.bottom + 1, 'All footer controls and dimensions must fit without clipping.');
             }
@@ -468,9 +550,69 @@ async function nativeViewportControlTests(strings) {
             await pause();
             check(state.orientation === 'landscape' && !desktop.classList.contains('aflpp-device-rotated'), 'Repeated desktop activation remains a no-op.');
             checkIcons();
+            if (mode === 'floating' && width === 320) {
+                const popup = await showZoom();
+                popup.querySelector('input:checked').focus();
+                state = { ...state, hasPreview: false, empty: { heading: strings.loading, description: strings.preparing, busy: true } };
+                panel.dataset.hasPreview = 'false';
+                panel.querySelector('.aflpp-devicebar').hidden = true;
+                panel.querySelector('.aflpp-empty').hidden = false;
+                controls.update(state);
+                await pause();
+                check(!document.querySelector('.aflpp-zoom-popover'), 'Unavailable previews cannot leave an orphaned Zoom popover.');
+                check(document.activeElement === panel.querySelector('[data-action="empty-title"]'), 'Focus returns from the portaled field to visible recovery.');
+            }
+            if (mode === 'PiP' && width === 480) {
+                viewport.setZoom(80);
+                sync();
+                await showZoom();
+                controls.beforeMove();
+                viewport.beforeMove();
+                check(!document.querySelector('.aflpp-zoom-popover'), 'Adoption closes the old document’s Zoom popover.');
+                frame = document.createElement('iframe');
+                frame.style.cssText = 'width:480px;height:180px;border:0';
+                document.body.append(frame);
+                const doc = frame.contentDocument;
+                doc.head.innerHTML = [...document.querySelectorAll('style')].map(({ outerHTML }) => outerHTML).join('');
+                doc.body.className = 'aflpp-pip-document';
+                // A controlled owner-window value tests detection; physical DPR is covered separately.
+                Object.defineProperty(doc.defaultView, 'devicePixelRatio', { value: 2 });
+                panel.classList.add('aflpp-pip');
+                panel.style.cssText = '';
+                doc.body.append(panel);
+                viewport.afterMove();
+                controls.remount();
+                sync();
+                await pause();
+                popup = await showZoom();
+                check(popup.ownerDocument === doc && !document.querySelector('.aflpp-zoom-popover'), 'The native popover and its focus hooks belong to the destination document.');
+                check(viewport.dpr === 2 && state.zoomPercent === 80 && panel.querySelector('.aflpp-stage').style.transform === 'scale(0.4)', 'Fixed zoom uses the displaying window’s DPR after adoption.');
+                const content = popup.querySelector('.components-popover__content');
+                const bounds = content.getBoundingClientRect();
+                check(bounds.top >= -1 && bounds.bottom <= doc.defaultView.innerHeight + 1 && content.scrollHeight > content.clientHeight, 'A short PiP window contains and scrolls the Zoom controls.');
+                const number = popup.querySelector('input[type="number"]');
+                const numberBounds = number.getBoundingClientRect();
+                check(doc.activeElement === number && numberBounds.top >= bounds.top - 1 && numberBounds.bottom <= bounds.bottom + 1, 'The reopened percentage is focused and visible inside a short popover.');
+                check(doc.defaultView.scrollX === 0 && doc.defaultView.scrollY === 0, 'Making the percentage visible must not scroll the displaying window.');
+                popup.querySelector('.aflpp-pixel-note').scrollIntoView({ block: 'end' });
+                check(content.scrollTop > 0 && popup.querySelector('.aflpp-pixel-note').getBoundingClientRect().bottom <= bounds.bottom + 1, 'The final explanation remains reachable in a short window.');
+                controls.beforeMove();
+                viewport.beforeMove();
+                document.body.append(panel);
+                panel.classList.remove('aflpp-pip');
+                panel.style.cssText = `position:relative;width:${width}px;height:340px`;
+                state = { ...state, inPip: false, inPage: true };
+                viewport.afterMove();
+                controls.remount();
+                sync();
+                await pause();
+                popup = await showZoom();
+                check(viewport.dpr === window.devicePixelRatio && state.zoomPercent === 80, 'Returning to the editor rebinds DPR without losing the manual percentage.');
+                controls.closeMenu();
+            }
             results.push({ name });
         } catch (error) { results.push({ name, error: error.stack }); }
-        finally { controls?.beforeMove(); viewport?.beforeMove(); panel.remove(); }
+        finally { controls?.beforeMove(); viewport?.beforeMove(); panel.remove(); frame?.remove(); }
     }
     return results;
 }
@@ -505,7 +647,7 @@ test('native WordPress launcher, menu and notices render and handle focus and cl
             script: `(async () => {
                 window.wp = { theme: { ThemeProvider: window.previewControls.ThemeProvider } };
                 return [...(${nativeLauncherTests.toString()})(), ...await (${nativePreferenceTests.toString()})(${JSON.stringify(panelStrings)}), ...await (${nativeNoticeTests.toString()})(${JSON.stringify(panelStrings)}), ...await (${nativeViewportControlTests.toString()})(${JSON.stringify(panelStrings)})];
-            })()`, count: 20,
+            })()`, count: 21,
             head: `<style>${tokens}\n${core}\n${css}</style><script src="${bundle}"></script>`,
         });
     } finally { await rm(directory, { recursive: true, force: true }); }

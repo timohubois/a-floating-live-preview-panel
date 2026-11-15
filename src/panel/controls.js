@@ -1,7 +1,7 @@
 import { createElement as h, createPortal, createRoot, flushSync, Fragment } from '@wordpress/element';
 import {
-    Button, DropdownMenu, MenuGroup, MenuItem, MenuItemsChoice, Notice, Placeholder,
-    Popover, SelectControl, SlotFillProvider, Spinner, Toolbar, ToolbarButton,
+    Button, Dropdown, DropdownMenu, MenuGroup, MenuItem, MenuItemsChoice, Notice, Placeholder,
+    Popover, RadioControl, SlotFillProvider, Spinner, TextControl, Toolbar, ToolbarButton,
 } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import { InlineNotices, store as noticesStore } from '@wordpress/notices';
@@ -27,13 +27,16 @@ export function createPreviewControls(panel, strings, callbacks) {
     const refreshContainer = panel.querySelector('.aflpp-refresh-control');
     const moveContainer = panel.querySelector('.aflpp-move-control');
     const devicesContainer = panel.querySelector('.aflpp-device-controls');
-    const fitContainer = panel.querySelector('.aflpp-fit-control');
+    const zoomContainer = panel.querySelector('.aflpp-fit-control');
     const pipContainer = panel.querySelector('.aflpp-pip-control');
     const emptyContainer = panel.querySelector('.aflpp-empty');
     const feedbackContainer = panel.querySelector('.aflpp-feedback');
     let root = createRoot(container);
     let state;
     let open = false;
+    let zoomOpen = false;
+    let zoomDraft = '100';
+    let focusZoomField = false;
     // InlineNotices is public in newer core; older core retains its native Notice component.
     const noticeActions = InlineNotices ? dispatch(noticesStore) : null;
     // wp-notices loads wp-theme when needed; that handle is absent in older core.
@@ -84,10 +87,97 @@ export function createPreviewControls(panel, strings, callbacks) {
         return h(Notice, { ...props, onRemove: callbacks.dismissNotice, spokenMessage: '', politeness: 'polite' }, message);
     }
 
+    function zoomValue(value) {
+        const number = Number(value);
+        return /^\d+$/.test(value) && Number.isInteger(number) && number >= 10 && number <= 400 ? number : null;
+    }
+
+    function zoomControl() {
+        const { fit, customZoom = 100, zoomPercent = 100, dpr = 1 } = state;
+        const labels = { automatic: strings.automatic, window: strings.fitToWindow, width: strings.fitToWidth };
+        const descriptions = { automatic: strings.automaticHelp, window: strings.fitToWindowHelp, width: strings.fitToWidthHelp };
+        const value = `${zoomPercent}%`;
+        const label = fit === 'custom' ? value : `${labels[fit] ?? strings.automatic} · ${value}`;
+        const valid = zoomValue(zoomDraft) !== null;
+        return h(Dropdown, {
+            open: zoomOpen,
+            onToggle(value) {
+                zoomOpen = value;
+                if (value) {
+                    open = false;
+                    zoomDraft = String(state.customZoom ?? 100);
+                    focusZoomField = state.fit === 'custom';
+                }
+                render();
+            },
+            contentClassName: 'aflpp-zoom-popover',
+            focusOnMount: 'firstElement',
+            popoverProps: { placement: 'top-end', offset: 8, shift: true, role: 'dialog', 'aria-label': strings.fitting },
+            renderToggle: ({ isOpen, onToggle }) => h(Button, {
+                className: 'aflpp-zoom-toggle', variant: 'secondary', size: 'compact',
+                label, showTooltip: true, 'aria-label': `${strings.fitting}: ${label}`,
+                'aria-haspopup': 'dialog', 'aria-expanded': isOpen, onClick: onToggle, 'data-action': 'zoom',
+            }, h('span', { className: 'aflpp-zoom-value' }, label), icons.chevron),
+            renderContent: () => h('div', { className: 'aflpp-zoom-content' },
+                h(RadioControl, {
+                    label: strings.zoomMode, selected: fit,
+                    options: [
+                        ...Object.entries(labels).map(([value, label]) => ({ value, label, description: descriptions[value] })),
+                        { value: 'custom', label: strings.fixedZoom, description: strings.fixedZoomHelp },
+                    ],
+                    onFocus(event) {
+                        if (!focusZoomField) return;
+                        focusZoomField = false;
+                        // Native opening focuses the checked radio after recording the focus-return target.
+                        const field = event.currentTarget.closest('.aflpp-zoom-content')?.querySelector('[data-action="custom-zoom"]');
+                        field?.focus({ preventScroll: true });
+                        const content = field?.closest('.components-popover__content');
+                        if (content) {
+                            const rect = field.getBoundingClientRect(), bounds = content.getBoundingClientRect();
+                            // Reveal the focused field in short popovers without scrolling the editor or PiP window.
+                            content.scrollTop += Math.min(0, rect.top - bounds.top) + Math.max(0, rect.bottom - bounds.bottom);
+                        }
+                    },
+                    onChange(value) {
+                        // Keep radio-key navigation in the group; focus the number only when reopening fixed zoom.
+                        focusZoomField = false;
+                        if (value === 'custom') {
+                            zoomDraft = String(customZoom);
+                            callbacks.zoom(customZoom);
+                        } else callbacks.fit(value);
+                    },
+                }),
+                fit === 'custom' && h('div', { className: 'aflpp-custom-zoom' }, h(TextControl, {
+                    label: strings.customZoom, type: 'number', min: 10, max: 400, step: 1,
+                    __nextHasNoMarginBottom: true, __next40pxDefaultSize: true,
+                    value: zoomDraft, help: strings.customZoomHelp,
+                    'aria-invalid': !valid, 'data-action': 'custom-zoom',
+                    onKeyDown(event) {
+                        if (event.key !== 'Enter') return;
+                        event.preventDefault();
+                        if (valid) closeMenu();
+                    },
+                    onChange(value) {
+                        zoomDraft = value;
+                        const number = zoomValue(value);
+                        if (number !== null) callbacks.zoom(number);
+                        render();
+                    },
+                })),
+                h('div', { className: 'aflpp-dpr-note', role: 'group', 'aria-label': strings.displayInformation },
+                    h('strong', { className: 'aflpp-dpr-title' }, strings.displayInformation),
+                    h('span', { className: 'aflpp-dpr-value' }, `${strings.displayDpr}: ${Number(dpr.toFixed(2))}`),
+                    h('span', null, strings.dprDetected),
+                    h('span', { className: 'aflpp-pixel-note' }, strings.pixelZoomHelp),
+                ),
+            ),
+        });
+    }
+
     function Controls() {
         const {
             inPage, inPip, mode, modeLabel, movable, busy, canRefresh, hasPreview,
-            canPip, canFullscreen, dock, rememberVisibility, rememberPosition, followChanges, device, orientation, fit, empty,
+            canPip, canFullscreen, dock, rememberVisibility, rememberPosition, followChanges, device, orientation, empty,
         } = state;
         const command = (action) => () => { closeMenu(); action(); };
         return h(SlotFillProvider, null,
@@ -107,7 +197,7 @@ export function createPreviewControls(panel, strings, callbacks) {
             })), pipContainer),
             h(DropdownMenu, {
                 className: 'aflpp-actions', label: strings.actions, icon: icons.more, open,
-                onToggle: (value) => { open = value; render(); },
+                onToggle: (value) => { open = value; if (value) zoomOpen = false; render(); },
                 toggleProps: { className: 'aflpp-icon', size: 'compact', 'data-action': 'actions' },
                 popoverProps: { placement: 'bottom-end', offset: 6, shift: true, className: 'aflpp-menu-popover' },
             }, () => h(Fragment, null,
@@ -174,16 +264,7 @@ export function createPreviewControls(panel, strings, callbacks) {
                     });
                 }),
             ), devicesContainer),
-            createPortal(h(SelectControl, {
-                label: strings.fitting, hideLabelFromVision: true, size: 'compact',
-                __nextHasNoMarginBottom: true, __next40pxDefaultSize: true,
-                value: fit, options: [
-                    { value: 'automatic', label: strings.automatic },
-                    { value: 'window', label: strings.fitToWindow },
-                    { value: 'width', label: strings.fitToWidth },
-                ],
-                onChange: callbacks.fit, 'data-action': 'fit',
-            }), fitContainer),
+            createPortal(zoomControl(), zoomContainer),
             createPortal(empty && h(Placeholder, {
                 className: 'aflpp-placeholder', icon: empty.busy ? h(Spinner) : icons[empty.icon],
                 label: h('h3', { className: 'aflpp-empty-title', tabIndex: -1, 'data-action': 'empty-title' }, empty.heading),
@@ -208,8 +289,9 @@ export function createPreviewControls(panel, strings, callbacks) {
     }
 
     function closeMenu() {
-        if (!open) return;
+        if (!open && !zoomOpen) return;
         open = false;
+        zoomOpen = false;
         render();
     }
 
@@ -219,11 +301,19 @@ export function createPreviewControls(panel, strings, callbacks) {
     }
 
     return {
-        update(next) { state = next; render(); },
+        update(next) {
+            const recoverZoomFocus = zoomOpen && !next.hasPreview
+                && panel.ownerDocument.activeElement?.closest('.aflpp-zoom-popover');
+            if (!next.hasPreview) zoomOpen = false;
+            state = next;
+            render();
+            if (recoverZoomFocus) focus('empty-title');
+        },
         closeMenu,
         focus,
         beforeMove() {
             open = false;
+            zoomOpen = false;
             root?.unmount();
             root = null;
             clearNotice();

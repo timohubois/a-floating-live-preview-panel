@@ -18,7 +18,7 @@ export function createPreviewPanel(strings, {
     const defaultFit = preferences.get(scope, 'fit') === 'width' ? 'width' : 'automatic';
     preferenceActions.setDefaults(scope, {
         rememberVisibility: true, rememberPosition: true, panelOpen: true, scrollToChanges: true, viewport: 'desktop',
-        fitMode: defaultFit, tabletOrientation: 'portrait', mobileOrientation: 'portrait',
+        fitMode: defaultFit, customZoom: 100, tabletOrientation: 'portrait', mobileOrientation: 'portrait',
     });
     let rememberVisibility = preferences.get(scope, 'rememberVisibility') !== false;
     let rememberPosition = preferences.get(scope, 'rememberPosition') !== false;
@@ -42,10 +42,12 @@ export function createPreviewPanel(strings, {
     const dimensions = panel.querySelector('.aflpp-dimensions');
     const feedback = panel.querySelector('.aflpp-feedback');
     const status = panel.querySelector('[role="status"]');
+    let controls;
     const responsiveViewport = createPreviewViewport(viewport, stage, dimensions, {
         device: preferences.get(scope, 'viewport'), fit: preferences.get(scope, 'fitMode') ?? defaultFit,
+        customZoom: preferences.get(scope, 'customZoom'),
         tabletOrientation: preferences.get(scope, 'tabletOrientation'), mobileOrientation: preferences.get(scope, 'mobileOrientation'),
-    });
+    }, () => syncControls());
 
     const editorWrap = mainDocument.querySelector('#wpbody-content > .wrap');
     const adminBar = mainDocument.getElementById('wpadminbar');
@@ -75,7 +77,6 @@ export function createPreviewPanel(strings, {
     let position = ['left', 'center', 'right'].includes(savedPosition) ? savedPosition : 'right';
     const geometry = createPanelGeometry(rememberPosition ? savedLayout : undefined, area, position);
     const { compactRect, usableEdge } = geometry;
-    let controls;
     let takeOverAction = false;
     let windowNotice = '';
     let current = {
@@ -275,6 +276,7 @@ export function createPreviewPanel(strings, {
     }
 
     function syncControls() {
+        if (!controls) return;
         const full = panel.ownerDocument.fullscreenElement === panel;
         const inPage = !pipWindow && !full;
         const movable = inPage && !geometry.expanded;
@@ -293,6 +295,7 @@ export function createPreviewPanel(strings, {
             },
             notice: feedbackState(),
             fit: responsiveViewport.fit, orientation: responsiveViewport.orientation,
+            customZoom: responsiveViewport.customZoom, zoomPercent: responsiveViewport.zoomPercent, dpr: responsiveViewport.dpr,
             canRefresh: current.canRefresh, hasPreview: current.hasPreview,
             canPip: inPage && supportsPip(),
             canFullscreen: inPage && !!mainDocument.fullscreenEnabled,
@@ -557,6 +560,13 @@ export function createPreviewPanel(strings, {
             const previous = responsiveViewport.fit;
             responsiveViewport.setFit(value);
             if (responsiveViewport.fit !== previous) preferenceActions.set(scope, 'fitMode', responsiveViewport.fit);
+            syncControls();
+        },
+        zoom(value) {
+            const previousFit = responsiveViewport.fit, previousZoom = responsiveViewport.customZoom;
+            responsiveViewport.setZoom(value);
+            if (responsiveViewport.customZoom !== previousZoom) preferenceActions.set(scope, 'customZoom', responsiveViewport.customZoom);
+            if (responsiveViewport.fit !== previousFit) preferenceActions.set(scope, 'fitMode', responsiveViewport.fit);
             syncControls();
         },
     });

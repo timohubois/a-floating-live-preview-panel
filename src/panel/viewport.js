@@ -1,13 +1,17 @@
 // Fixed CSS viewport geometry; the surrounding canvas changes only its visual zoom.
-export function createPreviewViewport(container, stage, dimensions, saved = {}) {
+export function createPreviewViewport(container, stage, dimensions, saved = {}, onChange = () => {}) {
     const mainWindow = container.ownerDocument.defaultView;
     const canvas = container.querySelector('.aflpp-canvas');
     const space = container.querySelector('.aflpp-canvas-space');
     const sizes = { desktop: [1280, 800], tablet: [768, 1024], mobile: [390, 844] };
     const presets = Object.keys(sizes);
     let device = presets.includes(saved.device) ? saved.device : 'desktop';
-    const fits = ['automatic', 'window', 'width'];
+    const fits = ['automatic', 'window', 'width', 'custom'];
     let fit = fits.includes(saved.fit) ? saved.fit : 'automatic';
+    const validZoom = (value) => Number.isInteger(value) && value >= 10 && value <= 400;
+    let customZoom = validZoom(saved.customZoom) ? saved.customZoom : 100;
+    let zoomPercent = 100;
+    let lastDpr;
     const defaultOrientation = (name) => name === 'desktop' ? 'landscape' : 'portrait';
     const orientations = Object.fromEntries(presets.map((name) => [
         name, name !== 'desktop' && ['portrait', 'landscape'].includes(saved[`${name}Orientation`])
@@ -25,6 +29,7 @@ export function createPreviewViewport(container, stage, dimensions, saved = {}) 
     }
 
     function scaleFor(width, height) {
+        if (fit === 'custom') return customZoom / 100 / pixelRatio();
         const widthScale = canvas.clientWidth / width;
         if (fit === 'width') return widthScale;
         const windowScale = Math.min(widthScale, canvas.clientHeight / height);
@@ -39,13 +44,16 @@ export function createPreviewViewport(container, stage, dimensions, saved = {}) 
         const top = Math.max(0, (canvas.clientHeight - height * scale) / 2);
         // Clip the stage's untransformed layout box so it cannot create phantom scroll ranges.
         Object.assign(space.style, {
-            width: `${canvas.clientWidth}px`, height: `${Math.max(canvas.clientHeight, top + height * scale)}px`,
+            width: `${Math.max(canvas.clientWidth, left + width * scale)}px`,
+            height: `${Math.max(canvas.clientHeight, top + height * scale)}px`,
         });
         Object.assign(stage.style, {
             left: `${left}px`, top: `${top}px`, transform: `scale(${scale})`,
         });
-        canvas.tabIndex = fit === 'width' && height * scale > canvas.clientHeight ? 0 : -1;
-        canvas.scrollTop = fit === 'width' ? pan * scale : 0;
+        const overflow = width * scale > canvas.clientWidth + 0.01 || height * scale > canvas.clientHeight + 0.01;
+        canvas.tabIndex = ['width', 'custom'].includes(fit) && overflow ? 0 : -1;
+        canvas.scrollLeft = fit === 'custom' ? pan.x * scale : 0;
+        canvas.scrollTop = ['width', 'custom'].includes(fit) ? pan.y * scale : 0;
     }
 
     function stopAnimation() {
@@ -61,15 +69,35 @@ export function createPreviewViewport(container, stage, dimensions, saved = {}) 
         // never bootstraps its responsive scripts in an unsized iframe.
         Object.assign(stage.style, { width: `${width}px`, height: `${height}px` });
         if (!container.clientWidth || !container.clientHeight) return;
-        const pan = resetPan ? 0 : (canvas.scrollTop || 0) / (scale || 1);
-        // Decide from the outer area, independent of the scrollbar's own width. Reserving
-        // its gutter up front avoids a resize loop when width-fitting is near the height limit.
-        canvas.style.overflowY = fit === 'width' && container.clientWidth / width * height > container.clientHeight
-            ? 'scroll' : 'hidden';
+        const pan = resetPan ? { x: 0, y: 0 } : {
+            x: (canvas.scrollLeft || 0) / (scale || 1), y: (canvas.scrollTop || 0) / (scale || 1),
+        };
+        canvas.style.overflowX = 'hidden';
+        canvas.style.overflowY = 'hidden';
+        if (fit === 'custom') {
+            // Fixed zoom must never shrink to fit. Reserve both native gutters before
+            // painting; adding either scrollbar can make the other axis overflow too.
+            const target = scaleFor(width, height);
+            for (let pass = 0; pass < 2; pass++) {
+                if (width * target > canvas.clientWidth + 0.01) canvas.style.overflowX = 'scroll';
+                if (height * target > canvas.clientHeight + 0.01) canvas.style.overflowY = 'scroll';
+            }
+        } else {
+            // Reserve width-fitting's scrollbar independently of its own width to avoid
+            // a resize loop when the final painted height is near the available limit.
+            canvas.style.overflowY = fit === 'width' && container.clientWidth / width * height > container.clientHeight
+                ? 'scroll' : 'hidden';
+        }
         if (!canvas.clientWidth || !canvas.clientHeight) return;
         const target = scaleFor(width, height);
-        const text = `${width} × ${height} · ${Math.round(target * pixelRatio() * 100)}%`;
+        const dpr = pixelRatio();
+        const nextZoom = Math.round(target * dpr * 100);
+        const changed = nextZoom !== zoomPercent || dpr !== lastDpr;
+        zoomPercent = nextZoom;
+        lastDpr = dpr;
+        const text = `${width} × ${height}`;
         if (dimensions.textContent !== text) dimensions.textContent = text;
+        if (changed) onChange();
         const from = scale ?? target;
         if (!animate || !motion.matches || from === target) {
             paint(target, pan);
@@ -110,6 +138,9 @@ export function createPreviewViewport(container, stage, dimensions, saved = {}) 
     return {
         get device() { return device; },
         get fit() { return fit; },
+        get customZoom() { return customZoom; },
+        get zoomPercent() { return fit === 'custom' ? customZoom : zoomPercent; },
+        get dpr() { return pixelRatio(); },
         get orientation() { return orientations[device]; },
         select(name, animate = false) {
             if (!presets.includes(name)) return;
@@ -127,6 +158,13 @@ export function createPreviewViewport(container, stage, dimensions, saved = {}) 
             if (!fits.includes(value) || fit === value) return;
             fit = value;
             render(false, true);
+        },
+        setZoom(value) {
+            if (!validZoom(value) || (fit === 'custom' && customZoom === value)) return;
+            const changedMode = fit !== 'custom';
+            customZoom = value;
+            fit = 'custom';
+            render(false, changedMode);
         },
         layout,
         beforeMove() {

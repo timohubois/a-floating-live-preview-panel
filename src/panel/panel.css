@@ -1,4 +1,5 @@
-.aflpp-panel {
+.aflpp-panel,
+.aflpp-zoom-popover {
     --aflpp-bg: var(--wpds-color-background-surface-neutral-strong, #fff);
     --aflpp-border: var(--wpds-color-stroke-surface-neutral, #ccc);
     --aflpp-radius: var(--wpds-border-radius-md, 4px);
@@ -66,9 +67,20 @@
 .aflpp-inline-notices .notices-inline-notices__notice { border-top-width: 0; border-inline-width: 0; }
 .aflpp-devicebar { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 8px; padding: 0 8px; border-top: 1px solid var(--aflpp-border); border-radius: 0 0 var(--aflpp-radius) var(--aflpp-radius); }
 .aflpp-device-controls, .aflpp-viewport-controls { display: flex; align-items: center; gap: 8px; }
-.aflpp-viewport-controls { margin-inline-start: auto; min-height: 40px; padding-block: 4px; }
+.aflpp-viewport-controls { margin-inline-start: auto; flex-wrap: wrap; justify-content: flex-end; min-height: 40px; padding-block: 4px; }
 .aflpp-fit-control { flex-shrink: 0; }
-.aflpp-fit-control .components-base-control__field { margin-bottom: 0; }
+/* A stable width prevents percentage digit changes from wrapping the footer and changing fit again. */
+.aflpp-zoom-toggle.components-button { width: 148px; justify-content: space-between; gap: 6px; font-variant-numeric: tabular-nums; }
+.aflpp-zoom-value { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.aflpp-zoom-toggle svg { flex-shrink: 0; width: 16px; height: 16px; }
+.aflpp-zoom-popover .components-popover__content { width: 288px; max-width: calc(100dvw - 24px); max-height: calc(100dvh - 48px); overflow: auto; }
+.aflpp-zoom-content { padding: 12px; }
+.aflpp-custom-zoom { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--aflpp-border); }
+.aflpp-custom-zoom .components-base-control__field { margin-bottom: 0; }
+.aflpp-dpr-note { display: grid; gap: 4px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--aflpp-border); color: var(--aflpp-muted); font-size: 11px; line-height: 16px; }
+.aflpp-dpr-title { font-weight: 600; }
+.aflpp-dpr-value { color: var(--aflpp-text); }
+.aflpp-pixel-note { margin-top: 4px; }
 /* Pass SVGs directly to ToolbarButton so core owns their sizing; rotate without a wrapper. */
 .aflpp-devices .aflpp-device-rotated svg { transform: rotate(90deg); }
 .aflpp-devices.components-toolbar { border: 0; background: transparent; }

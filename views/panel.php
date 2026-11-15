@@ -31,7 +31,7 @@ defined('ABSPATH') || exit;
         </div>
         <span id="aflpp-canvas-help" class="aflpp-sr-only">
             <?php esc_html_e(
-                'Use this area’s scrollbar, or focus it and use the arrow keys, to move around the preview screen. The page scrolls separately inside the preview.',
+                'Use this area’s scrollbars, or focus it and use the arrow keys, to move around the preview screen. The page scrolls separately inside the preview.', // phpcs:ignore Generic.Files.LineLength.TooLong -- Keep the translatable message intact.
                 'a-floating-live-preview-panel'
             ); ?>
         </span>
@@ -41,13 +41,13 @@ defined('ABSPATH') || exit;
     <footer class="aflpp-devicebar" hidden>
         <div class="aflpp-device-controls"></div>
         <div class="aflpp-viewport-controls">
-            <div class="aflpp-fit-control"></div>
             <span class="aflpp-dimensions"
                 title="<?php esc_attr_e(
-                    'Shows the CSS viewport width, height and zoom. At 100%, each viewport pixel occupies one physical screen pixel. Display scaling is included.',
+                    'Shows the selected viewport width and height in CSS pixels. Zoom does not change these dimensions.', // phpcs:ignore Generic.Files.LineLength.TooLong -- Keep the translatable message intact.
                     'a-floating-live-preview-panel'
                 ); ?>">
             </span>
+            <div class="aflpp-fit-control"></div>
         </div>
     </footer>
     <?php foreach (['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] as $edge) : ?>

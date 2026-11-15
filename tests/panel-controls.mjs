@@ -13,7 +13,7 @@ function fixture() {
     const calls = [];
     const container = {};
     const h = (type, props, ...children) => ({ type, props: props || {}, children });
-    const components = Object.fromEntries(['Button', 'DropdownMenu', 'MenuGroup', 'MenuItem', 'MenuItemsChoice', 'Notice', 'Placeholder', 'SelectControl', 'Spinner', 'Toolbar', 'ToolbarButton', 'SlotFillProvider'].map((name) => [name, name]));
+    const components = Object.fromEntries(['Button', 'Dropdown', 'DropdownMenu', 'MenuGroup', 'MenuItem', 'MenuItemsChoice', 'Notice', 'Placeholder', 'RadioControl', 'TextControl', 'Spinner', 'Toolbar', 'ToolbarButton', 'SlotFillProvider'].map((name) => [name, name]));
     components.Popover = { Slot: 'Popover.Slot' };
     const element = {
         createElement: h, Fragment: 'Fragment', createPortal: (child, target) => h('Portal', { target }, child), flushSync: (callback) => callback(),
@@ -23,7 +23,7 @@ function fixture() {
             return mount;
         },
     };
-    const callbacks = Object.fromEntries(['refresh', 'retry', 'dismissNotice', 'mode', 'close', 'popOut', 'fullscreen', 'dock', 'fit', 'reset', 'follow', 'rememberVisibility', 'rememberPosition', 'device']
+    const callbacks = Object.fromEntries(['refresh', 'retry', 'dismissNotice', 'mode', 'close', 'popOut', 'fullscreen', 'dock', 'fit', 'zoom', 'reset', 'follow', 'rememberVisibility', 'rememberPosition', 'device']
         .map((name) => [name, (...args) => calls.push({ name, args })]));
     const strings = panelStrings;
     const querySelector = (selector) => selector === '.aflpp-controls' ? container : {
@@ -42,7 +42,7 @@ function fixture() {
     const controls = createPreviewControls(panel, strings, callbacks);
     const state = {
         inPage: true, inPip: false, movable: true, mode: 'expand', modeLabel: strings.expand, canRefresh: true,
-        hasPreview: true, previewUrl: '/preview',
+        hasPreview: true, previewUrl: '/preview', zoomPercent: 100, customZoom: 100, dpr: 1,
         canPip: true, canFullscreen: true, dock: 'center', fit: 'automatic', orientation: 'landscape', rememberVisibility: true, rememberPosition: true, followChanges: false, device: 'desktop',
     };
     controls.update(state);
@@ -52,12 +52,16 @@ function fixture() {
             if (typeof node === 'function') return walk(node());
             if (!node || typeof node !== 'object') return;
             if (node.type === type) result.push(node);
+            if (node.type === 'Dropdown') {
+                walk(node.props.renderToggle({ isOpen: node.props.open, onToggle: () => node.props.onToggle(!node.props.open) }));
+                if (node.props.open) walk(node.props.renderContent({ onClose: () => node.props.onToggle(false) }));
+            }
             for (const child of node.children || []) walk(child);
         }
         walk(mounts.at(-1).tree);
         return result;
     }
-    return { controls, state, mounts, calls, nodes, icons, body };
+    return { controls, state, mounts, calls, nodes, icons, body, panel };
 }
 
 test('the PiP menu action delegates to the window owner', () => {
@@ -136,19 +140,174 @@ test('selected tablet and phone buttons offer rotation with an unwrapped native 
 });
 
 for (const inPip of [false, true]) {
-    test(`native fitting select offers all three approved zoom modes${inPip ? ' in PiP' : ''}`, () => {
+    test(`one native Zoom mode choice conditionally reveals fixed percentages${inPip ? ' in PiP' : ''}`, () => {
         const h = fixture();
-        h.controls.update({ ...h.state, inPip, fit: 'width' });
-        const select = h.nodes('SelectControl')[0];
-        assert.equal(select.props.label, 'How the screen fits');
-        assert.equal(select.props.hideLabelFromVision, true);
-        assert.equal(select.props.value, 'width');
-        assert.deepEqual(Array.from(select.props.options, ({ value }) => value), ['automatic', 'window', 'width']);
-        assert.deepEqual(Array.from(select.props.options, ({ label }) => label), ['Automatic', 'Fit to window', 'Fit to width']);
-        select.props.onChange('window');
+        h.controls.update({ ...h.state, inPip, fit: 'width', zoomPercent: 230, customZoom: 80, dpr: 2 });
+        const toggle = h.nodes('Button').find(({ props }) => props['data-action'] === 'zoom');
+        assert.equal(toggle.props['aria-label'], 'Zoom: Fit width · 230%');
+        assert.equal(h.nodes('TextControl').length, 0, 'Do not show a permanent custom field.');
+        h.nodes('Dropdown')[0].props.onToggle(true);
+        let modes = h.nodes('RadioControl')[0];
+        assert.equal(modes.props.label, 'Zoom mode');
+        assert.equal(modes.props.selected, 'width');
+        assert.deepEqual(Array.from(modes.props.options, ({ value }) => value), ['automatic', 'window', 'width', 'custom']);
+        assert.deepEqual(Array.from(modes.props.options, ({ label }) => label), ['Auto', 'Fit', 'Fit width', 'Fixed zoom']);
+        assert.deepEqual(Array.from(modes.props.options, ({ description }) => description), [
+            panelStrings.automaticHelp, panelStrings.fitToWindowHelp, panelStrings.fitToWidthHelp, panelStrings.fixedZoomHelp,
+        ]);
+        assert.equal(h.nodes('TextControl').length, 0, 'Fitting modes do not expose an unrelated percentage field.');
+        modes.props.onChange('window');
         assert.deepEqual(h.calls.at(-1), { name: 'fit', args: ['window'] });
+        assert.equal(h.nodes('Dropdown')[0].props.open, true, 'A radio choice does not dismiss the dialog.');
+        h.controls.update({ ...h.state, inPip, fit: 'window', customZoom: 80 });
+        modes = h.nodes('RadioControl')[0];
+        modes.props.onChange('custom');
+        assert.deepEqual(h.calls.at(-1), { name: 'zoom', args: [80] }, 'Use the last fixed percentage, not an implicit 100% reset.');
+        h.controls.update({ ...h.state, inPip, fit: 'custom', customZoom: 80, zoomPercent: 80 });
+        assert.equal(h.nodes('RadioControl')[0].props.selected, 'custom');
+        assert.equal(h.nodes('TextControl')[0].props.value, '80');
+        assert.equal(h.nodes('Button').some(({ props }) => props['data-zoom-mode']), false, 'Do not duplicate fixed zoom with a separate 100% choice.');
     });
 }
+
+test('all fitting modes hide the percentage field; 80% and 100% select the same fixed mode', () => {
+    const h = fixture();
+    h.nodes('Dropdown')[0].props.onToggle(true);
+    for (const fit of ['automatic', 'window', 'width', 'custom']) for (const customZoom of [80, 100]) {
+        h.controls.update({ ...h.state, fit, customZoom });
+        assert.equal(h.nodes('RadioControl')[0].props.selected, fit);
+        assert.equal(h.nodes('TextControl').length, fit === 'custom' ? 1 : 0);
+        assert.equal(h.nodes('RadioControl')[0].props.options.length, 4);
+    }
+});
+
+test('custom zoom accepts whole percentages only, keeps invalid drafts out of preferences and supports 80%', () => {
+    const h = fixture();
+    h.controls.update({ ...h.state, fit: 'custom', customZoom: 80, zoomPercent: 80 });
+    h.nodes('Dropdown')[0].props.onToggle(true);
+    let field = h.nodes('TextControl')[0];
+    assert.equal(field.props.label, 'Zoom (%)');
+    assert.equal(field.props.value, '80');
+    assert.deepEqual([field.props.type, field.props.min, field.props.max, field.props.step], ['number', 10, 400, 1]);
+    for (const value of ['', '8', '0', '401', '80.5', 'NaN', '1e2']) {
+        field.props.onChange(value);
+        field = h.nodes('TextControl')[0];
+        assert.equal(field.props.value, value);
+        assert.equal(field.props['aria-invalid'], true);
+    }
+    assert.equal(h.calls.length, 0);
+    for (const value of ['10', '80', '400']) {
+        h.nodes('TextControl')[0].props.onChange(value);
+        assert.deepEqual(h.calls.at(-1), { name: 'zoom', args: [Number(value)] });
+        assert.equal(h.nodes('TextControl')[0].props['aria-invalid'], false);
+    }
+});
+
+test('switching from an invalid draft back to fixed zoom restores the last valid percentage', () => {
+    const h = fixture();
+    h.controls.update({ ...h.state, fit: 'custom', customZoom: 80, zoomPercent: 80 });
+    h.nodes('Dropdown')[0].props.onToggle(true);
+    h.nodes('TextControl')[0].props.onChange('');
+    h.nodes('RadioControl')[0].props.onChange('automatic');
+    h.controls.update({ ...h.state, fit: 'automatic', customZoom: 80 });
+    assert.equal(h.nodes('TextControl').length, 0);
+    h.nodes('RadioControl')[0].props.onChange('custom');
+    h.controls.update({ ...h.state, fit: 'custom', customZoom: 80, zoomPercent: 80 });
+    assert.equal(h.nodes('TextControl')[0].props.value, '80');
+    assert.equal(h.nodes('TextControl')[0].props['aria-invalid'], false);
+    assert.deepEqual(h.calls, [{ name: 'fit', args: ['automatic'] }, { name: 'zoom', args: [80] }]);
+});
+
+test('reopening fixed zoom focuses the percentage once without scrolling; mode selection keeps radio focus', () => {
+    const h = fixture();
+    h.controls.update({ ...h.state, fit: 'custom', customZoom: 80, zoomPercent: 80 });
+    h.nodes('Dropdown')[0].props.onToggle(true);
+    let focuses = 0;
+    const event = { currentTarget: { closest: () => ({
+        querySelector: () => ({ closest: () => null, focus(options) { assert.equal(options.preventScroll, true); focuses++; } }),
+    }) } };
+    const focusMode = () => h.nodes('RadioControl')[0].props.onFocus(event);
+    focusMode();
+    focusMode();
+    assert.equal(focuses, 1);
+    h.nodes('RadioControl')[0].props.onChange('automatic');
+    h.controls.update({ ...h.state, fit: 'automatic', customZoom: 80 });
+    h.nodes('RadioControl')[0].props.onChange('custom');
+    h.controls.update({ ...h.state, fit: 'custom', customZoom: 80, zoomPercent: 80 });
+    focusMode();
+    assert.equal(focuses, 1, 'Revealing the field must not steal arrow-key focus from the radio group.');
+});
+
+test('reopening fixed zoom reveals its input by scrolling only the popover', () => {
+    const h = fixture();
+    h.controls.update({ ...h.state, fit: 'custom' });
+    h.nodes('Dropdown')[0].props.onToggle(true);
+    const content = { scrollTop: 0, getBoundingClientRect: () => ({ top: 20, bottom: 152 }) };
+    const field = {
+        focus(options) { assert.equal(options.preventScroll, true); },
+        closest: () => content,
+        getBoundingClientRect: () => ({ top: 220, bottom: 260 }),
+    };
+    h.nodes('RadioControl')[0].props.onFocus({ currentTarget: { closest: () => ({ querySelector: () => field }) } });
+    assert.equal(content.scrollTop, 108);
+});
+
+test('Enter closes valid custom zoom, but incomplete drafts cannot submit or close the editor', () => {
+    const h = fixture();
+    h.controls.update({ ...h.state, fit: 'custom' });
+    h.nodes('Dropdown')[0].props.onToggle(true);
+    let prevented = 0;
+    const enter = () => h.nodes('TextControl')[0].props.onKeyDown({ key: 'Enter', preventDefault() { prevented++; } });
+    h.nodes('TextControl')[0].props.onChange('8');
+    enter();
+    assert.equal(h.nodes('Dropdown')[0].props.open, true);
+    assert.equal(h.calls.length, 0);
+    h.nodes('TextControl')[0].props.onChange('80');
+    enter();
+    assert.equal(h.nodes('Dropdown')[0].props.open, false);
+    assert.equal(prevented, 2);
+    assert.deepEqual(h.calls.at(-1), { name: 'zoom', args: [80] });
+});
+
+test('DPR is separate read-only display information, not another setting or device preset', () => {
+    const h = fixture();
+    h.controls.update({ ...h.state, fit: 'custom', customZoom: 80, zoomPercent: 80, dpr: 2 });
+    h.nodes('Dropdown')[0].props.onToggle(true);
+    const dpr = () => h.nodes('span').find(({ props }) => props.className === 'aflpp-dpr-value').children[0];
+    assert.equal(dpr(), 'Display DPR: 2');
+    assert.equal(h.nodes('strong').find(({ props }) => props.className === 'aflpp-dpr-title').children[0], 'Display information');
+    assert.equal(h.nodes('div').find(({ props }) => props.className === 'aflpp-dpr-note').props['aria-label'], 'Display information');
+    assert.ok(h.nodes('span').some(({ children }) => children[0] === 'Detected automatically. Read-only.'));
+    assert.equal(h.nodes('TextControl').length, 1, 'Only the fixed percentage is editable.');
+    assert.equal(h.nodes('Button').find(({ props }) => props['data-action'] === 'zoom').props['aria-label'], 'Zoom: 80%');
+    h.controls.update({ ...h.state, fit: 'custom', customZoom: 80, zoomPercent: 80, dpr: 1.25 });
+    assert.equal(dpr(), 'Display DPR: 1.25');
+    assert.equal(h.nodes('TextControl')[0].props.value, '80');
+    assert.equal(h.calls.length, 0);
+});
+
+test('losing the preview closes Zoom and moves portaled focus to recovery, without moving outside focus', () => {
+    for (const focusedZoom of [false, true]) {
+        const h = fixture();
+        h.nodes('Dropdown')[0].props.onToggle(true);
+        h.panel.ownerDocument.activeElement = { closest: () => focusedZoom ? {} : null };
+        h.controls.update({ ...h.state, hasPreview: false, empty: { heading: 'Loading', description: 'Preparing' } });
+        assert.equal(h.nodes('Dropdown')[0].props.open, false);
+        assert.deepEqual(h.calls, focusedZoom ? [{ name: 'focus', args: ['[data-action="empty-title"]'] }] : []);
+    }
+});
+
+test('window options and Zoom never leave two popovers open', () => {
+    const h = fixture();
+    h.nodes('Dropdown')[0].props.onToggle(true);
+    h.nodes('DropdownMenu')[0].props.onToggle(true);
+    assert.equal(h.nodes('Dropdown')[0].props.open, false);
+    h.nodes('Dropdown')[0].props.onToggle(true);
+    assert.equal(h.nodes('DropdownMenu')[0].props.open, false);
+    h.controls.closeMenu();
+    assert.equal(h.nodes('Dropdown')[0].props.open, false);
+    assert.equal(h.nodes('DropdownMenu')[0].props.open, false);
+});
 
 for (const mode of ['in-page', 'fullscreen', 'PiP']) {
     test(`${mode} controls stay compact and refresh remains focusable while loading`, () => {
