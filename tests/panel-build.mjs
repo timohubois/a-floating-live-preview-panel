@@ -5,8 +5,8 @@ import vm from 'node:vm';
 import { icons } from '../src/panel/icons.js';
 import { createHooks } from '@wordpress/hooks';
 
+const adminEntries = ['classic-editor', 'block-editor', 'revision-browser'];
 const bundle = await readFile(new URL('../build/classic-editor.js', import.meta.url), 'utf8');
-const asset = await readFile(new URL('../build/classic-editor.asset.php', import.meta.url), 'utf8');
 
 function shape({ props }) {
     const children = Array.isArray(props.children) ? props.children : [props.children];
@@ -17,7 +17,7 @@ function shape({ props }) {
 }
 
 test('asset entries use consistent feature names and only emit standard WordPress build files', async () => {
-    const entries = ['classic-editor', 'block-editor', 'revision-browser', 'preview-navigation'];
+    const entries = [...adminEntries, 'preview-navigation'];
     const expected = entries.flatMap((entry) => [
         `${entry}.js`, `${entry}.asset.php`,
         ...(entry === 'preview-navigation' ? [] : [`${entry}.css`, `${entry}-rtl.css`]),
@@ -26,26 +26,23 @@ test('asset entries use consistent feature names and only emit standard WordPres
         'obsolete entry assets must not remain in the shipped build');
 });
 
-test('the editor build declares its public WordPress runtime dependencies', () => {
-    const dependencies = [...asset.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1].matchAll(/'([^']+)'/g)]
-        .map((match) => match[1]);
-    assert.deepEqual(dependencies, [
-        'react-jsx-runtime', 'wp-components', 'wp-data', 'wp-element', 'wp-hooks', 'wp-notices', 'wp-preferences', 'wp-primitives',
-    ]);
-    assert.match(asset, /'version'\s*=>\s*'[a-f0-9]+'/);
-    assert.doesNotMatch(bundle, /__experimental|__unstable|Cannot find module/);
-    assert.doesNotMatch(bundle, /import\(/, 'all editor coordination is bundled, not loaded from source URLs');
-});
-
-test('the revision build uses the same public runtime without editor save coordination', async () => {
-    const revisionBundle = await readFile(new URL('../build/revision-browser.js', import.meta.url), 'utf8');
-    const revisionAsset = await readFile(new URL('../build/revision-browser.asset.php', import.meta.url), 'utf8');
-    const dependencies = (source) => [...source.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1].matchAll(/'([^']+)'/g)]
-        .map((match) => match[1]);
-    assert.deepEqual(dependencies(revisionAsset), dependencies(asset).filter((name) => name !== 'wp-hooks'));
-    assert.doesNotMatch(revisionBundle, /__experimental|__unstable|before-autosave|heartbeat-send|deferredSaves/);
-    assert.doesNotMatch(revisionBundle, /import\(/, 'revision coordination and scrolling are bundled');
-});
+for (const entry of adminEntries) {
+    test(`${entry} declares its public WordPress runtime and bundles its code`, async () => {
+        const [bundle, asset] = await Promise.all(['js', 'asset.php'].map((extension) =>
+            readFile(new URL(`../build/${entry}.${extension}`, import.meta.url), 'utf8')
+        ));
+        const dependencies = [...asset.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1].matchAll(/'([^']+)'/g)]
+            .map((match) => match[1]);
+        assert.deepEqual(dependencies, [
+            'react-jsx-runtime', ...(entry === 'block-editor' ? ['wp-api-fetch'] : []),
+            'wp-components', 'wp-data', 'wp-element', ...(entry === 'revision-browser' ? [] : ['wp-hooks']),
+            'wp-notices', 'wp-preferences', 'wp-primitives',
+        ]);
+        assert.match(asset, /'version'\s*=>\s*'[a-f0-9]+'/);
+        assert.doesNotMatch(bundle, /__experimental|__unstable|Cannot find module|import\(/);
+        if (entry === 'revision-browser') assert.doesNotMatch(bundle, /before-autosave|heartbeat-send|deferredSaves/);
+    });
+}
 
 test('the shipped editor bundle uses WordPress runtime globals and bundles exactly the selected official icons', () => {
     const bundledIcons = [];
@@ -65,7 +62,7 @@ test('the shipped editor bundle uses WordPress runtime globals and bundles exact
 });
 
 test('all admin entries emit the same panel stylesheet without a separate shared runtime', async () => {
-    const [editor, blocks, revisions] = await Promise.all(['classic-editor', 'block-editor', 'revision-browser'].map((entry) =>
+    const [editor, blocks, revisions] = await Promise.all(adminEntries.map((entry) =>
         readFile(new URL(`../build/${entry}.css`, import.meta.url), 'utf8')
     ));
     assert.equal(editor, blocks);

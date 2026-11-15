@@ -21,26 +21,6 @@ function browserTests({ core, panel, strings }) {
     const results = [];
     const properties = ['color', 'backgroundColor', 'cursor', 'outlineStyle', 'outlineColor', 'outlineWidth', 'boxShadow', 'opacity', 'width', 'minWidth', 'height', 'padding', 'borderRadius'];
     const appearance = (element) => properties.map((property) => getComputedStyle(element)[property]);
-    for (const state of ['normal', 'disabled', 'aria-disabled', 'focused', 'pressed']) {
-        const name = `panel icon retains native WordPress ${state} appearance`;
-        try {
-            for (const element of [button, reference]) {
-                element.disabled = state === 'disabled';
-                element.toggleAttribute('aria-disabled', state === 'aria-disabled');
-                if (state === 'aria-disabled') element.setAttribute('aria-disabled', 'true');
-                element.classList.toggle('is-pressed', state === 'pressed');
-            }
-            if (state === 'focused') button.focus();
-            const actual = appearance(button);
-            if (state === 'focused') reference.focus();
-            const expected = appearance(reference);
-            if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-                throw new Error(`Panel appearance ${JSON.stringify(actual)} must match native ${JSON.stringify(expected)}.`);
-            }
-            results.push({ name });
-        } catch (error) { results.push({ name, error: error.message }); }
-        finally { button.blur(); reference.blur(); }
-    }
     const shortcut = document.createElement('div');
     shortcut.className = 'aflpp-pip-control';
     shortcut.innerHTML = '<div class="aflpp-pip-surface"><button class="components-button has-icon aflpp-pip-button" aria-label="Picture-in-picture">' + reference.innerHTML + '</button></div>';
@@ -49,27 +29,30 @@ function browserTests({ core, panel, strings }) {
     const nativeAction = reference.cloneNode(true);
     nativeAction.classList.remove('is-compact');
     document.body.append(nativeAction);
-    for (const state of ['normal', 'disabled', 'aria-disabled', 'focused', 'pressed']) {
-        const name = `PiP action retains native WordPress ${state} appearance`;
-        try {
-            for (const element of [pip, nativeAction]) {
-                element.disabled = state === 'disabled';
-                element.toggleAttribute('aria-disabled', state === 'aria-disabled');
-                if (state === 'aria-disabled') element.setAttribute('aria-disabled', 'true');
-                element.classList.toggle('is-pressed', state === 'pressed');
-            }
-            if (state === 'focused') pip.focus();
-            const actual = appearance(pip);
-            if (state === 'focused') nativeAction.focus();
-            if (JSON.stringify(actual) !== JSON.stringify(appearance(nativeAction))) {
-                throw new Error('Keep native PiP button geometry, colors, corners, disabled and focus states.');
-            }
-            if (getComputedStyle(shortcut.firstElementChild).backgroundColor !== 'rgb(255, 255, 255)') {
-                throw new Error('Keep contrast on a separate opaque backing, not a custom button fill.');
-            }
-            results.push({ name });
-        } catch (error) { results.push({ name, error: error.message }); }
-        finally { pip.blur(); nativeAction.blur(); }
+    for (const [name, control, native] of [['panel icon', button, reference], ['PiP action', pip, nativeAction]]) {
+        for (const state of ['normal', 'disabled', 'aria-disabled', 'focused', 'pressed']) {
+            const title = `${name} retains native WordPress ${state} appearance`;
+            try {
+                for (const element of [control, native]) {
+                    element.disabled = state === 'disabled';
+                    element.toggleAttribute('aria-disabled', state === 'aria-disabled');
+                    if (state === 'aria-disabled') element.setAttribute('aria-disabled', 'true');
+                    element.classList.toggle('is-pressed', state === 'pressed');
+                }
+                if (state === 'focused') control.focus();
+                const actual = appearance(control);
+                if (state === 'focused') native.focus();
+                const expected = appearance(native);
+                if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+                    throw new Error(`Panel appearance ${JSON.stringify(actual)} must match native ${JSON.stringify(expected)}.`);
+                }
+                if (control === pip && getComputedStyle(shortcut.firstElementChild).backgroundColor !== 'rgb(255, 255, 255)') {
+                    throw new Error('Keep contrast on a separate opaque backing, not a custom button fill.');
+                }
+                results.push({ name: title });
+            } catch (error) { results.push({ name: title, error: error.message }); }
+            finally { control.blur(); native.blur(); }
+        }
     }
     shortcut.remove(); nativeAction.remove();
     {

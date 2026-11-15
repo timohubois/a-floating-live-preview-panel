@@ -294,8 +294,11 @@ async function nativeNoticeTests(strings) {
     const check = (condition, message) => { if (!condition) throw new Error(message); };
     actions.createInfoNotice('Editor-owned notice', { id: 'unrelated-editor-notice', speak: false });
     const editorNotices = selectors.getNotices();
+    const theme = window.wp.theme;
     for (const mode of ['in-page', 'fullscreen', 'PiP']) {
         const name = `${mode} feedback uses scoped native inline notices and preserves recovery and dismissal`;
+        // Older core may expose notices without the optional theme provider.
+        window.wp.theme = mode === 'fullscreen' ? undefined : theme;
         const panel = document.createElement('section');
         panel.className = 'aflpp-panel';
         panel.style.cssText = 'left:20px;top:20px;width:480px;height:340px';
@@ -306,7 +309,7 @@ async function nativeNoticeTests(strings) {
         try {
             let state = {
                 inPage: mode === 'in-page', inPip: mode === 'PiP', hasPreview: true, device: 'desktop',
-                notice: { heading: 'Could not update preview', description: 'Showing the previous preview.', status: 'warning', dismissible: false, retry: true, action: strings.retry },
+                notice: { heading: 'Could not update preview.', description: 'Showing the previous preview.', status: 'warning', dismissible: false, retry: true, action: strings.retry },
             };
             let retries = 0, dismissals = 0;
             controls = createPreviewControls(panel, strings, {
@@ -320,7 +323,7 @@ async function nativeNoticeTests(strings) {
             check(notice.querySelector('svg') && !notice.querySelector('strong'), 'Let core provide the status icon and plain message.');
             check(notice.textContent.includes('Could not update preview. Showing the previous preview.'), 'Keep both parts of the message.');
             const style = getComputedStyle(notice);
-            check(style.borderTopWidth === '0px' && style.borderLeftWidth === '0px' && style.borderRightWidth === '0px' && style.borderRadius === '0px', `Integrate with the single header separator and flush editor notice edges: ${style.borderTopWidth}/${style.borderLeftWidth}/${style.borderRightWidth}/${style.borderRadius}.`);
+            check(style.borderTopWidth === '0px' && style.borderLeftWidth === '0px' && style.borderRightWidth === '0px' && (!window.wp.theme || style.borderRadius === '0px'), `Integrate with the single header separator and flush editor notice edges: ${style.borderTopWidth}/${style.borderLeftWidth}/${style.borderRightWidth}/${style.borderRadius}.`);
             let record = selectors.getNotices(context)[0];
             check(record.spokenMessage === null && !record.isDismissible, 'Do not duplicate the shell announcement or dismiss an unresolved failure.');
             const retry = [...notice.querySelectorAll('button')].find((button) => button.textContent === strings.retry);
@@ -338,7 +341,8 @@ async function nativeNoticeTests(strings) {
             check(retries === 1, 'Disabled actions cannot retry.');
             if (mode === 'PiP') {
                 controls.beforeMove();
-                check(selectors.getNotices(context).length === 0, 'Clean up only our notice before moving documents.');
+                controls.update(state);
+                check(selectors.getNotices(context).length === 0, 'Keep our notice cleared while the controls are detached.');
                 frame = document.createElement('iframe');
                 document.body.append(frame);
                 for (const sheet of document.styleSheets) {
@@ -364,7 +368,7 @@ async function nativeNoticeTests(strings) {
             check(selectors.getNotices() === editorNotices, 'Never change editor-owned notices.');
             results.push({ name });
         } catch (error) { results.push({ name, error: error.stack }); }
-        finally { controls?.beforeMove(); panel.remove(); frame?.remove(); }
+        finally { controls?.beforeMove(); panel.remove(); frame?.remove(); window.wp.theme = theme; }
     }
     actions.removeNotice('unrelated-editor-notice');
     return results;

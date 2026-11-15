@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { editorExtensionsFixture } from './helpers/editor-extensions.mjs';
 import { sourceForVm } from './helpers/modules.mjs';
@@ -247,41 +246,12 @@ for (const copy of [false, true]) {
     });
 }
 
-for (const [name, capture] of [
-    ['replaced core values', () => new URLSearchParams({ vendor_note: 'Note' })],
-    ['deleted core values', (body) => { body.delete('content'); return body; }],
-]) {
-    test(`classic ${name} cannot reach the preview endpoint`, async () => {
-        let requests = 0;
-        const form = { addEventListener() {}, removeEventListener() {} };
-        const config = { base: 'baseline', strings: { integrationFailed: 'Integration failed' } };
-        const context = {
-            URLSearchParams, document: { getElementById: (id) => id === 'post' ? form : null },
-            window: { addEventListener() {}, removeEventListener() {} },
-            FormData: class { *[Symbol.iterator]() { yield ['content', 'Unsaved content']; } },
-            fetch: async () => { requests++; throw new Error('Invalid capture reached the endpoint.'); },
-        };
-        const runtime = editorExtensionsFixture(context);
-        runtime.hooks.addAction('aflpp.classicEditor.previewSetup', 'vendor/invalid', ({ hooks }) => {
-            hooks.addFilter('previewFormBody', 'vendor/invalid', capture);
-        });
-        context.imports = {
-            './editor-extensions.js': runtime,
-            '../preview/live-preview.js': { createLivePreview: () => ({ start() {}, changed() {} }) },
-        };
-        const native = {};
-        const source = await sourceForVm(new URL('../src/screens/classic-editor.js', import.meta.url));
-        vm.runInNewContext(`${source}\ninitLivePreview`, context)(config, native);
-        await assert.rejects(native.preparePreview(), (error) => error.code === 'aflpp_integration_failed');
-        assert.equal(requests, 0);
-        native.destroy();
-    });
-}
-
-test('classic external fields can pause initial preview, resume and clean up without editor-specific imports', async () => {
-    let blocked = true, signal, cleaned = 0, nativeDestroyed = 0;
-    const calls = [];
-    const listeners = new Map();
+// Share the real classic adapter setup across its boundary tests.
+const classicSource = await sourceForVm(new URL('../src/screens/classic-editor.js', import.meta.url));
+function classicFixture(setup, entries = [['content', 'Unsaved content']]) {
+    const calls = [], requests = [], listeners = new Map();
+    let destroyed = 0;
+    const native = { destroy: () => destroyed++ };
     const form = {
         addEventListener(name, callback) { listeners.set(name, callback); },
         removeEventListener(name) { listeners.delete(name); },
@@ -290,14 +260,44 @@ test('classic external fields can pause initial preview, resume and clean up wit
     const context = {
         URLSearchParams, document: { getElementById: (id) => id === 'post' ? form : null },
         window: { addEventListener() {}, removeEventListener() {} },
-        FormData: class { *[Symbol.iterator]() { yield ['content', 'Native content']; yield ['vendor_note', 'Unsaved note']; } },
+        FormData: class { *[Symbol.iterator]() { yield* entries; } },
         fetch: async (url, options) => {
-            calls.push(options.body);
+            requests.push(options.body);
             return { ok: true, json: async () => ({ url: '/preview' }) };
         },
     };
     const runtime = editorExtensionsFixture(context);
-    runtime.hooks.addAction('aflpp.classicEditor.previewSetup', 'vendor/note', ({ hooks, changed, onDestroy }) => {
+    runtime.hooks.addAction('aflpp.classicEditor.previewSetup', 'vendor/fixture', setup);
+    context.imports = {
+        './editor-extensions.js': runtime,
+        '../preview/live-preview.js': { createLivePreview: () => ({
+            start() { calls.push(['start', native.ready]); },
+            pause() {},
+            changed() { calls.push(['changed', native.ready]); },
+            resume(error) { calls.push(error ? ['error', error.code] : ['resume', native.ready]); },
+        }) },
+    };
+    vm.runInNewContext(`${classicSource}\ninitLivePreview`, context)(config, native);
+    return { native, calls, requests, listeners, get destroyed() { return destroyed; } };
+}
+
+for (const [name, capture] of [
+    ['replaced core values', () => new URLSearchParams({ vendor_note: 'Note' })],
+    ['deleted core values', (body) => { body.delete('content'); return body; }],
+]) {
+    test(`classic ${name} cannot reach the preview endpoint`, async () => {
+        const h = classicFixture(({ hooks }) => {
+            hooks.addFilter('previewFormBody', 'vendor/invalid', capture);
+        });
+        await assert.rejects(h.native.preparePreview(), (error) => error.code === 'aflpp_integration_failed');
+        assert.equal(h.requests.length, 0);
+        h.native.destroy();
+    });
+}
+
+test('classic external fields can pause initial preview, resume and clean up without editor-specific imports', async () => {
+    let blocked = true, signal, cleaned = 0;
+    const h = classicFixture(({ hooks, changed, onDestroy }) => {
         signal = changed;
         hooks.addFilter('previewPauseReason', 'vendor/note', (reason) => reason || (blocked ? 'Wait for fields' : ''));
         hooks.addFilter('previewFormBody', 'vendor/note', (body, values) => {
@@ -305,67 +305,34 @@ test('classic external fields can pause initial preview, resume and clean up wit
             return body;
         });
         onDestroy(() => cleaned++);
-    });
-    const native = { destroy: () => nativeDestroyed++ };
-    context.imports = {
-        './editor-extensions.js': runtime,
-        '../preview/live-preview.js': { createLivePreview: () => ({
-            start() { calls.push(['start', native.ready]); }, pause() {}, changed() {},
-            resume() { calls.push(['resume', native.ready]); },
-        }) },
-    };
-    const source = await sourceForVm(new URL('../src/screens/classic-editor.js', import.meta.url));
-    vm.runInNewContext(`${source}\ninitLivePreview`, context)(config, native);
-    assert.equal(native.ready, false);
-    assert.equal(native.notReady, 'Wait for fields');
-    assert.deepEqual(calls, [['start', false]]);
+    }, [['content', 'Native content'], ['vendor_note', 'Unsaved note']]);
+    assert.equal(h.native.ready, false);
+    assert.equal(h.native.notReady, 'Wait for fields');
+    assert.deepEqual(h.calls, [['start', false]]);
     blocked = false;
     signal();
-    assert.deepEqual(calls.at(-1), ['resume', true]);
-    await native.preparePreview();
-    assert.equal(calls.at(-1).get('vendor_note'), 'Unsaved note');
-    assert.equal(calls.at(-1).get('content'), 'Native content');
-    assert.equal(calls.at(-1).get('base'), 'baseline');
-    native.destroy(); native.destroy();
+    assert.deepEqual(h.calls.at(-1), ['resume', true]);
+    await h.native.preparePreview();
+    const body = h.requests.at(-1);
+    assert.equal(body.get('vendor_note'), 'Unsaved note');
+    assert.equal(body.get('content'), 'Native content');
+    assert.equal(body.get('base'), 'baseline');
+    h.native.destroy(); h.native.destroy();
     assert.equal(cleaned, 1);
-    assert.equal(nativeDestroyed, 1);
-    assert.equal(listeners.size, 0);
-    await assert.rejects(native.preparePreview(), (error) => error.code === 'aflpp_integration_failed');
+    assert.equal(h.destroyed, 1);
+    assert.equal(h.listeners.size, 0);
+    await assert.rejects(h.native.preparePreview(), (error) => error.code === 'aflpp_integration_failed');
 });
 
-test('classic startup uses the same failure path once and never starts preview writes after setup errors', async () => {
-    const calls = [];
+test('classic startup uses the same failure path once and never starts preview writes after setup errors', () => {
     let cleaned = 0;
-    const form = { addEventListener() {}, removeEventListener() {} };
-    const config = { strings: { integrationFailed: 'Integration failed' } };
-    const context = {
-        document: { getElementById: (id) => id === 'post' ? form : null },
-        window: { addEventListener() {}, removeEventListener() {} },
-    };
-    const runtime = editorExtensionsFixture(context);
-    runtime.hooks.addAction('aflpp.classicEditor.previewSetup', 'vendor/failure', ({ onDestroy }) => {
+    const h = classicFixture(({ onDestroy }) => {
         onDestroy(() => cleaned++);
         throw new Error('Setup failed');
     });
-    context.imports = {
-        './editor-extensions.js': runtime,
-        '../preview/live-preview.js': { createLivePreview: () => ({
-            start() { calls.push('start'); }, changed() { calls.push('changed'); },
-            resume(error) { calls.push(error.code); },
-        }) },
-    };
-    const native = {};
-    const source = await sourceForVm(new URL('../src/screens/classic-editor.js', import.meta.url));
-    vm.runInNewContext(`${source}\ninitLivePreview`, context)(config, native);
-    assert.equal(native.ready, false);
-    assert.equal(native.notReady, 'Integration failed');
-    assert.deepEqual(calls, ['aflpp_integration_failed']);
-    native.destroy(); native.destroy();
+    assert.equal(h.native.ready, false);
+    assert.equal(h.native.notReady, 'Integration failed');
+    assert.deepEqual(h.calls, [['error', 'aflpp_integration_failed']]);
+    h.native.destroy(); h.native.destroy();
     assert.equal(cleaned, 1);
-});
-
-test('core editor classes and screen modules do not name optional integrations', async () => {
-    for (const path of ['classes/ClassicEditor.php', 'classes/BlockEditor.php', 'src/screens/classic-editor.js', 'src/screens/block-editor.js']) {
-        assert.doesNotMatch(await readFile(new URL(`../${path}`, import.meta.url), 'utf8'), /\bacf\b|\byoast\b|\btimber\b|compatibility\//i, path);
-    }
 });

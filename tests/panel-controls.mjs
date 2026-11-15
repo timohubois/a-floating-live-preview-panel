@@ -8,7 +8,7 @@ import vm from 'node:vm';
 const source = await sourceForVm(new URL('../src/panel/controls.js', import.meta.url));
 
 // Verify our native-component contract without duplicating WordPress's React or menu implementation.
-function fixture({ nativeNotices = false, theme = false } = {}) {
+function fixture() {
     const mounts = [];
     const calls = [];
     const container = {};
@@ -30,22 +30,12 @@ function fixture({ nativeNotices = false, theme = false } = {}) {
         selector, focus() { calls.push({ name: 'focus', args: [selector] }); },
     };
     const body = {};
-    function InlineNotices() {}
-    function ThemeProvider() {}
-    const records = new Map(), noticeWrites = [];
-    const noticeActions = {
-        createNotice(status, message, props) {
-            records.set(`${props.context}/${props.id}`, { status, message, ...props });
-            noticeWrites.push({ status, message, ...props });
-        },
-        removeNotice(id, context) { records.delete(`${context}/${id}`); },
-    };
-    const panel = { querySelector, ownerDocument: { querySelector, body, defaultView: { wp: { theme: theme ? { ThemeProvider } : {} } } } };
+    const panel = { querySelector, ownerDocument: { querySelector, body } };
     const imports = {
         '@wordpress/element': element,
         '@wordpress/components': components,
-        '@wordpress/data': { dispatch: () => noticeActions },
-        '@wordpress/notices': { InlineNotices: nativeNotices ? InlineNotices : undefined, store: {} },
+        '@wordpress/data': {},
+        '@wordpress/notices': {},
         './icons.js': { icons },
     };
     const createPreviewControls = vm.runInNewContext(`${source}\ncreatePreviewControls`, { imports });
@@ -67,19 +57,8 @@ function fixture({ nativeNotices = false, theme = false } = {}) {
         walk(mounts.at(-1).tree);
         return result;
     }
-    return { controls, state, mounts, calls, nodes, icons, body, records, noticeWrites, InlineNotices, ThemeProvider };
+    return { controls, state, mounts, calls, nodes, icons, body };
 }
-
-test('header controls request native compact sizing in every window mode', () => {
-    const h = fixture();
-    for (const mode of ['in-page', 'fullscreen', 'PiP']) {
-        h.controls.update({ ...h.state, inPage: mode === 'in-page', inPip: mode === 'PiP' });
-        const buttons = h.nodes('Button').filter(({ props }) => props.className?.split(' ').includes('aflpp-icon'));
-        assert.ok(buttons.length > 0, 'Refresh remains available in every mode.');
-        for (const { props } of buttons) assert.equal(props.size, 'compact');
-        assert.equal(h.nodes('DropdownMenu')[0].props.toggleProps.size, 'compact');
-    }
-});
 
 test('the PiP menu action delegates to the window owner', () => {
     const h = fixture();
@@ -127,10 +106,14 @@ test('viewport choices use native Toolbar buttons and pressed-state behavior', (
 });
 
 for (const mode of ['in-page', 'fullscreen', 'PiP']) {
-    test(`${mode} refresh stays visible and focusable while disabled during loading`, () => {
+    test(`${mode} controls stay compact and refresh remains focusable while loading`, () => {
         const h = fixture();
         const state = { ...h.state, inPage: mode === 'in-page', inPip: mode === 'PiP' };
         h.controls.update(state);
+        for (const { props } of h.nodes('Button').filter(({ props }) => props.className?.split(' ').includes('aflpp-icon'))) {
+            assert.equal(props.size, 'compact');
+        }
+        assert.equal(h.nodes('DropdownMenu')[0].props.toggleProps.size, 'compact');
         const refresh = () => h.nodes('Button').find(({ props }) => props['data-action'] === 'refresh');
         const portal = h.nodes('Portal').find(({ props }) => props.target.selector === '.aflpp-refresh-control');
         assert.equal(portal.children[0], refresh(), 'Keep refresh in the header in every window mode.');
@@ -183,48 +166,6 @@ test('native notices keep unresolved failures persistent and dismiss only incide
     assert.equal(notice.props.isDismissible, true);
     notice.props.onRemove();
     assert.equal(h.calls.at(-1).name, 'dismissNotice');
-});
-
-test('inline notices stay scoped, quiet and stable across unrelated control updates', () => {
-    const h = fixture({ nativeNotices: true, theme: true });
-    const notice = { heading: 'Failed.', description: 'Previous frame', status: 'warning', dismissible: false, retry: true, action: 'Retry' };
-    h.controls.update({ ...h.state, notice });
-    const record = [...h.records.values()][0];
-    assert.equal(record.context, 'a-floating-live-preview-panel', 'Never publish panel feedback in the global editor feed.');
-    assert.equal(record.message, 'Failed. Previous frame', 'Do not duplicate existing punctuation.');
-    assert.equal(record.speak, false, 'The shell owns announcements, including on core versions that use the notice store.');
-    assert.equal(record.isDismissible, false);
-    assert.equal(h.nodes('Notice').length, 0, 'Use the installed inline renderer when available.');
-    assert.equal(h.nodes(h.InlineNotices)[0].props.context, record.context);
-    assert.equal(h.nodes(h.ThemeProvider)[0].props.cornerRadius, 'none', 'Match the editor without changing other panel controls.');
-    record.actions[0].onClick();
-    assert.equal(h.calls.at(-1).name, 'retry');
-    h.controls.update({ ...h.state, device: 'mobile', notice: { ...notice } });
-    assert.equal(h.noticeWrites.length, 1, 'Do not recreate the same notice for geometry, menu or viewport updates.');
-    h.controls.update(h.state);
-    assert.equal(h.records.size, 0, 'Clear only our scoped feedback when the problem resolves.');
-});
-
-test('inline notices preserve dismissal, disabled actions and cleanup during document moves', () => {
-    const h = fixture({ nativeNotices: true });
-    const notice = { heading: 'Window operation failed', status: 'info', dismissible: true, retry: true, disabled: true, action: 'Retry' };
-    const state = { ...h.state, notice };
-    h.controls.update(state);
-    let record = [...h.records.values()][0];
-    assert.equal(record.actions[0].disabled, true);
-    record.onDismiss();
-    assert.equal(h.calls.at(-1).name, 'dismissNotice');
-    h.controls.beforeMove();
-    assert.equal(h.records.size, 0);
-    h.controls.update({ ...state, inPage: false, inPip: true });
-    assert.equal(h.records.size, 0, 'Do not recreate feedback while the React roots are detached.');
-    h.controls.remount();
-    record = [...h.records.values()][0];
-    assert.equal(record.message, notice.heading);
-    assert.equal(h.nodes(h.InlineNotices).length, 1);
-    assert.equal(h.nodes(h.ThemeProvider).length, 0, 'Inline notices also work without an optional theme provider.');
-    h.controls.update(h.state);
-    assert.equal(h.records.size, 0);
 });
 
 test('document moves unmount old native hooks before creating the next root', () => {

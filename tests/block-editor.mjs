@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
 import { sourceForVm, previewSourceForVm } from './helpers/modules.mjs';
@@ -851,15 +850,3 @@ for (const fail of [false, true]) {
         assert.deepEqual(calls, fail ? ['observePreviewInputs', 'preview', 'destroy', 'notice'] : ['observePreviewInputs', 'preview', 'connect']);
     });
 }
-
-test('the block build uses WordPress runtime packages and the same shared panel stylesheet', async () => {
-    const [bundle, asset, css, classicCss] = await Promise.all([
-        'block-editor.js', 'block-editor.asset.php', 'block-editor.css', 'classic-editor.css',
-    ].map((name) => readFile(new URL(`../build/${name}`, import.meta.url), 'utf8')));
-    const dependencies = [...asset.match(/'dependencies'\s*=>\s*array\(([^)]*)\)/s)[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
-    assert.deepEqual(dependencies, [
-        'react-jsx-runtime', 'wp-api-fetch', 'wp-components', 'wp-data', 'wp-element', 'wp-hooks', 'wp-notices', 'wp-preferences', 'wp-primitives',
-    ]);
-    assert.doesNotMatch(bundle, /__experimental|__unstable|Cannot find module|import\(/);
-    assert.equal(css, classicCss);
-});
