@@ -3,7 +3,9 @@ import test from 'node:test';
 import { runChromiumTests } from './helpers/chromium.mjs';
 
 async function browserTests(source) {
-    const createPreviewScroll = new Function(`${source.replace('export function', 'function')}\nreturn createPreviewScroll;`)();
+    const { createPreviewScroll, createPreviewComparison, visibleTarget } = new Function(
+        `${source.replace('export function', 'function')}\nreturn { createPreviewScroll, createPreviewComparison, visibleTarget };`,
+    )();
     const results = [];
     // Model the PHP configuration; editor-extensions.php separately verifies the complete shipped policy.
     const defaults = ['script', 'style', 'noscript', 'template', 'link', 'meta', 'nav',
@@ -33,7 +35,21 @@ async function browserTests(source) {
             await loaded;
             return frame.contentDocument;
         };
-        try { await run(createPreviewScroll(excludedSelectors), documentFor); results.push({ name }); }
+        const comparison = createPreviewComparison(excludedSelectors), scrolling = createPreviewScroll();
+        // Exercise the same composition as frame.js without exposing comparison state through scrolling.
+        const frame = {
+            comparison, scrolling, capture: comparison.capture, remember: scrolling.remember,
+            findTarget(previous, next, values) {
+                comparison.capture(previous);
+                comparison.capture(next, values);
+                return visibleTarget(comparison.findChange(previous, next));
+            },
+            restore(doc, element, values) {
+                comparison.capture(doc, values);
+                scrolling.restore(doc, element);
+            },
+        };
+        try { await run(frame, documentFor); results.push({ name }); }
         catch (error) { results.push({ name, error: error.message }); }
         finally { frames.forEach((frame) => frame.remove()); }
     }
@@ -396,10 +412,378 @@ async function browserTests(source) {
         equal(window.aflppSourceScriptRuns, 2, 'Parsing and caching the source must not execute it.');
         delete window.aflppSourceScriptRuns;
     });
+    // All author evidence is tied to the actual before/after submissions, not the latest UI state.
+    const hints = (value, type = 'text') => ({ field: { type, value } });
+    for (const captured of [false, true]) {
+        const mode = captured ? 'collaborative captured source' : 'collaborative DOM';
+        const options = { captured };
+        const clock = (value) => `<aside><p>Request time ${value}</p></aside>`;
+        const follow = (scrolling, before, after, oldValues, newValues) => {
+            scrolling.capture(before, oldValues);
+            return scrolling.findTarget(before, after, newValues);
+        };
+        await check(`${mode}: a paired input transition outranks changing diagnostics without their exclusion`, async (scrolling, doc) => {
+            const table = (value) => `<table class="xdebug-error"><tr><td>${value}</td></tr></table>`;
+            const before = await doc(content('Hello') + table('0.123'), options);
+            const after = await doc(content('Welcome') + table('0.456'), options);
+            equal(follow(scrolling, before, after, hints('Hello'), hints('Welcome')), after.querySelector('#edited'), 'Combine author intent with output differences, without vendor-specific matching.');
+        }, defaults.filter((selector) => selector !== 'table.xdebug-error'));
+        await check(`${mode}: unchanged input values are not author evidence`, async (scrolling, doc) => {
+            const before = await doc(content('Hello') + clock(1), options);
+            const after = await doc(content('Welcome') + clock(2), options);
+            equal(follow(scrolling, before, after, hints('Welcome'), hints('Welcome')), null, 'Do not use every payload value as a search term.');
+        });
+        await check(`${mode}: repeated paired transitions retain ambiguity`, async (scrolling, doc) => {
+            const before = await doc(section('One', 'Hello') + section('Separator') + section('Two', 'Hello'), options);
+            const after = await doc(section('One', 'Welcome') + section('Separator') + section('Two', 'Welcome'), options);
+            equal(follow(scrolling, before, after, hints('Hello'), hints('Welcome')), null, 'Exact input text is not proof of a unique output location.');
+        });
+        await check(`${mode}: whole-field HTML intent narrows to the edited paragraph`, async (scrolling, doc) => {
+            const old = '<p>Introduction</p><p id="edited">Original paragraph</p><p>Conclusion</p>';
+            const next = old.replace('Original', 'Changed');
+            const before = await doc(old + clock(1), options), after = await doc(next + clock(2), options);
+            equal(follow(scrolling, before, after, hints(old, 'html'), hints(next, 'html')), after.querySelector('#edited'), 'Do not scroll to the whole article because the submitted value contains it.');
+        });
+        await check(`${mode}: entities and inline markup normalize into useful text evidence`, async (scrolling, doc) => {
+            const old = '<p>Tom &amp; <strong>bright</strong> friends</p>', next = old.replace('bright', 'cheerful');
+            const before = await doc(old + clock(1), options), after = await doc(next + clock(2), options);
+            equal(follow(scrolling, before, after, hints(old, 'html'), hints(next, 'html')), after.querySelector('strong'), 'Markup and entity serialization must not block the transition.');
+        });
+        await check(`${mode}: conditional output does not require a literal checkbox match`, async (scrolling, doc) => {
+            const before = await doc(section('First') + section('Last'), options);
+            const after = await doc(section('First') + section('Conditional') + section('Last'), options);
+            equal(follow(scrolling, before, after, hints(false, 'value'), hints(true, 'value')), after.querySelectorAll('section')[1], 'Structural evidence remains usable without a text match.');
+        });
+        await check(`${mode}: strong hidden author intent outranks unrelated visible output`, async (scrolling, doc) => {
+            const region = (text) => `<section id="context"><h2>Closed widget</h2><div hidden><p>${text}</p></div></section>`;
+            const before = await doc(region('Hello') + clock(1), options), after = await doc(region('Welcome') + clock(2), options);
+            equal(follow(scrolling, before, after, hints('Hello'), hints('Welcome')), after.querySelector('#context'), 'Identify first, then use visible ancestry; never open the widget.');
+            equal(after.querySelector('[hidden]').hidden, true, 'Preserve native hidden state.');
+        });
+        await check(`${mode}: authored class intent can outrank unrelated content differences`, async (scrolling, doc) => {
+            const old = '<p class="has-text-align-left">Article</p>', next = old.replace('left', 'right');
+            const before = await doc(old + clock(1), options), after = await doc(next + clock(2), options);
+            equal(follow(scrolling, before, after, hints(old, 'html'), hints(next, 'html')), after.querySelector('p'), 'Input evidence can strengthen presentation changes, not only text changes.');
+        });
+        await check(`${mode}: authored ARIA labels survive generated identity churn`, async (scrolling, doc) => {
+            const region = (id, label) => `<button aria-controls="${id}" aria-label="${label}">Open</button><div id="${id}">Panel</div>`;
+            const before = await doc(region('uuid-one', 'Read article'), options), after = await doc(region('uuid-two', 'Read story'), options);
+            equal(follow(scrolling, before, after, hints('Read article'), hints('Read story')), after.querySelector('button'), 'Do not ignore all accessibility attributes.');
+        });
+        await check(`${mode}: meaningful ARIA remains evidence without editor hints`, async (scrolling, doc) => {
+            const region = (id, label) => `<button aria-controls="${id}" aria-label="${label}">Open</button><div id="${id}">Panel</div>`;
+            const before = await doc(region('uuid-one', 'Read article'), options), after = await doc(region('uuid-two', 'Read story'), options);
+            equal(scrolling.findTarget(before, after), after.querySelector('button'), 'Revision-like callers still detect an unambiguous label change.');
+        });
+        await check(`${mode}: authored accessibility state changes are not blanket-normalized`, async (scrolling, doc) => {
+            const before = await doc('<button aria-expanded="false">Open</button>', options);
+            const after = await doc('<button aria-expanded="true">Open</button>', options);
+            equal(scrolling.findTarget(before, after), after.querySelector('button'), 'An actual response ARIA-state change is eligible.');
+        });
+        await check(`${mode}: authored ID transitions remain eligible`, async (scrolling, doc) => {
+            const before = await doc('<p id="old-anchor">Article</p>', options), after = await doc('<p id="new-anchor">Article</p>', options);
+            equal(follow(scrolling, before, after, hints('old-anchor'), hints('new-anchor')), after.querySelector('p'), 'Generated-reference normalization must not discard an explicitly authored ID.');
+        });
+        await check(`${mode}: formatting-only HTML changes have input evidence`, async (scrolling, doc) => {
+            const old = '<p><strong>Hello</strong></p>', next = '<p><em>Hello</em></p>';
+            const before = await doc(old + clock(1), options), after = await doc(next + clock(2), options);
+            equal(follow(scrolling, before, after, hints(old, 'html'), hints(next, 'html')), after.querySelector('em'), 'Identical text does not mean an unchanged editor value.');
+        });
+        await check(`${mode}: changed media markup strengthens the actual image candidate`, async (scrolling, doc) => {
+            const old = '<img src="/before.jpg">', next = '<img src="/after.jpg">';
+            const before = await doc(old + clock(1), options), after = await doc(next + clock(2), options);
+            equal(follow(scrolling, before, after, hints(old, 'html'), hints(next, 'html')), after.querySelector('img'), 'Do not search attachment IDs as visible text.');
+        });
+        await check(`${mode}: unrelated substrings are not exact word transitions`, async (scrolling, doc) => {
+            const before = await doc(content('catapult') + clock(1), options), after = await doc(content('dogmatic') + clock(2), options);
+            equal(follow(scrolling, before, after, hints('cat'), hints('dog')), null, 'A substring inside another word is weak evidence, not confirmation.');
+        });
+        await check(`${mode}: newly submitted textual fields can support an insertion`, async (scrolling, doc) => {
+            const before = await doc(section('First') + section('Last') + clock(1), options);
+            const after = await doc(section('First') + section('Added text') + section('Last') + clock(2), options);
+            equal(follow(scrolling, before, after, {}, hints('Added text')), after.querySelectorAll('section')[1], 'New repeater fields need not exist in the previous submission.');
+        });
+        for (const noiseFirst of [false, true]) {
+            await check(`${mode}: insertion evidence stays with its matching sibling, noise first=${noiseFirst}`, async (scrolling, doc) => {
+                const before = await doc(section('First') + section('Last'), options);
+                const noise = '<aside id="noise"><p>Runtime advertisement</p></aside>';
+                const authored = '<section id="authored"><p>Added text</p></section>';
+                const after = await doc(section('First') + (noiseFirst ? noise + authored : authored + noise) + section('Last'), options);
+                equal(follow(scrolling, before, after, {}, hints('Added text')), after.querySelector('#authored'), 'Only the added sibling containing the submitted value has input support.');
+            });
+        }
+        for (const hidden of [false, true]) {
+            await check(`${mode}: equally supported inserted siblings remain ambiguous, hidden first=${hidden}`, async (scrolling, doc) => {
+                const before = await doc(section('First') + section('Last'), options);
+                const copies = `<section id="one" ${hidden ? 'hidden' : ''}><p>Added text</p></section><section id="two"><p>Added text</p></section>`;
+                const after = await doc(section('First') + copies + section('Last'), options);
+                scrolling.capture(before, {});
+                scrolling.capture(after, hints('Added text'));
+                equal(scrolling.comparison.findChange(before, after), null, 'Neither sibling order nor visibility establishes which authored copy to follow.');
+            });
+        }
+        await check(`${mode}: a grouped insertion without literal hints retains its first local target`, async (scrolling, doc) => {
+            const before = await doc(section('First') + section('Last'), options);
+            const after = await doc(section('First') + section('Added one') + section('Added two') + section('Last'), options);
+            equal(follow(scrolling, before, after, hints(false, 'value'), hints(true, 'value')), after.querySelectorAll('section')[1], 'Do not turn one unsupported insertion range into competing sibling candidates.');
+        });
+        await check(`${mode}: removed textual fields can support a deletion boundary`, async (scrolling, doc) => {
+            const before = await doc(section('First') + section('Removed text') + section('Last') + clock(1), options);
+            const after = await doc(section('First') + section('Last') + clock(2), options);
+            equal(follow(scrolling, before, after, hints('Removed text'), {}), after.querySelectorAll('section')[1], 'Keep the local surviving boundary for a confirmed deletion.');
+        });
+        await check(`${mode}: ancestor text noise does not broaden the confirmed leaf target`, async (scrolling, doc) => {
+            const before = await doc('<div>Request 1<p id="edited">Hello</p></div>', options);
+            const after = await doc('<div>Request 2<p id="edited">Welcome</p></div>', options);
+            equal(follow(scrolling, before, after, hints('Hello'), hints('Welcome')), after.querySelector('#edited'), 'Keep the smallest candidate explaining the same input transition.');
+        });
+    }
+    await check('live DOM evidence confirms script-rendered content even when source text is unchanged', async (scrolling, doc) => {
+        const before = await doc('<p id="edited">Placeholder</p><p>Clock 1</p>', { captured: true, script: "document.querySelector('#edited').textContent = 'Hello';" });
+        const after = await doc('<p id="edited">Placeholder</p><p>Clock 2</p>', { captured: true, script: "document.querySelector('#edited').textContent = 'Welcome';" });
+        scrolling.capture(before, hints('Hello'));
+        equal(scrolling.findTarget(before, after, hints('Welcome')), after.querySelector('#edited'), 'Capture is not a gate excluding browser-rendered author output.');
+    });
+    await check('unchanged input hints do not legitimize runtime-only DOM mutations', async (scrolling, doc) => {
+        const before = await doc(content(), { captured: true, script: "document.querySelector('#edited').textContent = 'Hello';" });
+        const after = await doc(content(), { captured: true, script: "document.querySelector('#edited').textContent = 'Welcome';" });
+        scrolling.capture(before, hints('Welcome'));
+        equal(scrolling.findTarget(before, after, hints('Welcome')), null, 'A stable field is not evidence for a changing runtime widget.');
+    });
+    await check('input and live DOM can identify a genuinely replaced source node', async (scrolling, doc) => {
+        const before = await doc('<p>Hello</p>', { captured: true });
+        const after = await doc('<p>Welcome</p>', { captured: true, script: "document.querySelector('p').outerHTML = '<p id=\"replacement\">Welcome</p>';" });
+        scrolling.capture(before, hints('Hello'));
+        equal(scrolling.findTarget(before, after, hints('Welcome')), after.querySelector('#replacement'), 'Independent author/DOM correspondence may identify a replacement without guessing a source path.');
+    });
+    await check('cloned source identities plus repeated input matches still preserve position', async (scrolling, doc) => {
+        const before = await doc(content('Hello'), { captured: true });
+        const after = await doc(content('Welcome'), { captured: true, script: "const p = document.querySelector('#edited'); p.after(p.cloneNode(true));" });
+        scrolling.capture(before, hints('Hello'));
+        equal(scrolling.findTarget(before, after, hints('Welcome')), null, 'Do not turn exact text into invented certainty between live clones.');
+    });
+    await check('correlated source and DOM agreement is not an extra vote breaking a real text tie', async (scrolling, doc) => {
+        const before = await doc('<p id="one">Hello</p><p id="two">Placeholder</p>', { captured: true, script: "document.querySelector('#two').textContent = 'Hello';" });
+        const after = await doc('<p id="one">Welcome</p><p id="two">Placeholder</p>', { captured: true, script: "document.querySelector('#two').textContent = 'Welcome';" });
+        scrolling.capture(before, hints('Hello'));
+        equal(scrolling.findTarget(before, after, hints('Welcome')), null, 'Repeated output remains ambiguous even when one copy is server-rendered.');
+    });
+    await check('capture transitions may use independently paired DOM and input evidence', async (scrolling, doc) => {
+        const before = await doc(content('Hello'), { captured: true });
+        const after = await doc(content('Welcome'));
+        scrolling.capture(before, hints('Hello'));
+        equal(scrolling.findTarget(before, after, hints('Welcome')), after.querySelector('#edited'), 'Compare DOM to DOM, never captured HTML to DOM, across availability changes.');
+    });
+    await check('source-only author evidence remains useful when scripts transform its text', async (scrolling, doc) => {
+        const script = "document.querySelector('#edited').textContent = 'Transformed output';";
+        const before = await doc(content('Hello'), { captured: true, script });
+        const after = await doc(content('Welcome'), { captured: true, script });
+        scrolling.capture(before, hints('Hello'));
+        equal(scrolling.findTarget(before, after, hints('Welcome')), after.querySelector('#edited'), 'DOM agreement is corroboration, not a requirement.');
+    });
+    await check('a unique transition inside an otherwise unaligned region can identify its live node', async (scrolling, doc) => {
+        const before = await doc('<section><p>Hello</p><p>Other before</p></section>', { captured: true });
+        const after = await doc('<section><h2>Other after</h2><p id="edited">Welcome</p><div>New structure</div></section>', { captured: true });
+        scrolling.capture(before, hints('Hello'));
+        equal(scrolling.findTarget(before, after, hints('Welcome')), after.querySelector('#edited'), 'Keep ambiguous rendered regions available for collaborative evidence.');
+    });
+    for (const captured of [false, true]) {
+        const mode = captured ? 'captured' : 'DOM';
+        await check(`${mode}: adding and removing an authored attribute can strengthen a candidate`, async (scrolling, doc) => {
+            const old = '<p>Article</p>', next = '<p class="has-text-align-right">Article</p>';
+            const before = await doc(old + '<p>Clock 1</p>', { captured });
+            const after = await doc(next + '<p>Clock 2</p>', { captured });
+            scrolling.capture(before, hints(old, 'html'));
+            equal(scrolling.findTarget(before, after, hints(next, 'html')), after.querySelector('p'), 'An absent old attribute is a real state, not missing evidence.');
+            const removed = await doc(old + '<p>Clock 3</p>', { captured });
+            equal(scrolling.findTarget(after, removed, hints(old, 'html')), removed.querySelector('p'), 'Removing a value is eligible too.');
+        });
+        await check(`${mode}: wrapping existing text with formatting retains author evidence`, async (scrolling, doc) => {
+            const old = '<p>Hello</p>', next = '<p><strong>Hello</strong></p>';
+            const before = await doc(old + '<p>Clock 1</p>', { captured });
+            const after = await doc(next + '<p>Clock 2</p>', { captured });
+            scrolling.capture(before, hints(old, 'html'));
+            equal(scrolling.findTarget(before, after, hints(next, 'html')), after.querySelector('p'), 'Changing the text-node structure can be the actual formatting edit.');
+        });
+        await check(`${mode}: filling an existing empty element still has author evidence`, async (scrolling, doc) => {
+            const before = await doc('<p id="edited"></p><p>Clock 1</p>', { captured });
+            const after = await doc('<p id="edited">Welcome</p><p>Clock 2</p>', { captured });
+            scrolling.capture(before, hints(''));
+            equal(scrolling.findTarget(before, after, hints('Welcome')), after.querySelector('#edited'), 'An empty old value need not be an insertion.');
+        });
+        await check(`${mode}: snapshots freeze their own submission values`, async (scrolling, doc) => {
+            const before = await doc(content('Hello') + '<p>Clock 1</p>', { captured });
+            const after = await doc(content('Welcome') + '<p>Clock 2</p>', { captured });
+            const oldValues = hints('Hello');
+            scrolling.capture(before, oldValues);
+            oldValues.field.value = 'Welcome';
+            equal(scrolling.findTarget(before, after, hints('Welcome')), after.querySelector('#edited'), 'Later mutations cannot rewrite the displayed baseline.');
+        });
+        await check(`${mode}: changed parent and child text remain genuinely competing evidence`, async (scrolling, doc) => {
+            const before = await doc('<div>Hello<p>Hello</p></div>', { captured });
+            const after = await doc('<div>Welcome<p>Welcome</p></div>', { captured });
+            scrolling.capture(before, hints('Hello'));
+            equal(scrolling.findTarget(before, after, hints('Welcome')), null, 'Do not minimize away an independently changed parent text node.');
+        });
+    }
+    for (const captured of [false, true]) {
+        await check(`unaligned existing values are not an input transition, captured=${captured}`, async (scrolling, doc) => {
+            const before = await doc(section('One', 'Hello') + section('Two', 'Welcome'), { captured });
+            const after = await doc(section('Two', 'Welcome') + section('One', 'Hello'), { captured });
+            scrolling.capture(before, hints('Hello'));
+            equal(scrolling.findTarget(before, after, hints('Welcome')), null, 'Do not match old/new strings merely because both exist in a reordered region.');
+        });
+    }
+    for (const captured of [false, true]) {
+        for (const nested of [false, true]) {
+            for (const generatedIds of [false, true]) {
+                await check(`attribute-only reorders do not invent an input transition, captured=${captured}, nested=${nested}, generated IDs=${generatedIds}`, async (scrolling, doc) => {
+                    const item = (id, style) => nested
+                        ? `<section id="${id}"><p class="${style}">Repeated content</p></section>`
+                        : `<p id="${id}" class="${style}">Repeated content</p>`;
+                    const first = item('one', 'old-style'), second = item('two', 'new-style');
+                    const before = await doc(first + second, { captured });
+                    const after = await doc(generatedIds ? item('three', 'new-style') + item('four', 'old-style') : second + first, { captured });
+                    scrolling.capture(before, hints(first, 'html'));
+                    equal(scrolling.findTarget(before, after, hints(first.replace('old-style', 'new-style'), 'html')), null, 'Existing presentation values only traded positions; reference churn does not prove an authored transition.');
+                });
+            }
+        }
+        await check(`reference-only reorders do not invent an authored ID transition, captured=${captured}`, async (scrolling, doc) => {
+            const first = '<p id="old-anchor">Repeated content</p>', second = '<p id="new-anchor">Repeated content</p>';
+            const before = await doc(first + second, { captured }), after = await doc(second + first, { captured });
+            scrolling.capture(before, hints(first, 'html'));
+            equal(scrolling.findTarget(before, after, hints(second, 'html')), null, 'Preserved authored references also distinguish a permutation from an applied edit.');
+        });
+        await check(`a genuine attribute edit among equal-content siblings remains identifiable, captured=${captured}`, async (scrolling, doc) => {
+            const old = '<p id="edited" class="old-style">Repeated content</p>';
+            const changed = old.replace('old-style', 'new-style');
+            const sibling = '<p id="unchanged" class="new-style">Repeated content</p>';
+            const before = await doc(old + sibling, { captured }), after = await doc(changed + sibling, { captured });
+            scrolling.capture(before, hints(old, 'html'));
+            equal(scrolling.findTarget(before, after, hints(changed, 'html')), after.querySelector('#edited'), 'Do not blanket-reject attribute changes on repeated content.');
+        });
+        await check(`an attribute-only reorder does not veto an independent paired text edit, captured=${captured}`, async (scrolling, doc) => {
+            const first = '<p id="one" class="old-style">Repeated content</p>';
+            const second = '<p id="two" class="new-style">Repeated content</p>';
+            const before = await doc(first + second + '<p id="edited">Hello</p>', { captured });
+            const after = await doc(second + first + '<p id="edited">Welcome</p>', { captured });
+            scrolling.capture(before, hints('Hello'));
+            equal(scrolling.findTarget(before, after, hints('Welcome')), after.querySelector('#edited'), 'An actual loss/gain transition can still identify the edited node.');
+        });
+    }
+    await check('unapplied formatting intent does not confirm an unchanged paragraph inside a reorder', async (scrolling, doc) => {
+        const before = await doc(section('One', 'Hello') + section('Two', 'Welcome'), { captured: true });
+        const after = await doc(section('Two', 'Welcome') + section('One', 'Hello'), { captured: true });
+        scrolling.capture(before, hints('<p>Hello</p>', 'html'));
+        equal(scrolling.findTarget(before, after, hints('<p><strong>Hello</strong></p>', 'html')), null, 'Input intent must correspond to an actual output transition.');
+    });
+    await check('visibility cannot resolve repeated, equally corroborated author transitions', async (scrolling, doc) => {
+        const before = await doc('<section><div hidden>Hello</div></section><p>Hello</p>', { captured: true });
+        const after = await doc('<section><div hidden>Welcome</div></section><p>Welcome</p>', { captured: true });
+        scrolling.capture(before, hints('Hello'));
+        equal(scrolling.findTarget(before, after, hints('Welcome')), null, 'Identification remains ambiguous even when only one matching element is visible.');
+    });
+    await check('nonliteral input intent can support transformed DOM-only content', async (scrolling, doc) => {
+        const before = await doc('<section></section>', { captured: true });
+        const after = await doc('<section></section>', { captured: true, script: "document.querySelector('section').innerHTML = '<p id=\"conditional\">Conditional result</p>';" });
+        scrolling.capture(before, hints(false, 'value'));
+        equal(scrolling.findTarget(before, after, hints(true, 'value')), after.querySelector('#conditional'), 'Known author intent and structural DOM output collaborate without a literal boolean search.');
+    });
+    await check('nonliteral input intent does not turn an unrelated runtime class into sufficient evidence', async (scrolling, doc) => {
+        const before = await doc(content(), { captured: true, script: "document.body.className = 'runtime-before';" });
+        const after = await doc(content(), { captured: true, script: "document.body.className = 'runtime-after';" });
+        scrolling.capture(before, hints(false, 'value'));
+        equal(scrolling.findTarget(before, after, hints(true, 'value')), null, 'Author intent alone does not identify an animation class.');
+    });
+    await check('native-navigation baselines do not retain unrelated editor values', async (scrolling, doc) => {
+        const old = await doc(content('Hello'), { captured: true });
+        scrolling.capture(old, hints('Hello'));
+        const navigated = await doc(content('Other page'), { captured: true });
+        scrolling.capture(navigated);
+        const next = await doc(content('Welcome') + '<p>Another changed value</p>', { captured: true });
+        equal(scrolling.findTarget(navigated, next, hints('Welcome')), null, 'A document without submitted values cannot inherit the prior page intent.');
+    });
+    await check('comparison exposes only capture and single-element identification; scrolling owns no snapshots', async (frame, doc) => {
+        equal(Object.keys(frame.comparison).sort().join(','), 'capture,findChange', 'No snapshot/candidate API escapes.');
+        equal(Object.keys(frame.scrolling).sort().join(','), 'remember,restore', 'Scroll presentation has no comparison lifecycle.');
+        const before = await doc(content('Hello'), { captured: true });
+        const after = await doc(content('Welcome'), { captured: true });
+        equal(frame.comparison.findChange(before, after), null, 'Only explicit frame capture may establish a baseline.');
+        equal(frame.comparison.capture(before, hints('Hello')), undefined, 'Capture does not expose a snapshot tree.');
+        equal(frame.comparison.capture(after, hints('Welcome')), undefined, 'Capture remains a lifecycle operation.');
+        equal(frame.comparison.findChange(before, after), after.querySelector('#edited'), 'Return an actual live element, not a result collection.');
+    });
+    await check('comparison returns the hidden changed element; scrolling alone reveals its ancestor', async (frame, doc) => {
+        const markup = (text) => `${content()}<section id="context"><h2>Closed widget</h2><div hidden><p id="hidden-change">${text}</p></div></section>`;
+        const before = await doc(markup('Hello'), { captured: true });
+        const after = await doc(markup('Welcome'), { captured: true });
+        frame.comparison.capture(before, hints('Hello'));
+        frame.comparison.capture(after, hints('Welcome'));
+        const identified = frame.comparison.findChange(before, after);
+        equal(identified, after.querySelector('#hidden-change'), 'Identification must not substitute a visible ancestor.');
+        const container = after.querySelector('#context'), original = container.outerHTML;
+        frame.scrolling.restore(after, identified);
+        if (after.defaultView.scrollY <= 0) throw new Error('Scroll presentation should reveal the offscreen ancestor.');
+        equal(container.outerHTML, original, 'Neither owner opens or rewrites the hidden widget.');
+    });
+    await check('comparison resolves deletion to a surviving element, not a deletion instruction', async (frame, doc) => {
+        const before = await doc(section('First') + section('Removed') + section('Last'), { captured: true });
+        const after = await doc(section('First') + section('Last'), { captured: true });
+        frame.comparison.capture(before);
+        frame.comparison.capture(after);
+        equal(frame.comparison.findChange(before, after), after.querySelectorAll('section')[1], 'Scrolling never interprets deleted entries or sibling arrays.');
+    });
+    await check('comparison does not scroll, restore styles or reveal hidden ancestors', async (frame, doc) => {
+        const before = await doc(content('Hello'), { captured: true });
+        const after = await doc(content('Welcome'), { captured: true });
+        frame.comparison.capture(before, hints('Hello'));
+        frame.comparison.capture(after, hints('Welcome'));
+        after.defaultView.scrollTo(0, 40);
+        const html = after.documentElement.outerHTML;
+        const position = after.defaultView.scrollY;
+        frame.comparison.findChange(before, after);
+        equal(after.defaultView.scrollY, position, 'Identification must not change viewport position.');
+        equal(after.documentElement.outerHTML, html, 'Identification is read-only.');
+    });
+    await check('scroll restoration does not parse captured source or freeze an editor baseline', async (frame, doc) => {
+        const document = await doc(content(), { captured: true });
+        let reads = 0;
+        const marker = document.querySelector('meta');
+        marker.getAttribute = () => { reads++; throw new Error('Source access is not scroll presentation.'); };
+        frame.scrolling.restore(document, document.querySelector('#edited'));
+        equal(reads, 0, 'No comparison source is read during restoration.');
+        if (document.defaultView.scrollY <= 0) throw new Error('Scroll presentation works independently of comparison.');
+    });
+    for (const captured of [false, true]) {
+        for (const custom of [false, true]) {
+            await check(`boxless insertions preserve their comparison-eligible descendant, captured=${captured}, custom policy=${custom}`, async (frame, doc) => {
+                const before = await doc(section('First') + section('Last'), { captured });
+                const excluded = custom ? '<div class="runtime" id="excluded">Runtime content</div>' : '<nav id="excluded">Navigation</nav>';
+                const after = await doc(section('First') + `<section id="wrapper" style="display:contents">${excluded}<p id="authored">Added text</p></section>` + section('Last'), { captured });
+                frame.comparison.capture(before);
+                frame.comparison.capture(after);
+                const identified = frame.comparison.findChange(before, after);
+                equal(identified, after.querySelector('#authored'), 'Keep the eligible mapped child instead of returning an undifferentiated boxless wrapper.');
+                equal(visibleTarget(identified), after.querySelector('#authored'), 'Scroll presentation must not reintroduce an excluded descendant.');
+            }, custom ? ['.runtime'] : defaults);
+        }
+    }
+    await check('boxless source wrappers retain independently mapped children moved by frontend scripts', async (frame, doc) => {
+        const before = await doc(section('First') + section('Last'), { captured: true });
+        const after = await doc(section('First') + '<section id="inserted" style="display:contents"><h2 id="moved">Inserted</h2></section>' + section('Last'), {
+            captured: true, script: "const aside = document.createElement('aside'); document.body.append(aside); aside.append(document.querySelector('#moved'));",
+        });
+        frame.comparison.capture(before);
+        frame.comparison.capture(after);
+        equal(frame.comparison.findChange(before, after), after.querySelector('aside > #moved'), 'Do not lose source/live correspondence when reducing to one element.');
+    });
     return results;
 }
 
 test('preview scrolling matches changed sections conservatively in Chromium', async (t) => {
-    const source = await readFile(new URL('../src/preview/scroll.js', import.meta.url), 'utf8');
-    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify(source)})`, count: 63 });
+    const comparison = await readFile(new URL('../src/preview/comparison.js', import.meta.url), 'utf8');
+    const scrolling = await readFile(new URL('../src/preview/scroll.js', import.meta.url), 'utf8');
+    const source = `${comparison.replace('export function', 'function')}\n${scrolling.replace(/^import .*;\n/, '')}`;
+    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify(source)})`, count: 158 });
 });

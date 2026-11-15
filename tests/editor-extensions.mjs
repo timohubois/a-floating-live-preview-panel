@@ -246,13 +246,58 @@ for (const copy of [false, true]) {
     });
 }
 
+test('submission hints include owned text/choices, not hidden helpers or unrelated controls', () => {
+    const controls = [
+        ['note', 'input', 'text'], ['rich', 'textarea', 'textarea'], ['toggle', 'input', 'checkbox'],
+        ['choice', 'select', 'select-one'], ['nonce', 'input', 'hidden'], ['attachment', 'input', 'hidden'],
+        ['unsubmitted', 'input', 'text'], ['repeated', 'input', 'text'], ['__proto__', 'input', 'text'],
+    ].map(([name, localName, type]) => ({ name, localName, type, value: 'Later UI state',
+        classList: { contains: () => name === 'rich' } }));
+    const context = { URLSearchParams, document: { querySelectorAll: () => controls } };
+    const extensions = editorExtensionsFixture(context).createEditorExtensions('vendor/setup', { config: { strings: {} } });
+    const body = new URLSearchParams([
+        ['note', 'Captured note'], ['rich', '<p>Captured rich text</p>'], ['toggle', '0'], ['toggle', '1'],
+        ['choice', 'image-id'], ['nonce', 'nonce'], ['attachment', '123'],
+        ['repeated', 'one'], ['repeated', 'two'], ['__proto__', 'Safe name'],
+    ]);
+    const values = extensions.comparisonValues(body, {
+        post_title: { type: 'text', value: 'Title' }, content: { type: 'html', value: '<p>Content</p>' },
+        featured_media: { type: 'value', value: 17 },
+    });
+    assert.equal(values.content.type, 'html');
+    assert.equal(values.post_title.type, 'text');
+    assert.equal(values.featured_media.type, 'value');
+    assert.equal(values.note.value, 'Captured note');
+    assert.equal(values.rich.type, 'html');
+    assert.equal(values.toggle.type, 'value');
+    assert.deepEqual(JSON.parse(values.toggle.value), ['0', '1']);
+    assert.equal(values.choice.type, 'value');
+    assert.equal(values.repeated.type, 'value');
+    for (const name of ['nonce', 'attachment', 'unsubmitted']) assert.equal(Object.hasOwn(values, name), false);
+    assert.equal(Object.hasOwn(values, '__proto__'), true);
+    assert.equal(values.__proto__.value, 'Safe name');
+    extensions.destroy();
+});
+
+test('extension capture preserves core field types supplied by the screen owner', () => {
+    const context = { URLSearchParams, document: { querySelectorAll: () => [] } };
+    const extensions = editorExtensionsFixture(context).createEditorExtensions('vendor/setup', { config: { strings: {} } });
+    const content = { type: 'text', value: '<strong>Literal markup</strong>' };
+    const title = { type: 'html', value: '<em>Owner supplied</em>' };
+    const values = extensions.comparisonValues(null, { content, post_title: title });
+    assert.equal(values.content, content, 'Core names must not trigger shared reclassification.');
+    assert.equal(values.post_title, title);
+    extensions.destroy();
+});
+
 // Share the real classic adapter setup across its boundary tests.
 const classicSource = await sourceForVm(new URL('../src/screens/classic-editor.js', import.meta.url));
-function classicFixture(setup, entries = [['content', 'Unsaved content']]) {
+function classicFixture(setup, entries = [['content', 'Unsaved content']], controls = []) {
     const calls = [], requests = [], listeners = new Map();
     let destroyed = 0;
     const native = { destroy: () => destroyed++ };
     const form = {
+        querySelectorAll: () => controls,
         addEventListener(name, callback) { listeners.set(name, callback); },
         removeEventListener(name) { listeners.delete(name); },
     };
@@ -280,6 +325,31 @@ function classicFixture(setup, entries = [['content', 'Unsaved content']]) {
     vm.runInNewContext(`${classicSource}\ninitLivePreview`, context)(config, native);
     return { native, calls, requests, listeners, get destroyed() { return destroyed; } };
 }
+
+test('classic comparison values stay tied to the submitted core and contributed fields', async () => {
+    const entries = [['content', '<p>Captured content</p>'], ['vendor_note', 'Captured note'],
+        ['_acf_nonce', 'nonce'], ['image_id', '123']];
+    const controls = ['vendor_note', '_acf_nonce', 'image_id'].map((name) => ({
+        name, localName: 'input', type: name === 'vendor_note' ? 'text' : 'hidden', value: 'Later UI',
+        classList: { contains: () => false },
+    }));
+    const h = classicFixture(({ hooks }) => {
+        hooks.addFilter('previewFormBody', 'vendor/note', (body, values) => {
+            for (const [name, value] of values) if (['vendor_note', '_acf_nonce', 'image_id'].includes(name)) body.append(name, value);
+            return body;
+        });
+    }, entries, controls);
+    const capture = h.native.preparePreview();
+    entries[0][1] = '<p>Newer content while request loads</p>';
+    const result = await capture;
+    assert.equal(result.comparisonValues.content.value, '<p>Captured content</p>');
+    assert.equal(result.comparisonValues.vendor_note.value, 'Captured note');
+    assert.equal(result.comparisonValues.vendor_note.type, 'text');
+    assert.equal(Object.hasOwn(result.comparisonValues, '_acf_nonce'), false);
+    assert.equal(Object.hasOwn(result.comparisonValues, 'image_id'), false);
+    assert.equal(h.requests[0].has('comparisonValues'), false, 'Hints stay in browser memory, outside REST transport.');
+    h.native.destroy();
+});
 
 for (const [name, capture] of [
     ['replaced core values', () => new URLSearchParams({ vendor_note: 'Note' })],

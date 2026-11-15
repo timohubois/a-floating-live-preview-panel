@@ -7,7 +7,7 @@ export function createLivePreview(config, nativeEditor) {
 
     const strings = config.strings;
     const mainWindow = window;
-    const scrolling = createPreviewScroll(config.comparisonExcludedSelectors);
+    const scrolling = createPreviewScroll();
     const view = createPreviewPanel(strings, {
         postTitle: nativeEditor.title ?? config.postTitle,
         onOpen: () => startPreview(),
@@ -23,7 +23,7 @@ export function createLivePreview(config, nativeEditor) {
     let previewActive = false;
     let generation = 0;
     let refreshTimer;
-    const frames = createPreviewFrame(view, scrolling, strings, report);
+    const frames = createPreviewFrame(view, scrolling, strings, report, config.comparisonExcludedSelectors);
     let followPending = false;
     let refreshTask;
     let previewError;
@@ -110,9 +110,9 @@ export function createLivePreview(config, nativeEditor) {
         } else changed();
     }
 
-    function loadFrame(address, version) {
+    function loadFrame(address, version, values) {
         return frames.load(address, () => previewActive && version === generation,
-            () => view.followChanges && followPending);
+            () => view.followChanges && followPending, values);
     }
 
     function update() {
@@ -136,7 +136,7 @@ export function createLivePreview(config, nativeEditor) {
                 if (typeof result.url !== 'string') {
                     throw Object.assign(new Error(result.message || strings.failed), { code: result.code });
                 }
-                if (previewActive && version === generation) await loadFrame(result.url, version);
+                if (previewActive && version === generation) await loadFrame(result.url, version, result.comparisonValues);
             } catch (error) {
                 if (previewActive && !nativeEditor.saving) reportFailure(error);
             } finally {

@@ -1,5 +1,8 @@
+import { createPreviewComparison } from './comparison.js';
+
 // Own iframe loading and optional HTML enhancements, not the source's writes or selection lifecycle.
-export function createPreviewFrame(view, scrolling, strings, report) {
+export function createPreviewFrame(view, scrolling, strings, report, excludedSelectors = []) {
+    const comparison = createPreviewComparison(excludedSelectors);
     let activeFrame;
     let activeDocument;
     let address;
@@ -9,7 +12,7 @@ export function createPreviewFrame(view, scrolling, strings, report) {
         cancelLoad?.();
     }
 
-    function load(nextAddress, isCurrent, followChanges = () => false) {
+    function load(nextAddress, isCurrent, followChanges = () => false, comparisonValues) {
         const url = new URL(nextAddress);
         if (url.origin === 'null' || url.origin !== window.location.origin) throw new Error(strings.browser);
         const token = url.searchParams.get('aflpp_token');
@@ -58,10 +61,13 @@ export function createPreviewFrame(view, scrolling, strings, report) {
                     const marker = candidate?.querySelector('meta[name="a-floating-live-preview-panel"]');
                     if (marker?.content === token) doc = candidate;
                 } catch { /* Cross-origin and browser-owned documents are not inspectable. */ }
+                // Freeze only an accepted, verified document, before any restoration/reveal styles.
+                // Native navigation is not a new editor submission and receives no old hints.
+                if (doc) comparison.capture(doc, replacing ? comparisonValues : undefined);
                 let target;
                 if (doc && replacing) {
                     scrolling.remember(activeDocument);
-                    if (followChanges() && activeDocument) target = scrolling.findTarget(activeDocument, doc);
+                    if (followChanges() && activeDocument) target = comparison.findChange(activeDocument, doc);
                 }
                 if (replacing && activeFrame) {
                     activeFrame.onload = null;

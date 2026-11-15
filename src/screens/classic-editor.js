@@ -21,7 +21,12 @@ export function initLivePreview(config, nativeEditor) {
         for (const [name, value] of values) {
             if (typeof value === 'string' && ['post_title', 'content', 'excerpt'].includes(name)) core.append(name, value);
         }
+        // Extension capture appends to this body; freeze core semantics before it is extended.
+        const coreValues = Object.fromEntries([...core].map(([key, value]) => [
+            key, { type: key === 'post_title' ? 'text' : 'html', value },
+        ]));
         const data = extensions.capture(core, values);
+        const comparisonValues = extensions.comparisonValues(data, coreValues);
         data.set('base', config.base);
         const response = await fetch(config.endpoint, {
             method: 'POST', credentials: 'same-origin',
@@ -29,7 +34,7 @@ export function initLivePreview(config, nativeEditor) {
         });
         const result = await response.json();
         if (!response.ok) throw Object.assign(new Error(result.message || config.strings.failed), { code: result.code });
-        return result;
+        return { ...result, comparisonValues };
     };
     const preview = createLivePreview(config, nativeEditor);
     const changed = () => {

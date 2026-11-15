@@ -16,7 +16,12 @@ export async function sourceForVm(url) {
 
 // Execute the same shared iframe implementation in VM and data-URL browser fixtures.
 export async function previewSourceForVm(url) {
-    const frame = await sourceForVm(new URL('../../src/preview/frame.js', import.meta.url));
+    const comparison = await sourceForVm(new URL('../../src/preview/comparison.js', import.meta.url));
+    const frame = (await sourceForVm(new URL('../../src/preview/frame.js', import.meta.url))).replace(
+        /^const \{\s*createPreviewComparison\s*\} = imports\["\.\/comparison\.js"\];$/m,
+        `const createPreviewComparison = imports["../preview/comparison.js"]?.createPreviewComparison
+            || (() => { ${comparison}\nreturn createPreviewComparison; })();`,
+    );
     let source = await sourceForVm(url);
     if (url.pathname.endsWith('/screens/classic-editor.js')) {
         const session = await sourceForVm(new URL('../../src/preview/live-preview.js', import.meta.url));

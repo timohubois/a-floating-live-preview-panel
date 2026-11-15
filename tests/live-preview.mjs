@@ -12,13 +12,13 @@ let nextSite = 0;
 // Use native lock queues and cross-context messages; only the panel and frame are fakes.
 function fixture(t) {
     const endpoint = `/ownership-test-${process.pid}-${++nextSite}`;
-    return ({ site = endpoint, userId = 1, broadcast = true, pending = false, error, hasPreview = false, excludedSelectors = [] } = {}) => {
+    return ({ site = endpoint, userId = 1, broadcast = true, pending = false, error, hasPreview = false, excludedSelectors = [], prepare } = {}) => {
         const write = Promise.withResolvers(), started = Promise.withResolvers();
         const reports = [], timers = new Map();
         const frames = { loads: 0, cancels: 0, clears: 0, hasPreview,
-            load() { this.loads++; }, cancel() { this.cancels++; }, clear() { this.clears++; },
+            load(...args) { this.loads++; this.lastLoad = args; }, cancel() { this.cancels++; }, clear() { this.clears++; },
         };
-        let callbacks, channel, exit, scrollSelectors, writes = 0;
+        let callbacks, channel, exit, comparisonSelectors, writes = 0;
         const view = { visible: true, setTitle() {}, returnToEditor() {},
             setVisible(value) { this.visible = value; },
             report(text, state, details) { reports.push({ text, state, ...details }); },
@@ -34,13 +34,16 @@ function fixture(t) {
             clearTimeout: (callback) => timers.delete(callback),
             imports: {
                 '../panel/window.js': { createPreviewPanel: (strings, options) => { callbacks = options; return view; } },
-                '../preview/scroll.js': { createPreviewScroll: (selectors) => { scrollSelectors = selectors; return {}; } },
-                '../preview/frame.js': { createPreviewFrame: () => frames },
+                '../preview/scroll.js': { createPreviewScroll: () => ({}) },
+                '../preview/frame.js': { createPreviewFrame: (view, scrolling, strings, report, selectors) => {
+                    comparisonSelectors = selectors; return frames;
+                } },
             },
         })({ endpoint: site, postId: 12, userId, available: true, strings: {}, comparisonExcludedSelectors: excludedSelectors }, {
             idle: Promise.resolve(), saving: false,
             preparePreview() {
                 writes++; started.resolve();
+                if (prepare) return prepare();
                 return write.promise.then((result) => {
                     if (error) throw error;
                     return result;
@@ -55,17 +58,40 @@ function fixture(t) {
             await session.pending;
             await settle();
         });
-        return { session, callbacks, channel, reports, timers, frames, scrollSelectors, started: started.promise,
+        return { session, callbacks, channel, reports, timers, frames, comparisonSelectors, started: started.promise,
             release: () => write.resolve({ url: '/preview' }), get writes() { return writes; },
         };
     };
 }
 
+test('only accepted preview generations pass their own input hints to frame loading', { timeout: 5000 }, async (t) => {
+    const old = Promise.withResolvers();
+    const oldValues = { content: { type: 'html', value: '<p>Old submission</p>' } };
+    const newValues = { content: { type: 'html', value: '<p>Latest submission</p>' } };
+    let writes = 0;
+    const h = fixture(t)({ prepare: () => ++writes === 1 ? old.promise
+        : Promise.resolve({ url: '/latest', comparisonValues: newValues }) });
+    h.session.start();
+    await h.started;
+    h.session.changed();
+    old.resolve({ url: '/stale', comparisonValues: oldValues });
+    await h.session.pending;
+    assert.equal(h.frames.loads, 0, 'A completed but stale write cannot establish the displayed baseline.');
+    for (const [callback, delay] of [...h.timers]) if (delay === 1000) {
+        h.timers.delete(callback);
+        callback();
+    }
+    await h.session.pending;
+    assert.equal(h.frames.loads, 1);
+    assert.equal(h.frames.lastLoad[0], '/latest');
+    assert.equal(h.frames.lastLoad[3], newValues);
+});
+
 test('live comparison receives the complete PHP exclusion policy, including an empty list', async (t) => {
     const open = fixture(t);
     for (const excludedSelectors of [[], ['.vendor-runtime']]) {
         const h = open({ excludedSelectors });
-        assert.equal(h.scrollSelectors, excludedSelectors);
+        assert.equal(h.comparisonSelectors, excludedSelectors);
     }
 });
 

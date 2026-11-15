@@ -223,11 +223,20 @@ export function createBlockEditor(config) {
     }
 
     native.preparePreview = () => {
-        const data = { ...values(), base: config.base };
+        const data = values();
         const body = extensions.capture(null);
-        if (body === null) return apiFetch({ url: config.endpoint, method: 'POST', data });
-        for (const [key, value] of Object.entries(data)) body.set(key, value ?? '');
-        return apiFetch({ url: config.endpoint, method: 'POST', body });
+        const types = { post_title: 'text', content: 'html', excerpt: 'html' };
+        const comparisonValues = extensions.comparisonValues(body, Object.fromEntries(Object.entries(data).map(([key, value]) => [
+            key, { type: Object.hasOwn(types, key) ? types[key] : 'value', value },
+        ])));
+        data.base = config.base;
+        let request;
+        if (body === null) request = apiFetch({ url: config.endpoint, method: 'POST', data });
+        else {
+            for (const [key, value] of Object.entries(data)) body.set(key, value ?? '');
+            request = apiFetch({ url: config.endpoint, method: 'POST', body });
+        }
+        return request.then((result) => ({ ...result, comparisonValues }));
     };
     const unsubscribe = subscribe(scheduleObserve);
     addFilter('editor.preSavePost', scope, beforeSave);

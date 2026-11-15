@@ -49,6 +49,28 @@ export function createEditorExtensions(setupAction, context) {
             if (failure) throw failure;
             return result;
         },
+        comparisonValues(body, coreValues) {
+            // Hints describe this exact submission, not controls read after its request finishes.
+            // Text controls are literal evidence; choices/numbers only describe author intent.
+            // Hidden helpers, nonces, attachment IDs and booleans never become text searches.
+            // Core field semantics belong to the calling screen; only contributed native controls are read here.
+            const result = new Map(Object.entries(coreValues));
+            try {
+                const root = context.form || document;
+                for (const control of root.querySelectorAll('input[name], textarea[name], select[name]')) {
+                    if (result.has(control.name) || !body?.has(control.name) || ['hidden', 'password'].includes(control.type)) continue;
+                    const textual = control.localName === 'textarea'
+                        || ['text', 'search', 'email', 'url', 'tel'].includes(control.type);
+                    const submitted = body.getAll(control.name);
+                    result.set(control.name, {
+                        type: textual && submitted.length === 1
+                            ? (control.classList.contains('wp-editor-area') ? 'html' : 'text') : 'value',
+                        value: submitted.length === 1 ? submitted[0] : JSON.stringify(submitted),
+                    });
+                }
+            } catch { /* Optional hints cannot break capture on an unavailable native form. */ }
+            return Object.fromEntries(result);
+        },
         destroy() {
             if (destroyed) return;
             destroyed = true;

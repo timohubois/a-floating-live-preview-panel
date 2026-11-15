@@ -17,7 +17,7 @@ export function initRevisionPreview(config, model) {
         beforeMove() { generation++; frames.clear(); },
         afterMove() { if (view.visible) refresh(); },
     });
-    const frames = createPreviewFrame(view, createPreviewScroll(config.comparisonExcludedSelectors), strings, report);
+    const frames = createPreviewFrame(view, createPreviewScroll(), strings, report, config.comparisonExcludedSelectors);
 
     function label(revision) {
         if (!revision) return '';
@@ -51,7 +51,8 @@ export function initRevisionPreview(config, model) {
             return;
         }
         try {
-            await frames.load(url, () => view.visible && version === generation, () => view.followChanges);
+            await frames.load(url, () => view.visible && version === generation, () => view.followChanges,
+                { revision: { type: 'value', value: selected.id } });
         } catch (error) {
             if (view.visible && version === generation) {
                 const browser = error.message === strings.browser;

@@ -12,7 +12,8 @@ const revision = (id, address = url(id)) => ({
 
 function fixture({ visible = true, selected = revision(11), isolated = false, excludedSelectors = [] } = {}) {
     const timers = new Map(), listeners = new Map(), events = new Map(), reports = [], allFrames = [], scrolls = [];
-    let options, scrollSelectors, nextTimer = 0, title = '', clears = 0, returned = 0;
+    const captures = [], comparisons = [];
+    let options, comparisonSelectors, nextTimer = 0, title = '', clears = 0, returned = 0;
     const children = [];
     const stage = {
         ownerDocument: {
@@ -59,19 +60,27 @@ function fixture({ visible = true, selected = revision(11), isolated = false, ex
         '../panel/window.js': { createPreviewPanel: (strings, callbacks) => {
             options = callbacks; title = callbacks.postTitle; return view;
         } },
-        '../preview/scroll.js': { createPreviewScroll: (selectors) => {
-            scrollSelectors = selectors;
+        '../preview/scroll.js': { createPreviewScroll: () => ({
+            remember: (doc) => scrolls.push(['remember', doc]),
+            restore: (doc, target) => scrolls.push(['restore', doc, target]),
+        }) },
+        '../preview/comparison.js': { createPreviewComparison: (selectors) => {
+            comparisonSelectors = selectors;
+            const values = new WeakMap();
             return {
-                remember: (doc) => scrolls.push(['remember', doc]),
-                findTarget: (previous, next) => { scrolls.push(['find', previous, next]); return 'target'; },
-                restore: (doc, target) => scrolls.push(['restore', doc, target]),
+                capture(doc, submitted) { values.set(doc, submitted); captures.push({ doc, values: submitted }); },
+                findChange(previous, next) {
+                    comparisons.push({ previous, next, before: values.get(previous), after: values.get(next),
+                        previousMounted: children.some((frame) => frame.contentDocument === previous) });
+                    return 'target';
+                },
             };
         } },
     };
     const init = vm.runInNewContext(`${source}\ninitRevisionPreview`, context);
     init({ postId: 1, currentPreviewUrl: url(1), strings, comparisonExcludedSelectors: excludedSelectors }, model);
     return {
-        view, options, reports, children, allFrames, timers, scrolls, scrollSelectors, listeners,
+        view, options, reports, children, allFrames, timers, scrolls, captures, comparisons, comparisonSelectors, listeners,
         get title() { return title; }, get clears() { return clears; }, get returned() { return returned; },
         get last() { return reports.at(-1); },
         select(next) { selected = next; listeners.get('update:revisions')?.(); },
@@ -87,10 +96,54 @@ function fixture({ visible = true, selected = revision(11), isolated = false, ex
     };
 }
 
+test('revision selection intent follows accepted frames, not canceled selections or native navigation', async () => {
+    const h = fixture();
+    await h.load();
+    assert.equal(h.captures[0].values.revision.value, 11);
+    h.select(revision(12)); await h.runTimers();
+    const canceled = h.allFrames.at(-1).onload;
+    h.select(revision(13)); await h.runTimers();
+    canceled();
+    await h.load();
+    assert.deepEqual(h.captures.map((entry) => entry.values.revision.value), [11, 13]);
+    assert.equal(h.comparisons[0].before.revision.value, 11);
+    assert.equal(h.comparisons[0].after.revision.value, 13);
+    await h.load();
+    assert.equal(h.captures.at(-1).values, undefined, 'Native navigation cannot inherit the old selection hints.');
+});
+
+test('frame capture precedes comparison and deletion analysis runs before the old iframe is removed', async () => {
+    const h = fixture();
+    await h.load();
+    const previous = h.children[0].contentDocument;
+    h.select(revision(12));
+    await h.runTimers();
+    await h.load();
+    const comparison = h.comparisons[0];
+    assert.equal(comparison.previous, previous);
+    assert.equal(comparison.previousMounted, true, 'Deletion evidence must still see the previous document.');
+    assert.equal(comparison.before.revision.value, 11);
+    assert.equal(comparison.after.revision.value, 12, 'The next baseline must exist before comparison.');
+    const restored = h.scrolls.filter(([operation]) => operation === 'restore').at(-1);
+    assert.deepEqual(restored, ['restore', comparison.next, 'target']);
+    assert.equal(restored.length, 3, 'Scrolling receives only a document and one identified element.');
+    assert.equal(h.children.length, 1);
+});
+
+test('disabled following still captures a baseline without calling comparison', async () => {
+    const h = fixture({ visible: false });
+    h.view.followChanges = false;
+    h.options.onOpen(); await h.load();
+    h.select(revision(12)); await h.runTimers(); await h.load();
+    assert.equal(h.captures.length, 2);
+    assert.equal(h.comparisons.length, 0);
+    assert.equal(h.scrolls.filter(([operation]) => operation === 'restore').length, 2);
+});
+
 test('read-only comparison receives the complete PHP exclusion policy, including an empty list', () => {
     for (const excludedSelectors of [[], ['.vendor-runtime']]) {
         const h = fixture({ visible: false, excludedSelectors });
-        assert.equal(h.scrollSelectors, excludedSelectors);
+        assert.equal(h.comparisonSelectors, excludedSelectors);
     }
 });
 
@@ -161,7 +214,7 @@ test('previous preview retains its identity while loading and after a failed rep
     assert.equal(h.title, 'Date 11 — Author 11');
     h.options.onRetry(); await h.load();
     assert.equal(h.title, 'Date 12 — Author 12');
-    assert.ok(h.scrolls.some(([operation]) => operation === 'find'));
+    assert.equal(h.comparisons.length, 1);
 });
 
 test('closing cancels pending loads; reopening uses the latest selection without touching visibility preferences', async () => {

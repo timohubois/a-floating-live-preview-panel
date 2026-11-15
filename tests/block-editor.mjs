@@ -43,6 +43,7 @@ function fixture({ ready = true, loaded = true, available = true, route = '/wp/v
         base: 'a'.repeat(64), available, acfEnabled, taxonomies, yoastPrimaryTaxonomies, adminCookiePath: '/wp-admin/', strings: { loading: 'Loading preview…', nativeSaveFailed: 'Reload editor', postOnly: 'Return to post', acfRefreshing: 'Waiting for ACF fields', integrationFailed: 'Integration failed', acfUnavailable: 'ACF unavailable' },
     };
     const document = {
+        querySelectorAll: () => [],
         get cookie() { return [...cookies].map(([key, value]) => `${key}=${value}`).join('; '); },
         set cookie(value) { if (value.includes('Max-Age=0')) cookies.delete(value.split('=')[0]); },
     };
@@ -77,7 +78,7 @@ function fixture({ ready = true, loaded = true, available = true, route = '/wp/v
         changed: () => calls.changes++, setTitle: (title) => calls.titles.push(title),
     });
     return {
-        native, config, state, calls, cookies, acfFields,
+        native, config, state, calls, cookies, acfFields, document,
         acfChanged: async () => { acfChanged?.(); await flush(); },
         emit: async () => { subscription?.(); await flush(); },
         beforeSave: (...args) => filter(...args),
@@ -89,6 +90,23 @@ function fixture({ ready = true, loaded = true, available = true, route = '/wp/v
         metaBody() { const body = new FormData(); body.set('post_ID', '123'); body.set('action', 'editpost'); body.set('acf[field_test]', 'Value'); return body; },
     };
 }
+
+test('block comparison values are frozen at capture and never sent to the endpoint', async () => {
+    const h = fixture({ acfEnabled: true });
+    h.document.querySelectorAll = () => [{ name: 'acf[field_test]', localName: 'input', type: 'text',
+        value: 'Newer UI field', classList: { contains: () => false } }];
+    const expected = h.state.content;
+    const pending = h.native.preparePreview();
+    h.state.content = '<p>A newer editor state</p>';
+    const result = await pending;
+    assert.equal(result.comparisonValues.content.value, expected);
+    assert.equal(result.comparisonValues.content.type, 'html');
+    assert.equal(result.comparisonValues['acf[field_test]'].value, 'Unsaved ACF');
+    assert.equal(Object.hasOwn(result.comparisonValues, '_acf_nonce'), false);
+    assert.equal(h.calls.requests[0].body.has('comparisonValues'), false);
+    assert.equal(h.calls.requests[0].body.get('content'), expected);
+    h.native.destroy();
+});
 
 test('external snapshot contributors refresh on changes and removal without serializing core content', async () => {
     const h = fixture({ extend(hooks) {
