@@ -70,7 +70,7 @@ function browserTests(css) {
     const panel = document.createElement('section');
     panel.className = 'aflpp-panel';
     panel.style.cssText = 'left:0;top:0;width:360px;height:240px';
-    panel.innerHTML = '<div class="aflpp-viewport"><div class="aflpp-pip-control"><div class="aflpp-pip-surface"><button class="components-button aflpp-pip-button" aria-label="Picture-in-picture"></button></div></div></div>';
+    panel.innerHTML = '<div class="aflpp-viewport"><div class="aflpp-pip-control"><div class="aflpp-pip-surface"><button class="components-button aflpp-pip-button" aria-label="Keep on top"></button></div></div></div>';
     document.body.append(panel);
     try {
         const button = panel.querySelector('button');
@@ -225,7 +225,7 @@ async function nativePreferenceTests(strings) {
             let state = {
                 inPage: mode === 'in-page', inPip: mode === 'PiP', movable: mode === 'in-page', mode: 'expand', modeLabel: strings.expand,
                 canPip: mode === 'in-page', canFullscreen: mode === 'in-page',
-                hasPreview: true, dock: 'center', size: 'small', device: 'desktop',
+                hasPreview: true, previewUrl: '/preview', dock: 'center', size: 'small', device: 'desktop',
                 rememberVisibility: true, rememberPosition: true, followChanges: true,
             };
             let toggles = 0, closes = 0;
@@ -245,23 +245,27 @@ async function nativePreferenceTests(strings) {
                 await pause();
                 const item = preference();
                 check(item?.getAttribute('role') === 'menuitemcheckbox', 'Use the native checkbox menu item.');
-                check(item.textContent.trim() === strings.rememberPosition, 'Expose the translated preference label.');
-                for (const [action, selected] of [['remember-visibility', true], ['remember-position', checked], ['follow', true]]) {
+                for (const [action, key, selected] of [['remember-visibility', 'rememberVisibility', true], ['remember-position', 'rememberPosition', checked], ['follow', 'follow', true]]) {
                     const toggle = document.querySelector(`[data-action="${action}"]`);
                     check(toggle.getAttribute('role') === 'menuitemcheckbox' && toggle.getAttribute('aria-checked') === String(selected), 'Expose every preference as a native checkbox with its current state.');
+                    const label = toggle.querySelector('.components-menu-item__info-wrapper > .components-menu-item__item');
+                    const help = toggle.querySelector('.components-menu-item__info');
+                    check(label?.textContent.trim() === strings[key], 'Use the plain-language setting name.');
+                    check(help?.textContent === strings[`${key}Help`], 'Show the explanation as native menu help, not a hidden tooltip.');
+                    check(toggle.scrollWidth <= toggle.clientWidth && help.scrollWidth <= help.clientWidth, 'Keep labels and explanations inside the native menu.');
                 }
-                const visibility = document.querySelector('[data-action="remember-visibility"]');
-                check(visibility.textContent.trim() === 'Remember if the preview is open', 'Use the new plain-language visibility label.');
-                check(visibility.scrollWidth <= visibility.clientWidth, 'Keep the longer label within the native menu.');
+                check(!document.querySelector('[data-action="open-preview"], .aflpp-panel a[target="_blank"]'), 'Do not offer a separate preview tab.');
+                const reset = document.querySelector('[data-action="reset"]');
+                check(mode !== 'in-page' || reset?.querySelector('.components-menu-item__info')?.textContent === strings.resetHelp, 'Explain where resetting puts the window.');
                 if (mode === 'in-page') {
                     for (const action of ['pip', 'pop-out']) {
                         const button = document.querySelector(`[data-action="${action}"]`);
-                        check(button.getAttribute('aria-label') === 'Picture-in-picture', 'Use the browser feature name.');
+                        check(button.getAttribute('aria-label') === 'Keep on top', 'Describe what the window does, not the browser API.');
                         const help = document.getElementById(button.getAttribute('aria-describedby'));
                         check(help?.textContent === strings.popOutHelp, 'Let the native Button associate the plain explanation.');
                     }
                     const pip = document.querySelector('[data-action="pip"]');
-                    check(pip.textContent.trim() === 'Picture-in-picture', 'Keep the explanation out of the visible menu label.');
+                    check(pip.textContent.trim() === 'Keep on top', 'Keep the action label short.');
                 }
                 item.focus();
                 check(document.activeElement === item, 'Keep the preference keyboard-focusable.');

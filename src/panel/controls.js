@@ -85,7 +85,7 @@ export function createPreviewControls(panel, strings, callbacks) {
 
     function Controls() {
         const {
-            inPage, inPip, mode, modeLabel, movable, busy, canRefresh, hasPreview, previewUrl,
+            inPage, inPip, mode, modeLabel, movable, busy, canRefresh, hasPreview,
             canPip, canFullscreen, dock, size, rememberVisibility, rememberPosition, followChanges, device, empty,
         } = state;
         const command = (action) => () => { closeMenu(); action(); };
@@ -110,11 +110,7 @@ export function createPreviewControls(panel, strings, callbacks) {
                 toggleProps: { className: 'aflpp-icon', size: 'compact', 'data-action': 'actions' },
                 popoverProps: { placement: 'bottom-end', offset: 6, shift: true, className: 'aflpp-menu-popover' },
             }, () => h(Fragment, null,
-                (previewUrl || canPip || canFullscreen) && h(MenuGroup, { label: strings.display },
-                    previewUrl && h(MenuItem, {
-                        href: previewUrl, target: '_blank', rel: 'noopener noreferrer', referrerPolicy: 'no-referrer',
-                        onClick: closeMenu, 'data-action': 'open-preview',
-                    }, strings.openPreview),
+                (canPip || canFullscreen) && h(MenuGroup, { label: strings.display },
                     canPip && h(MenuItem, {
                         label: strings.popOutHelp, description: strings.popOutHelp, showTooltip: true,
                         onClick: command(callbacks.popOut), 'data-action': 'pip', 'aria-label': strings.popOut,
@@ -143,19 +139,22 @@ export function createPreviewControls(panel, strings, callbacks) {
                 h(MenuGroup, { label: strings.preferences },
                     h(MenuItem, {
                         role: 'menuitemcheckbox', isSelected: rememberVisibility, icon: rememberVisibility ? icons.check : undefined,
+                        info: strings.rememberVisibilityHelp,
                         onClick: command(callbacks.rememberVisibility), 'data-action': 'remember-visibility',
                     }, strings.rememberVisibility),
                     h(MenuItem, {
                         role: 'menuitemcheckbox', isSelected: rememberPosition, icon: rememberPosition ? icons.check : undefined,
+                        info: strings.rememberPositionHelp,
                         onClick: command(callbacks.rememberPosition), 'data-action': 'remember-position',
                     }, strings.rememberPosition),
                     h(MenuItem, {
                         role: 'menuitemcheckbox', isSelected: followChanges, icon: followChanges ? icons.check : undefined,
+                        info: strings.followHelp,
                         onClick: command(callbacks.follow), 'data-action': 'follow',
                     }, strings.follow),
                 ),
                 inPage && h(MenuGroup, null, h(MenuItem, {
-                    onClick: command(callbacks.reset), 'data-action': 'reset',
+                    info: strings.resetHelp, onClick: command(callbacks.reset), 'data-action': 'reset',
                 }, strings.reset)),
                 inPip && h(MenuGroup, null, h(MenuItem, {
                     onClick: command(callbacks.close), 'data-action': 'close',
@@ -183,10 +182,6 @@ export function createPreviewControls(panel, strings, callbacks) {
             empty.retry && h(Button, {
                 key: 'retry', variant: 'primary', disabled: empty.disabled, onClick: callbacks.retry, 'data-action': 'retry',
             }, empty.action),
-            empty.previewUrl && h(Button, {
-                key: 'link', variant: 'secondary', href: empty.previewUrl, target: '_blank',
-                rel: 'noopener noreferrer', referrerPolicy: 'no-referrer',
-            }, strings.openPreview),
             empty.close && h(Button, { key: 'close', variant: 'secondary', onClick: callbacks.close, 'data-action': 'close' }, strings.close),
             empty.note && h('p', { className: 'aflpp-empty-note' }, empty.note),
             ), emptyContainer),

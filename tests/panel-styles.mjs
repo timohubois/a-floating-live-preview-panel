@@ -23,7 +23,7 @@ function browserTests({ core, panel, strings }) {
     const appearance = (element) => properties.map((property) => getComputedStyle(element)[property]);
     const shortcut = document.createElement('div');
     shortcut.className = 'aflpp-pip-control';
-    shortcut.innerHTML = '<div class="aflpp-pip-surface"><button class="components-button has-icon aflpp-pip-button" aria-label="Picture-in-picture">' + reference.innerHTML + '</button></div>';
+    shortcut.innerHTML = '<div class="aflpp-pip-surface"><button class="components-button has-icon aflpp-pip-button" aria-label="Keep on top">' + reference.innerHTML + '</button></div>';
     shell.append(shortcut);
     const pip = shortcut.querySelector('button');
     const nativeAction = reference.cloneNode(true);

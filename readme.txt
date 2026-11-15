@@ -19,9 +19,9 @@ Live updates write a separate internal preview revision, not the saved parent po
 
 * Move, resize or dock the preview without leaving the editor. Keyboard movement and resizing are supported.
 * Preview the selected To revision while navigating WordPress's revision browser, without restoring it or changing saved content.
-* Switch between Desktop, Tablet and Mobile viewport widths without reloading the preview.
-* Follow changed content automatically, or turn off Scroll to changes to retain manual positioning.
-* Remember whether the preview is open, its size and position, and the preview page width for each user. Use full screen or Picture-in-picture where supported.
+* Switch between Computer, Tablet and Phone viewport widths without reloading the preview.
+* Follow changed content automatically, or turn off Scroll to my changes to retain manual positioning.
+* Remember whether the preview is open, its size and position, and the preview page width for each user. Use full screen or Keep on top where supported.
 
 **Before you start**
 
@@ -38,7 +38,7 @@ Use a disposable local or staging WordPress installation while this is in develo
 1. Place the plugin in /wp-content/plugins/a-floating-live-preview-panel/ and activate **A Floating Live Preview Panel**.
 2. Open a post, page or frontend-viewable custom post type in its Block Editor or classic editing screen. New posts need a native draft save first; the Block Editor panel becomes available without reloading. The plugin does not force saves or enable revisions for you.
 3. Use the compact preview window or **Live preview** launcher. Edit supported fields and the preview refreshes after a short pause.
-4. Move the window by its plain titlebar or drag the closed **Live preview** launcher; they share one position. Resize from usable borders and corners. Arrow keys work on the move grip, launcher and single boundary resize control; hold Shift for larger steps. Use **Preview actions** for **Position**, **Size → Small / Large**, other display modes or **Open preview in a new tab**.
+4. Move the window by its plain titlebar or drag the closed **Live preview** launcher; they share one position. Resize from usable borders and corners. Arrow keys work on the move grip, launcher and single boundary resize control; hold Shift for larger steps. Use **Preview options** for **Move preview to**, **Size → Small / Large** and other window options. The remembering, scrolling and reset actions include short explanations. WordPress’s normal Preview button remains available; the panel has no separate new-tab action.
 5. Use WordPress's normal save, update or publish controls to save your changes to the post.
 
 == Frequently Asked Questions ==
@@ -83,15 +83,15 @@ In the classic editor, if native Preview saves additions, deletions or reorderin
 
 Yes, for posts, pages and frontend-viewable custom post types that use the post Block Editor. Title, serialized block content, excerpt, author, publication dates, taxonomy term lists, supported post-local ACF fields and featured images update live, and new posts become eligible after their first native save. The Site Editor and unsaved changes to separate entities such as synced patterns are excluded. Saved post revisions can also be previewed through WordPress's native revision browser.
 
-= What does Scroll to changes do? =
+= What does Scroll to my changes do? =
 
 It follows the first detected content, structure or layout-attribute change in recognized HTML previews, without theme-specific integration. Shorter changes are normally centered; taller ones are shown from their beginning. It respects site scrolling behavior, but complex headers may still obscure content. Changes made only through stylesheets or frontend state may be missed, and dynamic output at load can introduce unrelated differences. Turn it off to retain manual positioning. PDF page, zoom and scroll state are browser-owned and may reset on refresh.
 
 = Which settings are remembered? =
 
-Whether the preview is open, the preview page width, Scroll to changes and layout settings are stored per WordPress user across posts, both editors and the revision browser. Remember if the preview is open, Remember size and position and Scroll to changes are on by default; the initial viewport is Desktop and the initial panel is Small, compact, bottom-right. Disabling Remember if the preview is open starts the preview open on each new screen load, independently of its layout.
+Whether the preview is open, the preview page width, Scroll to my changes and layout settings are stored per WordPress user across posts, both editors and the revision browser. Remember open or closed, Remember size and position and Scroll to my changes are on by default; the initial viewport is Computer and the initial panel is Small, compact, bottom-right. Disabling Remember open or closed starts the preview open on each new screen load, independently of its layout.
 
-Remember size and position restores compact dimensions, custom placement or responsive docking, the shared panel/launcher anchor and expanded/compact mode. Turning it off leaves the current layout untouched and discards its saved geometry. Each new screen load then starts Small and compact at your preferred Position preset. Preset choices are always saved; dragging does not erase that preference. Closing and reopening without reloading keeps the current layout. Re-enabling remembering saves the current layout instead of restoring an old one. Reset size and position restores Small, compact, bottom-right and saves that preset without changing the remembering preference. Restored layouts fit the current window without overwriting preferred bounds; full screen and Picture-in-picture never reopen automatically.
+Remember size and position restores compact dimensions, custom placement or responsive docking, the shared panel/launcher anchor and expanded/compact mode. Turning it off leaves the current layout untouched and discards its saved geometry. Each new screen load then starts Small and compact at your preferred Move preview to preset. Preset choices are always saved; dragging does not erase that preference. Closing and reopening without reloading keeps the current layout. Re-enabling remembering saves the current layout instead of restoring an old one. Reset preview window restores Small, compact, bottom-right and saves that preset without changing the remembering preference. Restored layouts fit the current window without overwriting preferred bounds; full screen and Keep on top never reopen automatically.
 
 Deactivation keeps preferences; uninstalling through WordPress removes the plugin's server-stored preferences.
 
@@ -105,7 +105,7 @@ Uninstalling through WordPress removes internal preview revisions and their meta
 
 = Why is the preview blank or not updating? =
 
-Check edit permission, revisions, REST authentication and browser support. Site and browser embedding restrictions still apply; do not weaken them to force an embedded preview. Use **Open preview in a new tab** when an authorized preview cannot be embedded. **Preview updated** means a document loaded, not that its content was verified or published; login or error pages can also load.
+Check edit permission, revisions, REST authentication and browser support. Site and browser embedding restrictions still apply; do not weaken them to force an embedded preview. Use WordPress’s normal **Preview** button when a preview cannot be embedded. **Preview updated** means a document loaded, not that its content was verified or published; login or error pages can also load.
 
 = Is the preview isolated from the editor? =
 

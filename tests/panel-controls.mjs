@@ -97,7 +97,8 @@ test('in-page popovers escape the panel stacking context while fullscreen and Pi
 
 test('viewport choices use native Toolbar buttons and pressed-state behavior', () => {
     const h = fixture();
-    assert.equal(h.nodes('Toolbar')[0].props.label, 'Preview width');
+    assert.equal(h.nodes('Toolbar')[0].props.label, 'Screen size');
+    assert.deepEqual(h.nodes('ToolbarButton').map(({ props }) => props.label), ['Computer', 'Tablet', 'Phone']);
     const buttons = h.nodes('ToolbarButton');
     assert.equal(buttons.length, 3);
     assert.deepEqual(buttons.map(({ props }) => props.isPressed), [true, false, false]);
@@ -196,5 +197,48 @@ test('PiP actions follow feature support and preview availability', () => {
         assert.equal(shortcut(), undefined);
     }
     assert.equal(h.nodes('MenuItem').some(({ props }) => props['data-action'] === 'pip'), false);
-    assert.equal(h.nodes('MenuItem').some(({ props }) => props['data-action'] === 'open-preview'), true);
+    assert.equal(h.nodes('MenuItem').some(({ props }) => props['data-action'] === 'open-preview'), false);
 });
+
+test('new-tab actions are absent from the menu and failed-preview recovery', () => {
+    const h = fixture();
+    for (const hasPreview of [true, false]) {
+        h.controls.update({ ...h.state, hasPreview, empty: hasPreview ? null : {
+            heading: 'Couldn’t load preview', description: 'Try again.', previewUrl: '/preview', retry: true, action: 'Try again',
+        } });
+        for (const type of ['MenuItem', 'Button']) {
+            assert.equal(h.nodes(type).some(({ props }) => props.href || props.target === '_blank'), false);
+        }
+        assert.equal(h.nodes('MenuItem').some(({ props }) => props['data-action'] === 'open-preview'), false);
+    }
+    h.controls.update({ ...h.state, canPip: false, canFullscreen: false });
+    assert.equal(h.nodes('MenuGroup').some(({ props }) => props.label === panelStrings.display), false, 'Do not leave an empty window group behind.');
+});
+
+for (const mode of ['in-page', 'fullscreen', 'PiP']) {
+    test(`${mode} settings explain their effects and keep their existing toggle behavior`, () => {
+        const h = fixture();
+        h.controls.update({ ...h.state, inPage: mode === 'in-page', inPip: mode === 'PiP' });
+        assert.equal(h.nodes('DropdownMenu')[0].props.label, 'Preview options');
+        for (const [action, key, selected, callback] of [
+            ['remember-visibility', 'rememberVisibility', true, 'rememberVisibility'],
+            ['remember-position', 'rememberPosition', true, 'rememberPosition'],
+            ['follow', 'follow', false, 'follow'],
+        ]) {
+            const item = h.nodes('MenuItem').find(({ props }) => props['data-action'] === action);
+            assert.equal(item.children[0], panelStrings[key]);
+            assert.equal(item.props.info, panelStrings[`${key}Help`]);
+            assert.ok(item.props.info, 'Show an explanation, not just a renamed label.');
+            assert.equal(item.props.role, 'menuitemcheckbox');
+            assert.equal(item.props.isSelected, selected);
+            item.props.onClick();
+            assert.equal(h.calls.at(-1).name, callback);
+        }
+        const reset = h.nodes('MenuItem').find(({ props }) => props['data-action'] === 'reset');
+        assert.equal(!!reset, mode === 'in-page');
+        if (reset) {
+            assert.equal(reset.children[0], 'Reset preview window');
+            assert.equal(reset.props.info, panelStrings.resetHelp);
+        }
+    });
+}

@@ -32,7 +32,7 @@ defined('ABSPATH') || exit;
         <div class="aflpp-device-controls"></div>
         <span class="aflpp-dimensions"
             title="<?php esc_attr_e(
-                'Shows the page width and how small we make it to fit. This is not a full test of a phone or tablet.',
+                'Shows the screen width, height and zoom level. This changes the preview size, not your device.',
                 'a-floating-live-preview-panel'
             ); ?>">
         </span>
