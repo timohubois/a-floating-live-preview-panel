@@ -21,7 +21,8 @@ export function createPreviewScroll() {
 // Resolve only the identified element's presentation, never choose between unrelated changes.
 function visibleTarget(element) {
     if (!element) return null;
-    for (const node of [element, ...element.querySelectorAll('*')]) {
+    if (isVisible(element)) return element;
+    for (const node of element.querySelectorAll('*')) {
         if (isVisible(node)) return node;
     }
     for (let node = element.parentElement; node; node = node.parentElement) {

@@ -225,6 +225,37 @@ async function browserTests(source) {
             equal(scrolling.findTarget(inserted, deleted), deleted.querySelector('#context'), 'A hidden deletion stays within the surviving local context.');
         });
     }
+    await check('visible scroll targets do not query their descendants', async (frame, doc) => {
+        const document = await doc(content() + '<section id="target"><h2>Heading</h2><p>Content</p></section>');
+        const target = document.querySelector('#target');
+        const query = target.querySelectorAll;
+        let queries = 0;
+        target.querySelectorAll = function (...args) {
+            queries++;
+            return query.apply(this, args);
+        };
+        equal(visibleTarget(target), target, 'The visible identified element remains the target.');
+        equal(queries, 0, 'Do not collect descendants when the target itself is visible.');
+        frame.scrolling.restore(document, target);
+        equal(queries, 0, 'Scroll restoration must use the same fast path.');
+        if (document.defaultView.scrollY <= 0) throw new Error('The visible target is still revealed.');
+    });
+    for (const style of ['display:contents', 'visibility:hidden']) {
+        await check(`scroll targets with ${style} still reveal their first visible descendant`, async (frame, doc) => {
+            const document = await doc(content() + `<section id="target" style="${style}"><div hidden><p>Hidden</p></div><h2 id="visible" style="visibility:visible">First visible</h2><p style="visibility:visible">Second visible</p></section>`);
+            const target = document.querySelector('#target');
+            equal(visibleTarget(target), document.querySelector('#visible'), 'Skip hidden descendants and retain document order.');
+            frame.scrolling.restore(document, target);
+            if (document.defaultView.scrollY <= 0) throw new Error('The visible descendant is still revealed.');
+        });
+    }
+    await check('hidden scroll targets without visible descendants still reveal their nearest visible ancestor', async (frame, doc) => {
+        const document = await doc(content() + '<section id="context"><h2>Closed widget</h2><div id="target" hidden><p>Hidden</p></div></section>');
+        const target = document.querySelector('#target');
+        equal(visibleTarget(target), document.querySelector('#context'), 'Retain the nearest visible ancestor fallback.');
+        frame.scrolling.restore(document, target);
+        if (document.defaultView.scrollY <= 0) throw new Error('The visible ancestor is still revealed.');
+    });
     await check('boxless inserted wrappers reveal their visible content instead of main', async (scrolling, doc) => {
         const previous = await doc(section('First') + section('Last'));
         const next = await doc(section('First') + '<section style="display:contents"><h2>Inserted</h2><p>New content</p></section>' + section('Last'));
@@ -806,5 +837,5 @@ test('preview scrolling matches changed sections conservatively in Chromium', as
     const comparison = await readFile(new URL('../src/preview/comparison.js', import.meta.url), 'utf8');
     const scrolling = await readFile(new URL('../src/preview/scroll.js', import.meta.url), 'utf8');
     const source = `${comparison.replace('export function', 'function')}\n${scrolling.replace(/^import .*;\n/, '')}`;
-    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify(source)})`, count: 160 });
+    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify(source)})`, count: 164 });
 });
