@@ -78,7 +78,7 @@ jobs:
           composer require --working-dir="$RUNNER_TEMP/timber" "timber/timber:$TIMBER_CONSTRAINT" --no-interaction --prefer-dist
           composer show --working-dir="$RUNNER_TEMP/timber" timber/timber
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           cache: npm
@@ -140,7 +140,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           cache: npm
