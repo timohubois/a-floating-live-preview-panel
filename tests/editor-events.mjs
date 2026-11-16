@@ -16,7 +16,7 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
     window.BroadcastChannel = undefined;
     Object.defineProperty(navigator, 'locks', { value: { request: (name, options, run) => run({}) } });
 
-    async function fixture(withAcf, withWordPress, withTinyMce = true) {
+    async function fixture({ withAcf = false, withWordPress = false, withTinyMce = true } = {}) {
         const form = document.createElement('form');
         form.id = 'post';
         form.innerHTML = '<input id="title" name="post_title"><textarea name="content"></textarea><textarea name="excerpt"></textarea><input name="unrelated"><input name="_acf_nonce" value="nonce"><div class="acf-field"><input name="acf[field_text]" value="ACF text"><input name="_acf_fields[field_rows]" value="rows"><div class="widget"></div></div>';
@@ -154,10 +154,10 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
             },
         };
     }
-    async function check(name, run, withAcf = false, withWordPress = false, withTinyMce = true) {
+    async function check(name, run, options = {}) {
         let context;
         try {
-            context = await fixture(withAcf, withWordPress, withTinyMce);
+            context = await fixture(options);
             await run(context);
             results.push({ name });
         } catch (error) { results.push({ name, error: error.message }); }
@@ -198,7 +198,7 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         context.trigger('change', context.form.querySelector('[name="_acf_nonce"]'));
         equal(context.stale(), 6);
         equal(context.timers.size, 1);
-    }, false, true);
+    }, { withWordPress: true });
     await check('WordPress and ACF bridges do not duplicate native core or ACF events', (context) => {
         context.dispatch('[name="content"]');
         context.dispatch('[name="content"]', 'change');
@@ -206,12 +206,12 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         context.dispatch('.acf-field input', 'change');
         equal(context.stale(), 4);
         equal(context.timers.size, 1);
-    }, true, true);
+    }, { withAcf: true, withWordPress: true });
     await check('the WordPress bridge leaves synthetic ACF edits to the ACF adapter', (context) => {
         context.trigger('change', context.form.querySelector('.acf-field input'));
         context.trigger('change', context.form.querySelector('.widget'));
         equal(context.stale(), 2);
-    }, true, true);
+    }, { withAcf: true, withWordPress: true });
     await check('jQuery-only titles still synchronize with the preview closed', (context) => {
         context.close();
         context.form.querySelector('#title').value = 'Closed preview title';
@@ -219,7 +219,7 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         equal(context.titles.at(-1), 'Closed preview title');
         equal(context.stale(), 0);
         equal(context.timers.size, 0);
-    }, false, true);
+    }, { withWordPress: true });
     if (window.QTags) await check('real WordPress Quicktags insertion schedules a refresh', (context) => {
         const textarea = context.form.querySelector('[name="content"]');
         textarea.id = 'content';
@@ -228,7 +228,7 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         equal(textarea.value, '<img src="/example.jpg">');
         equal(context.stale(), 1);
         equal(context.timers.size, 1);
-    }, false, true);
+    }, { withWordPress: true });
     if (realJQuery) for (const native of [false, true]) {
         await check(`a later ${native ? 'native' : 'jQuery'} submit cancellation resumes preview change tracking`, async (context) => {
             context.nativeEditor.saving = true;
@@ -248,7 +248,7 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
                 if (native) context.form.removeEventListener('submit', cancel);
                 else window.jQuery(context.form).off('.validation');
             }
-        }, false, true);
+        }, { withWordPress: true });
     }
     await check('unrelated controls and ACF fields without integration do not refresh', (context) => {
         context.dispatch('[name="unrelated"]');
@@ -288,7 +288,7 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         for (const event of ['input', 'change', 'undo', 'redo', 'SetContent']) context.editorEvents.get(event)();
         equal(context.stale(), 5);
         equal(context.timers.size, 1);
-    }, false, true, false);
+    }, { withWordPress: true, withTinyMce: false });
     await check('WordPress, TinyMCE and ACF readiness do not duplicate editor listeners', (context) => {
         let registrations = 0;
         const editor = { on: () => registrations++, off() {} };
@@ -297,7 +297,7 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         context.initializeEditor(editor);
         context.actions.get('wysiwyg_tinymce_init')(editor);
         equal(registrations, 1);
-    }, true, true);
+    }, { withAcf: true, withWordPress: true });
     await check('late TinyMCE initialization preserves native Text-mode editing and capture', async (context) => {
         context.form.querySelector('[name="content"]').value = 'Text-mode content';
         context.dispatch('[name="content"]');
@@ -305,7 +305,7 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         equal(window.tinymce, undefined);
         equal(body.get('content'), 'Text-mode content');
         equal(context.stale(), 1);
-    }, false, true, false);
+    }, { withWordPress: true, withTinyMce: false });
     await check('teardown unsubscribes the document readiness handler, detaches editors and ignores later readiness', (context) => {
         const event = 'tinymce-editor-init.aflppClassicEditor';
         const subscription = context.jqueryCalls.find(({ method, target, args }) =>
@@ -325,7 +325,7 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         let registrations = 0;
         context.initializeEditor({ on: () => registrations++, off() {} });
         equal(registrations, 0);
-    }, false, true, false);
+    }, { withWordPress: true, withTinyMce: false });
     await check('native ACF events refresh once, including dynamically added fields', (context) => {
         context.dispatch('.acf-field input');
         context.dispatch('.acf-field input', 'change');
@@ -334,7 +334,7 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         context.form.querySelector('.acf-field').append(field);
         field.dispatchEvent(new Event('change', { bubbles: true }));
         equal(context.stale(), 3);
-    }, true);
+    }, { withAcf: true });
     await check('ACF jQuery-only input and widget container changes retain their bridge', (context) => {
         context.trigger('input', context.form.querySelector('.acf-field input'));
         context.trigger('change', context.form.querySelector('.widget'));
@@ -342,19 +342,19 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         context.trigger('change', context.form.querySelector('[name="unrelated"]'));
         equal(context.stale(), 3);
         equal(context.timers.size, 1);
-    }, true);
+    }, { withAcf: true });
     await check('both native and jQuery-only ACF sorting events remain covered', (context) => {
         context.dispatch('.acf-field', 'sortupdate');
         context.trigger('sortupdate', context.form.querySelector('.acf-field'));
         equal(context.stale(), 2);
-    }, true);
+    }, { withAcf: true });
     await check('ACF row lifecycle and WYSIWYG hooks remain in the adapter', (context) => {
         for (const action of ['append', 'remove', 'sortstop', 'change_field']) context.actions.get(action)();
         equal(context.stale(), 4);
         let registrations = 0;
         context.actions.get('wysiwyg_tinymce_init')({ on: () => registrations++, off() {} });
         equal(registrations, 1);
-    }, true);
+    }, { withAcf: true });
     await check('capture still synchronizes TinyMCE and preserves the payload allowlist', async (context) => {
         context.form.querySelector('#title').value = 'Preview title';
         context.dispatch('#title');
@@ -366,7 +366,7 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         equal(data.get('base'), 'base');
         equal(data.has('unrelated'), false);
         equal(context.stale(), 1);
-    }, true, true);
+    }, { withAcf: true, withWordPress: true });
     return results;
 }
 

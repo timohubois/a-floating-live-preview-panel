@@ -4,7 +4,6 @@ import { createPreviewScroll } from '../preview/scroll.js';
 
 // Share preview writes, frames and ownership, not editor-specific fields or save controls.
 export function createLivePreview(config, nativeEditor) {
-
     const strings = config.strings;
     const mainWindow = window;
     const scrolling = createPreviewScroll();
@@ -60,17 +59,22 @@ export function createLivePreview(config, nativeEditor) {
         });
     }
 
+    function failureReason(error) {
+        const code = error?.code;
+        if (code === 'aflpp_post_locked') return 'post-locked';
+        if ([
+            'aflpp_invalid_nonce', 'rest_cookie_invalid_nonce', 'aflpp_preview_conflict',
+            'aflpp_source_changed', 'aflpp_acf_unavailable', 'aflpp_integration_failed',
+        ].includes(code)) return 'reload';
+        if (['aflpp_cannot_preview', 'rest_forbidden', 'rest_cannot_edit'].includes(code)) return 'permission';
+        if (error?.message === strings.browser) return 'browser';
+        return '';
+    }
+
     function reportFailure(error) {
         // Recovery hints only affect the panel; never reload or alter native editor controls.
         const code = error?.code;
-        const reload = [
-            'aflpp_invalid_nonce', 'rest_cookie_invalid_nonce', 'aflpp_preview_conflict',
-            'aflpp_source_changed', 'aflpp_acf_unavailable', 'aflpp_integration_failed',
-        ].includes(code);
-        const locked = code === 'aflpp_post_locked';
-        const reason = locked ? 'post-locked' : reload ? 'reload'
-            : ['aflpp_cannot_preview', 'rest_forbidden', 'rest_cannot_edit'].includes(code) ? 'permission'
-                : error?.message === strings.browser ? 'browser' : '';
+        const reason = failureReason(error);
         if (reason) {
             previewActive = false;
             clearTimeout(refreshTimer);
@@ -79,7 +83,7 @@ export function createLivePreview(config, nativeEditor) {
         }
         const text = typeof code === 'string' || error?.message === strings.browser ? error.message : strings.failed;
         // WordPress's Take over action reloads the editor, which starts a fresh preview session.
-        report(text, locked ? 'paused' : 'error', { reason, canRetry: !reason });
+        report(text, reason === 'post-locked' ? 'paused' : 'error', { reason, canRetry: !reason });
     }
 
     function changed() {
@@ -105,9 +109,13 @@ export function createLivePreview(config, nativeEditor) {
         previewError = error;
         if (error) {
             if (view.visible) reportFailure(error);
-        } else if (view.visible && !previewActive && !ownershipTask) {
+            return;
+        }
+        if (view.visible && !previewActive && !ownershipTask) {
             startPreview();
-        } else changed();
+            return;
+        }
+        changed();
     }
 
     function loadFrame(address, version, values) {
@@ -125,10 +133,17 @@ export function createLivePreview(config, nativeEditor) {
                 await nativeEditor.idle;
                 if (!previewActive || nativeEditor.ready === false || nativeEditor.saving) return;
                 const base = config.base;
-                let result, failure;
+                let result;
+                let failure;
                 // Assign before yielding: a pre-save hook must always see an already-started write.
                 writeTask = nativeEditor.preparePreview();
-                try { result = await writeTask; } catch (error) { failure = error; } finally { writeTask = null; }
+                try {
+                    result = await writeTask;
+                } catch (error) {
+                    failure = error;
+                } finally {
+                    writeTask = null;
+                }
                 // An overlapping classic draft autosave may invalidate both a success and a failure.
                 await nativeEditor.idle;
                 if (!previewActive || nativeEditor.ready === false || nativeEditor.saving || base !== config.base) return;
@@ -169,11 +184,18 @@ export function createLivePreview(config, nativeEditor) {
     async function startPreview(takeOver = false) {
         view.setVisible(true);
         if (previewActive) return;
-        if (previewError) { reportFailure(previewError); return; }
+        if (previewError) {
+            reportFailure(previewError);
+            return;
+        }
         if (ownershipTask) {
             if (takeoverRequest && !takeoverRequest.signal.aborted) return;
             const version = generation;
-            try { await ownershipTask; } catch { /* Cancelled or timed-out lock request. */ }
+            try {
+                await ownershipTask;
+            } catch {
+                // Cancelled or timed-out lock request.
+            }
             if (view.visible && version === generation) startPreview(takeOver);
             return;
         }
@@ -194,7 +216,10 @@ export function createLivePreview(config, nativeEditor) {
         takeoverRequest = controller;
         if (controller) {
             report(strings.waiting, 'handover');
-            takeoverTimer = setTimeout(() => { timedOut = true; controller.abort(); }, 15000);
+            takeoverTimer = setTimeout(() => {
+                timedOut = true;
+                controller.abort();
+            }, 15000);
         } else report(nativeEditor.saving ? strings.saving : strings.updating);
         try {
             // Queue cooperatively. Never steal: the current owner must finish its PHP write first.
@@ -226,8 +251,9 @@ export function createLivePreview(config, nativeEditor) {
                 }
             });
             if (controller) {
-                try { channel.postMessage({ type: 'takeover' }); }
-                catch (error) {
+                try {
+                    channel.postMessage({ type: 'takeover' });
+                } catch (error) {
                     controller.abort();
                     if (previewActive) stopPreview(true);
                     await ownershipTask.catch(() => {});
@@ -251,7 +277,10 @@ export function createLivePreview(config, nativeEditor) {
     function refreshPreview(follow = true) {
         if (nativeEditor.saving) return;
         if (!follow) followPending = false;
-        if (!previewActive) { startPreview(); return; }
+        if (!previewActive) {
+            startPreview();
+            return;
+        }
         generation += 1;
         frames.cancel();
         update();

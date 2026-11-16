@@ -17,7 +17,8 @@ export function createPreviewComparison(excludedSelectors = []) {
         },
         findChange(previous, next) {
             try {
-                const before = snapshots.get(previous), after = snapshots.get(next);
+                const before = snapshots.get(previous);
+                const after = snapshots.get(next);
                 if (!before || !after) return null;
                 const hints = inputChanges(before.values, after.values);
                 const edited = valuesChanged(before.values, after.values);
@@ -27,87 +28,103 @@ export function createPreviewComparison(excludedSelectors = []) {
                     ...(captured ? changedCandidates(before.source, after.source).map((item) => ({ ...item, source: true })) : []),
                     ...changedCandidates(before.dom, after.dom).map((item) => ({ ...item, source: false })),
                 ];
-                const text = new Map();
-                const textOf = (entry) => entryText(entry, text);
-                const ranked = [];
-                for (const candidate of candidates) {
-                    // Unaligned regions remain evidence, not an early veto. Unique input transitions
-                    // can identify a node inside them without inventing cross-response node identities.
-                    if (candidate.unresolved) {
-                        for (const hint of hints) {
-                            if (!hint.after) continue;
-                            const oldMatches = matchingEntries(candidate.oldRange, hint.before, textOf, hint, true);
-                            const newMatches = matchingEntries(candidate.newRange, hint.after, textOf, hint, false);
-                            if (!oldMatches.length) continue;
-                            // Merely moving existing old/new values is not an observed transition.
-                            // Require loss/gain within an unaligned region before using loose value correspondence.
-                            const wrapping = hint.type === 'markup' && hint.oldTag === hint.newTag;
-                            if (!wrapping && hint.before
-                                && (oldMatches.length <= matchingEntries(candidate.newRange, hint.before, textOf, hint, true).length
-                                    || newMatches.length <= matchingEntries(candidate.oldRange, hint.after, textOf, hint, false).length)) continue;
-                            for (const entry of newMatches) {
-                                if (wrapping && !oldMatches.some((old) => old.signature !== entry.signature)) continue;
-                                ranked.push({
-                                    ...candidate, unresolved: false, before: null, after: entry,
-                                    kind: 'content', input: hint.before && hint.after ? 2 : 1, priority: 2, matches: [hint],
-                                });
-                            }
-                        }
-                    }
-                    // Input evidence belongs to a matching inserted sibling, not the entire range.
-                    // Without literal support, keep the range's existing structural target intact.
-                    if (candidate.kind === 'insert' && candidate.added.length > 1) {
-                        const supported = candidate.added.map((entry) => {
-                            const insertion = { ...candidate, after: entry, added: [entry] };
-                            const input = inputSupport(insertion, hints, textOf);
-                            return { ...insertion, input };
-                        }).filter((item) => item.input);
-                        if (supported.length) {
-                            ranked.push(...supported);
-                            continue;
-                        }
-                    }
-                    const input = inputSupport(candidate, hints, textOf);
-                    ranked.push({ ...candidate, input });
-                }
+                const ranked = rankCandidates(candidates, hints);
                 // With clean source, runtime-only mutations need author evidence. A known input
                 // change can support transformed/conditional DOM content without a literal match;
                 // unrelated DOM-only styling is not enough. Correlated source/DOM signals aren't votes.
                 const eligible = ranked.filter((item) => (item.source || (!captured && !transition)
                     || item.input || (edited && item.priority === 2))
                     && (item.priority > 0 || item.input));
-                if (!eligible.length) return null;
-                // Ordered evidence, not percentages or added votes: paired input > one-sided input
-                // > rendered-only; content/structure > presentation > unconfirmed reference churn.
-                const bestInput = eligible.reduce((best, item) => Math.max(best, item.input), 0);
-                const supported = eligible.filter((item) => item.input === bestInput);
-                const priority = supported.reduce((best, item) => Math.max(best, item.priority), 0);
-                const best = supported.filter((item) => item.priority === priority);
-                if (best.some((item) => item.unresolved)) return null;
-                // A wrapper can contain the same transition as its edited child without changing
-                // that text itself. Prefer the precise child, but keep independently edited parent text.
-                const precise = best.filter((item) => !item.input || item.directInput || !best.some((other) =>
-                    other !== item && item.matches?.length && item.matches.every((hint) => other.matches?.includes(hint))
-                    && containsEntry(item.after, other.after)));
-                // Source and DOM can nominate the same live element. Deletions use their surviving
-                // boundary, not the common parent, so separate deletion ranges remain separate.
-                const seen = new Map();
-                const unique = precise.filter((item) => {
-                    const boundary = item.kind === 'delete' ? item.following[0] || item.preceding[0] || item.after : item.after;
-                    const node = boundary?.node;
-                    if (!node) return true;
-                    const kind = item.kind === 'delete' && !item.following.length ? 'delete-last' : item.kind;
-                    const kinds = seen.get(node) || new Set();
-                    if (kinds.has(kind)) return false;
-                    kinds.add(kind);
-                    seen.set(node, kinds);
-                    return true;
-                });
-                // Visibility must not turn equally corroborated, different elements into a winner.
-                return bestInput && seen.size > 1 ? null : identifyElement(unique);
+                return selectChange(eligible);
             } catch { return null; } // Optional comparison must never prevent displaying native output.
         },
     };
+}
+
+function rankCandidates(candidates, hints) {
+    const text = new Map();
+    const textOf = (entry) => entryText(entry, text);
+    const ranked = [];
+    for (const candidate of candidates) {
+        if (candidate.unresolved) {
+            for (const resolved of resolveRegion(candidate, hints, textOf)) ranked.push(resolved);
+        }
+        // Input evidence belongs to a matching inserted sibling, not the entire range.
+        // Without literal support, keep the range's existing structural target intact.
+        if (candidate.kind === 'insert' && candidate.added.length > 1) {
+            const supported = candidate.added.map((entry) => {
+                const insertion = { ...candidate, after: entry, added: [entry] };
+                const input = inputSupport(insertion, hints, textOf);
+                return { ...insertion, input };
+            }).filter((item) => item.input);
+            if (supported.length) {
+                ranked.push(...supported);
+                continue;
+            }
+        }
+        const input = inputSupport(candidate, hints, textOf);
+        ranked.push({ ...candidate, input });
+    }
+    return ranked;
+}
+
+// Unaligned regions remain evidence, not an early veto. Unique input transitions
+// can identify a node inside them without inventing cross-response node identities.
+function resolveRegion(candidate, hints, textOf) {
+    const resolved = [];
+    for (const hint of hints) {
+        if (!hint.after) continue;
+        const oldMatches = matchingEntries(candidate.oldRange, hint.before, textOf, hint, true);
+        const newMatches = matchingEntries(candidate.newRange, hint.after, textOf, hint, false);
+        if (!oldMatches.length) continue;
+        // Merely moving existing old/new values is not an observed transition.
+        // Require loss/gain within an unaligned region before using loose value correspondence.
+        const wrapping = hint.type === 'markup' && hint.oldTag === hint.newTag;
+        if (!wrapping && hint.before
+            && (oldMatches.length <= matchingEntries(candidate.newRange, hint.before, textOf, hint, true).length
+                || newMatches.length <= matchingEntries(candidate.oldRange, hint.after, textOf, hint, false).length)) continue;
+        for (const entry of newMatches) {
+            if (wrapping && !oldMatches.some((old) => old.signature !== entry.signature)) continue;
+            resolved.push({
+                ...candidate, unresolved: false, before: null, after: entry,
+                kind: 'content', input: hint.before && hint.after ? 2 : 1, priority: 2, matches: [hint],
+            });
+        }
+    }
+    return resolved;
+}
+
+function selectChange(eligible) {
+    if (!eligible.length) return null;
+    // Ordered evidence, not percentages or added votes: paired input > one-sided input
+    // > rendered-only; content/structure > presentation > unconfirmed reference churn.
+    const bestInput = eligible.reduce((best, item) => Math.max(best, item.input), 0);
+    const supported = eligible.filter((item) => item.input === bestInput);
+    const priority = supported.reduce((best, item) => Math.max(best, item.priority), 0);
+    const best = supported.filter((item) => item.priority === priority);
+    if (best.some((item) => item.unresolved)) return null;
+    // A wrapper can contain the same transition as its edited child without changing
+    // that text itself. Prefer the precise child, but keep independently edited parent text.
+    const precise = best.filter((item) => !item.input || item.directInput || !best.some((other) =>
+        other !== item && item.matches?.length && item.matches.every((hint) => other.matches?.includes(hint))
+        && containsEntry(item.after, other.after)));
+    // Source and DOM can nominate the same live element. Deletions use their surviving
+    // boundary, not the common parent, so separate deletion ranges remain separate.
+    const seen = new Map();
+    const unique = precise.filter((item) => {
+        const boundary = item.kind === 'delete' ? item.following[0] || item.preceding[0] || item.after : item.after;
+        const node = boundary?.node;
+        if (!node) return true;
+        const kind = item.kind === 'delete' && !item.following.length ? 'delete-last' : item.kind;
+        const kinds = seen.get(node) || new Set();
+        if (kinds.has(kind)) return false;
+        kinds.add(kind);
+        seen.set(node, kinds);
+        return true;
+    });
+    // Visibility must not turn equally corroborated, different elements into a winner.
+    if (bestInput && seen.size > 1) return null;
+    return identifyElement(unique);
 }
 
 // Candidate kinds and snapshot entries never cross the comparison boundary.
@@ -437,14 +454,20 @@ function inputChanges(before, after) {
 
 // Narrow whole-field edits to changed words, not single shared characters or an entire post wrapper.
 function textTransition(before, after) {
-    let start = 0, suffix = 0;
+    let start = 0;
+    let suffix = 0;
     while (start < before.length && start < after.length && before[start] === after[start]) start++;
     while (suffix < before.length - start && suffix < after.length - start
         && before[before.length - suffix - 1] === after[after.length - suffix - 1]) suffix++;
-    let oldEnd = before.length - suffix, newEnd = after.length - suffix;
+    let oldEnd = before.length - suffix;
+    let newEnd = after.length - suffix;
     while (start > 0 && /\S/.test(before[start - 1])) start--;
-    if (oldEnd > start && /\S/.test(before[oldEnd - 1])) while (oldEnd < before.length && /\S/.test(before[oldEnd])) oldEnd++;
-    if (newEnd > start && /\S/.test(after[newEnd - 1])) while (newEnd < after.length && /\S/.test(after[newEnd])) newEnd++;
+    if (oldEnd > start && /\S/.test(before[oldEnd - 1])) {
+        while (oldEnd < before.length && /\S/.test(before[oldEnd])) oldEnd++;
+    }
+    if (newEnd > start && /\S/.test(after[newEnd - 1])) {
+        while (newEnd < after.length && /\S/.test(after[newEnd])) newEnd++;
+    }
     return { before: before.slice(start, oldEnd).trim(), after: after.slice(start, newEnd).trim() };
 }
 

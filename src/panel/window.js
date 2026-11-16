@@ -94,40 +94,42 @@ export function createPreviewPanel(strings, {
 
     function presentation() {
         const { text, state, hasPreview, reason } = current;
-        let heading = text;
-        let description = '';
-        let note = '';
         if (state === 'handover') {
-            heading = strings.switchingPreview;
-            description = text;
-            note = strings.tabEdits;
-        } else if (state === 'conflict') {
-            description = {
+            return { heading: strings.switchingPreview, description: text, note: strings.tabEdits };
+        }
+        if (state === 'conflict') {
+            const description = {
                 'handed-off': strings.handedOffHelp,
                 busy: strings.takeoverTimeoutHelp,
                 manual: strings.closeOtherHelp,
             }[reason] || strings.conflictHelp;
-            note = reason === 'manual' ? strings.manualSwitchHint : strings.tabEdits;
-        } else if (state === 'paused') {
-            heading = strings.pausedTitle;
-            description = text;
-        } else if (state === 'error') {
-            if (reason === 'unavailable' || reason === 'browser') {
-                heading = reason === 'unavailable' ? strings.unavailableTitle : strings.browserTitle;
-                description = text;
-            } else if (!hasPreview) {
-                heading = strings.failed;
-                description = text === strings.failed ? strings.failedHelp : text;
-                if (reason === 'reload') description += ` ${strings.reviewBeforeReload}`;
-            } else {
-                if (text === strings.failed) heading = strings.refreshFailed;
-                description = reason === 'reload' ? strings.reviewBeforeReload : strings.previousPreview;
-            }
-        } else if (!hasPreview) {
-            heading = strings.loading;
-            description = strings.preparing;
+            const note = reason === 'manual' ? strings.manualSwitchHint : strings.tabEdits;
+            return { heading: text, description, note };
         }
-        return { heading, description, note };
+        if (state === 'paused') {
+            return { heading: strings.pausedTitle, description: text, note: '' };
+        }
+        if (state === 'error') return errorPresentation();
+        if (!hasPreview) return { heading: strings.loading, description: strings.preparing, note: '' };
+        return { heading: text, description: '', note: '' };
+    }
+
+    function errorPresentation() {
+        const { text, hasPreview, reason } = current;
+        if (reason === 'unavailable' || reason === 'browser') {
+            const heading = reason === 'unavailable' ? strings.unavailableTitle : strings.browserTitle;
+            return { heading, description: text, note: '' };
+        }
+        if (!hasPreview) {
+            let description = text === strings.failed ? strings.failedHelp : text;
+            if (reason === 'reload') description += ` ${strings.reviewBeforeReload}`;
+            return { heading: strings.failed, description, note: '' };
+        }
+        return {
+            heading: text === strings.failed ? strings.refreshFailed : text,
+            description: reason === 'reload' ? strings.reviewBeforeReload : strings.previousPreview,
+            note: '',
+        };
     }
 
     function restoreFocus(focused, wasInside) {
@@ -135,6 +137,16 @@ export function createPreviewPanel(strings, {
         if (panel.contains(focused) && !focused.closest('[hidden]') && !focused.disabled
             && (current.hasPreview || !canvas.contains(focused))) return;
         controls.focus(empty.hidden ? 'actions' : 'empty-title');
+    }
+
+    function retryLabel() {
+        if (!takeOverAction) return strings.retry;
+        return current.state === 'handover' ? strings.takingOver : strings.takeOver;
+    }
+
+    function noticeSeverity(problem) {
+        if (!problem || ['handover', 'paused'].includes(current.state)) return 'info';
+        return current.state === 'error' && !current.canRetry ? 'error' : 'warning';
     }
 
     function feedbackState() {
@@ -148,12 +160,12 @@ export function createPreviewPanel(strings, {
         return {
             heading: problem ? heading : windowNotice,
             description: problem ? description : strings.windowNoticeHelp,
-            status: !problem || ['handover', 'paused'].includes(state) ? 'info' : state === 'error' && !canRetry ? 'error' : 'warning',
+            status: noticeSeverity(problem),
             dismissible: !problem,
             retry: problem && (takeOverAction || (canRetry && ['error', 'conflict'].includes(state))),
             close: problem && state === 'error' && !canRetry && reason !== 'reload',
             disabled: state === 'handover',
-            action: takeOverAction ? (state === 'handover' ? strings.takingOver : strings.takeOver) : strings.retry,
+            action: retryLabel(),
         };
     }
 
@@ -277,6 +289,11 @@ export function createPreviewPanel(strings, {
         return typeof mainWindow.documentPictureInPicture?.requestWindow === 'function';
     }
 
+    function modeLabel(fullscreen) {
+        if (fullscreen) return strings.exitFullscreen;
+        return geometry.expanded ? strings.compact : strings.expand;
+    }
+
     function syncControls() {
         if (!controls) return;
         const full = panel.ownerDocument.fullscreenElement === panel;
@@ -293,7 +310,7 @@ export function createPreviewPanel(strings, {
                 ...presentation(), busy: ['loading', 'stale', 'ready', 'handover'].includes(current.state),
                 icon: ['paused', 'conflict'].includes(current.state) || ['unavailable', 'browser'].includes(current.reason) ? 'info' : 'warning',
                 retry, disabled: current.state === 'handover', close: current.state === 'error' && !retry,
-                action: takeOverAction ? (current.state === 'handover' ? strings.takingOver : strings.takeOver) : strings.retry,
+                action: retryLabel(),
             },
             notice: feedbackState(),
             fit: responsiveViewport.fit, orientation: responsiveViewport.orientation,
@@ -302,13 +319,16 @@ export function createPreviewPanel(strings, {
             canPip: inPage && supportsPip(),
             canFullscreen: inPage && !!mainDocument.fullscreenEnabled,
             mode: full || geometry.expanded ? 'compact' : 'expand',
-            modeLabel: full ? strings.exitFullscreen : geometry.expanded ? strings.compact : strings.expand,
+            modeLabel: modeLabel(full),
         });
     }
 
     function toggleMode() {
         controls.closeMenu();
-        if (pipWindow) { pipWindow.close(); return; }
+        if (pipWindow) {
+            pipWindow.close();
+            return;
+        }
         if (mainDocument.fullscreenElement === panel) {
             mainDocument.exitFullscreen().then(clearWindowNotice, () => showWindowNotice(strings.fullscreenFailed));
             return;
@@ -462,7 +482,10 @@ export function createPreviewPanel(strings, {
         try {
             // A rejected request leaves the current document and preview completely untouched.
             detached = await mainWindow.documentPictureInPicture.requestWindow({ width: 640, height: 440 });
-            if (!visible) { detached.close(); return; }
+            if (!visible) {
+                detached.close();
+                return;
+            }
             const theme = mainWindow.getComputedStyle(panel);
             for (const name of ['--wp-admin-theme-color', '--wp-admin-theme-color-darker-10', '--wp-admin-border-width-focus']) {
                 const value = theme.getPropertyValue(name);
@@ -565,7 +588,8 @@ export function createPreviewPanel(strings, {
             syncControls();
         },
         zoom(value) {
-            const previousFit = responsiveViewport.fit, previousZoom = responsiveViewport.customZoom;
+            const previousFit = responsiveViewport.fit;
+            const previousZoom = responsiveViewport.customZoom;
             responsiveViewport.setZoom(value);
             if (responsiveViewport.customZoom !== previousZoom) preferenceActions.set(scope, 'customZoom', responsiveViewport.customZoom);
             if (responsiveViewport.fit !== previousFit) preferenceActions.set(scope, 'fitMode', responsiveViewport.fit);

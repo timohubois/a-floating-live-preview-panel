@@ -65,7 +65,10 @@ export function createPreviewControls(panel, strings, callbacks) {
 
     function syncNotice() {
         if (!noticeActions) return;
-        if (!state.notice) { clearNotice(); return; }
+        if (!state.notice) {
+            clearNotice();
+            return;
+        }
         const next = JSON.stringify(state.notice);
         if (lastNotice === next) return;
         const { message, status, ...props } = noticeProps();
@@ -133,7 +136,8 @@ export function createPreviewControls(panel, strings, callbacks) {
                         field?.focus({ preventScroll: true });
                         const content = field?.closest('.components-popover__content');
                         if (content) {
-                            const rect = field.getBoundingClientRect(), bounds = content.getBoundingClientRect();
+                            const rect = field.getBoundingClientRect();
+                            const bounds = content.getBoundingClientRect();
                             // Reveal the focused field in short popovers without scrolling the editor or PiP window.
                             content.scrollTop += Math.min(0, rect.top - bounds.top) + Math.max(0, rect.bottom - bounds.bottom);
                         }
@@ -144,7 +148,9 @@ export function createPreviewControls(panel, strings, callbacks) {
                         if (value === 'custom') {
                             zoomDraft = String(customZoom);
                             callbacks.zoom(customZoom);
-                        } else callbacks.fit(value);
+                            return;
+                        }
+                        callbacks.fit(value);
                     },
                 }),
                 fit === 'custom' && h('div', { className: 'aflpp-custom-zoom' }, h(TextControl, {
@@ -172,12 +178,109 @@ export function createPreviewControls(panel, strings, callbacks) {
         });
     }
 
+    function command(action) {
+        return () => {
+            closeMenu();
+            action();
+        };
+    }
+
+    function actionsMenu() {
+        const { canPip, canFullscreen, inPage, inPip, dock, rememberVisibility, rememberPosition, followChanges } = state;
+        return h(DropdownMenu, {
+            className: 'aflpp-actions', label: strings.actions, icon: icons.more, open,
+            onToggle(value) {
+                open = value;
+                if (value) zoomOpen = false;
+                render();
+            },
+            toggleProps: { className: 'aflpp-icon', size: 'compact', 'data-action': 'actions' },
+            popoverProps: { placement: 'bottom-end', offset: 6, shift: true, className: 'aflpp-menu-popover' },
+        }, () => h(Fragment, null,
+            (canPip || canFullscreen) && h(MenuGroup, { label: strings.display },
+                canPip && h(MenuItem, {
+                    label: strings.popOutHelp, description: strings.popOutHelp, showTooltip: true,
+                    onClick: command(callbacks.popOut), 'data-action': 'pip', 'aria-label': strings.popOut,
+                }, strings.popOut),
+                canFullscreen && h(MenuItem, {
+                    onClick: command(callbacks.fullscreen), 'data-action': 'fullscreen',
+                }, strings.fullscreen),
+            ),
+            inPage && h(MenuGroup, { label: strings.position }, h(MenuItemsChoice, {
+                value: dock,
+                choices: [
+                    { value: 'left', label: strings.bottomLeft },
+                    { value: 'center', label: strings.bottomCenter },
+                    { value: 'right', label: strings.bottomRight },
+                ],
+                onSelect(side) {
+                    closeMenu();
+                    callbacks.dock(side);
+                },
+            })),
+            h(MenuGroup, { label: strings.preferences },
+                h(MenuItem, {
+                    role: 'menuitemcheckbox', isSelected: rememberVisibility, icon: rememberVisibility ? icons.check : undefined,
+                    info: strings.rememberVisibilityHelp,
+                    onClick: command(callbacks.rememberVisibility), 'data-action': 'remember-visibility',
+                }, strings.rememberVisibility),
+                h(MenuItem, {
+                    role: 'menuitemcheckbox', isSelected: rememberPosition, icon: rememberPosition ? icons.check : undefined,
+                    info: strings.rememberPositionHelp,
+                    onClick: command(callbacks.rememberPosition), 'data-action': 'remember-position',
+                }, strings.rememberPosition),
+                h(MenuItem, {
+                    role: 'menuitemcheckbox', isSelected: followChanges, icon: followChanges ? icons.check : undefined,
+                    info: strings.followHelp,
+                    onClick: command(callbacks.follow), 'data-action': 'follow',
+                }, strings.follow),
+            ),
+            inPage && h(MenuGroup, null, h(MenuItem, {
+                info: strings.resetHelp, onClick: command(callbacks.reset), 'data-action': 'reset',
+            }, strings.reset)),
+            inPip && h(MenuGroup, null, h(MenuItem, {
+                onClick: command(callbacks.close), 'data-action': 'close',
+            }, strings.closeLivePreview)),
+        ));
+    }
+
+    function deviceToolbar() {
+        const { device, orientation } = state;
+        return h(Toolbar, { className: 'aflpp-devices', label: strings.viewport, variant: 'unstyled' },
+            ...['desktop', 'tablet', 'mobile'].map((name) => {
+                const selected = device === name;
+                const rotatable = selected && name !== 'desktop';
+                const rotated = rotatable && orientation === 'landscape';
+                const rotateLabel = orientation === 'portrait' ? strings.rotateLandscape : strings.rotatePortrait;
+                return h(ToolbarButton, {
+                    key: name, icon: icons[name], className: rotated ? 'aflpp-device-rotated' : undefined,
+                    label: rotatable ? `${strings[name]} — ${rotateLabel}` : strings[name],
+                    isPressed: selected, 'data-viewport': name, onClick: () => callbacks.device(name),
+                });
+            }),
+        );
+    }
+
+    function emptyState() {
+        const { empty } = state;
+        if (!empty) return null;
+        return h(Placeholder, {
+            className: 'aflpp-placeholder', icon: empty.busy ? h(Spinner) : icons[empty.icon],
+            label: h('h3', { className: 'aflpp-empty-title', tabIndex: -1, 'data-action': 'empty-title' }, empty.heading),
+            instructions: empty.description,
+        },
+        empty.retry && h(Button, {
+            key: 'retry', variant: 'primary', disabled: empty.disabled, onClick: callbacks.retry, 'data-action': 'retry',
+        }, empty.action),
+        empty.close && h(Button, { key: 'close', variant: 'secondary', onClick: callbacks.close, 'data-action': 'close' }, strings.close),
+        empty.note && h('p', { className: 'aflpp-empty-note' }, empty.note),
+        );
+    }
+
     function Controls() {
         const {
-            inPage, inPip, mode, modeLabel, movable, busy, canRefresh, hasPreview,
-            canPip, canFullscreen, dock, rememberVisibility, rememberPosition, followChanges, device, orientation, empty,
+            inPage, inPip, mode, modeLabel, movable, busy, canRefresh, hasPreview, canPip,
         } = state;
-        const command = (action) => () => { closeMenu(); action(); };
         return h(SlotFillProvider, null,
             createPortal(movable && inPage && h(Button, {
                 className: 'aflpp-icon aflpp-move', size: 'compact', icon: icons.move, label: strings.move, showTooltip: true, tooltipPosition: 'bottom',
@@ -193,54 +296,7 @@ export function createPreviewControls(panel, strings, callbacks) {
                 className: 'aflpp-pip-button', icon: icons.pip, label: strings.popOutHelp, 'aria-label': strings.popOut,
                 description: strings.popOutHelp, showTooltip: true, onClick: callbacks.popOut, 'data-action': 'pop-out',
             })), pipContainer),
-            h(DropdownMenu, {
-                className: 'aflpp-actions', label: strings.actions, icon: icons.more, open,
-                onToggle: (value) => { open = value; if (value) zoomOpen = false; render(); },
-                toggleProps: { className: 'aflpp-icon', size: 'compact', 'data-action': 'actions' },
-                popoverProps: { placement: 'bottom-end', offset: 6, shift: true, className: 'aflpp-menu-popover' },
-            }, () => h(Fragment, null,
-                (canPip || canFullscreen) && h(MenuGroup, { label: strings.display },
-                    canPip && h(MenuItem, {
-                        label: strings.popOutHelp, description: strings.popOutHelp, showTooltip: true,
-                        onClick: command(callbacks.popOut), 'data-action': 'pip', 'aria-label': strings.popOut,
-                    }, strings.popOut),
-                    canFullscreen && h(MenuItem, {
-                        onClick: command(callbacks.fullscreen), 'data-action': 'fullscreen',
-                    }, strings.fullscreen),
-                ),
-                inPage && h(MenuGroup, { label: strings.position }, h(MenuItemsChoice, {
-                    value: dock,
-                    choices: [
-                        { value: 'left', label: strings.bottomLeft },
-                        { value: 'center', label: strings.bottomCenter },
-                        { value: 'right', label: strings.bottomRight },
-                    ],
-                    onSelect: (side) => { closeMenu(); callbacks.dock(side); },
-                })),
-                h(MenuGroup, { label: strings.preferences },
-                    h(MenuItem, {
-                        role: 'menuitemcheckbox', isSelected: rememberVisibility, icon: rememberVisibility ? icons.check : undefined,
-                        info: strings.rememberVisibilityHelp,
-                        onClick: command(callbacks.rememberVisibility), 'data-action': 'remember-visibility',
-                    }, strings.rememberVisibility),
-                    h(MenuItem, {
-                        role: 'menuitemcheckbox', isSelected: rememberPosition, icon: rememberPosition ? icons.check : undefined,
-                        info: strings.rememberPositionHelp,
-                        onClick: command(callbacks.rememberPosition), 'data-action': 'remember-position',
-                    }, strings.rememberPosition),
-                    h(MenuItem, {
-                        role: 'menuitemcheckbox', isSelected: followChanges, icon: followChanges ? icons.check : undefined,
-                        info: strings.followHelp,
-                        onClick: command(callbacks.follow), 'data-action': 'follow',
-                    }, strings.follow),
-                ),
-                inPage && h(MenuGroup, null, h(MenuItem, {
-                    info: strings.resetHelp, onClick: command(callbacks.reset), 'data-action': 'reset',
-                }, strings.reset)),
-                inPip && h(MenuGroup, null, h(MenuItem, {
-                    onClick: command(callbacks.close), 'data-action': 'close',
-                }, strings.closeLivePreview)),
-            )),
+            actionsMenu(),
             !inPip && h(Button, {
                 className: 'aflpp-icon aflpp-mode', size: 'compact', icon: icons[mode], label: modeLabel, showTooltip: true,
                 onClick: callbacks.mode, 'data-action': 'mode',
@@ -249,31 +305,9 @@ export function createPreviewControls(panel, strings, callbacks) {
                 className: 'aflpp-icon', size: 'compact', icon: icons.close, label: strings.close, showTooltip: true,
                 onClick: callbacks.close, 'data-action': 'close',
             }),
-            createPortal(h(Toolbar, { className: 'aflpp-devices', label: strings.viewport, variant: 'unstyled' },
-                ...['desktop', 'tablet', 'mobile'].map((name) => {
-                    const selected = device === name;
-                    const rotatable = selected && name !== 'desktop';
-                    const rotated = rotatable && orientation === 'landscape';
-                    const rotateLabel = orientation === 'portrait' ? strings.rotateLandscape : strings.rotatePortrait;
-                    return h(ToolbarButton, {
-                        key: name, icon: icons[name], className: rotated ? 'aflpp-device-rotated' : undefined,
-                        label: rotatable ? `${strings[name]} — ${rotateLabel}` : strings[name],
-                        isPressed: selected, 'data-viewport': name, onClick: () => callbacks.device(name),
-                    });
-                }),
-            ), devicesContainer),
+            createPortal(deviceToolbar(), devicesContainer),
             createPortal(zoomControl(), zoomContainer),
-            createPortal(empty && h(Placeholder, {
-                className: 'aflpp-placeholder', icon: empty.busy ? h(Spinner) : icons[empty.icon],
-                label: h('h3', { className: 'aflpp-empty-title', tabIndex: -1, 'data-action': 'empty-title' }, empty.heading),
-                instructions: empty.description,
-            },
-            empty.retry && h(Button, {
-                key: 'retry', variant: 'primary', disabled: empty.disabled, onClick: callbacks.retry, 'data-action': 'retry',
-            }, empty.action),
-            empty.close && h(Button, { key: 'close', variant: 'secondary', onClick: callbacks.close, 'data-action': 'close' }, strings.close),
-            empty.note && h('p', { className: 'aflpp-empty-note' }, empty.note),
-            ), emptyContainer),
+            createPortal(emptyState(), emptyContainer),
             createPortal(renderNotice(), feedbackContainer),
             // Escape the panel's stacking context in-page; fullscreen/PiP must stay inside the panel.
             inPage ? createPortal(h(Popover.Slot), panel.ownerDocument.body) : h(Popover.Slot),

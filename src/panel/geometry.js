@@ -11,7 +11,11 @@ export function createPanelGeometry(saved, area, position = 'right') {
     let dock = validLayout ? saved.dock : position;
     // Keep the same collapse/resize corner when dragging away from a dock. Older layouts default to the right.
     let anchor = dock || (validLayout && saved.anchor) || 'right';
-    const anchorFactor = () => anchor === 'left' ? 0 : anchor === 'center' ? 0.5 : 1;
+    function anchorFactor() {
+        if (anchor === 'left') return 0;
+        if (anchor === 'center') return 0.5;
+        return 1;
+    }
 
     function fit(next, available = area(!dock), minimumWidth = 320, minimumHeight = 220) {
         next.width = Math.min(available.width, Math.max(Math.min(minimumWidth, available.width), next.width));
@@ -22,12 +26,16 @@ export function createPanelGeometry(saved, area, position = 'right') {
     }
 
     function dockedRect(rect) {
-        if (dock) {
-            const available = area();
-            rect.x = dock === 'left' ? available.left
-                : dock === 'center' ? available.left + (available.width - rect.width) / 2 : available.right - rect.width;
-            rect.y = available.bottom - rect.height;
+        if (!dock) return rect;
+        const available = area();
+        if (dock === 'left') {
+            rect.x = available.left;
+        } else if (dock === 'center') {
+            rect.x = available.left + (available.width - rect.width) / 2;
+        } else {
+            rect.x = available.right - rect.width;
         }
+        rect.y = available.bottom - rect.height;
         return rect;
     }
 
@@ -57,27 +65,38 @@ export function createPanelGeometry(saved, area, position = 'right') {
             && !(dock === 'right' && edge.includes('e')));
     }
 
+    function resizeFactor(edge) {
+        if (anchor === 'center') return 0.5;
+        return edge.includes('w') ? 1 : 0;
+    }
+
+    function availableWidth(available, pinX, factor) {
+        if (factor === 0) return available.right - pinX;
+        if (factor === 1) return pinX - available.left;
+        return 2 * Math.min(pinX - available.left, available.right - pinX);
+    }
+
     // Physical edges are independent of text direction. Center anchoring grows symmetrically.
     function resizeBounds(start, edge, dx, dy) {
         const available = area(!dock);
         const horizontal = edge.includes('e') || edge.includes('w');
         const vertical = edge.includes('n') || edge.includes('s');
-        const factor = anchor === 'center' ? 0.5 : edge.includes('w') ? 1 : 0;
+        const factor = resizeFactor(edge);
         const pinX = start.x + start.width * factor;
         const fromTop = edge.includes('n');
         const pinY = start.y + (fromTop ? start.height : 0);
-        const maxWidth = factor === 0 ? available.right - pinX : factor === 1
-            ? pinX - available.left : 2 * Math.min(pinX - available.left, available.right - pinX);
+        const maxWidth = availableWidth(available, pinX, factor);
         const maxHeight = fromTop ? pinY - available.top : available.bottom - pinY;
         const widthDelta = (edge.includes('w') ? -dx : dx) * (factor === 0.5 ? 2 : 1);
         const width = Math.max(Math.min(320, maxWidth), Math.min(maxWidth, start.width + widthDelta));
         const height = Math.max(Math.min(220, maxHeight), Math.min(maxHeight, start.height + (fromTop ? -dy : dy)));
         const widthChanged = horizontal && dx !== 0 && width !== start.width;
         const heightChanged = vertical && dy !== 0 && height !== start.height;
+        const y = fromTop ? pinY - height : pinY;
         // Untouched axes retain preferred coordinates too, not their temporary viewport fit.
         return {
             x: widthChanged ? pinX - width * factor : start.preferredBounds.x,
-            y: heightChanged ? (fromTop ? pinY - height : pinY) : start.preferredBounds.y,
+            y: heightChanged ? y : start.preferredBounds.y,
             width: widthChanged ? width : start.preferredBounds.width,
             height: heightChanged ? height : start.preferredBounds.height,
         };

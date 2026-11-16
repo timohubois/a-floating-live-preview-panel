@@ -48,6 +48,12 @@ export function createBlockEditor(config) {
         };
     }
 
+    function notReadyReason(postLoaded, postReady, pauseReason) {
+        if (!postLoaded) return config.strings.loading;
+        if (!postReady) return config.strings.postOnly;
+        return extensions.error?.message || pauseReason;
+    }
+
     function observe() {
         if (destroyed || !preview) return;
         const state = editor();
@@ -57,8 +63,7 @@ export function createBlockEditor(config) {
         if (postReady) extensions.action('observePreviewInputs', state);
         const pauseReason = extensions.filter('previewPauseReason', '', state);
         const ready = postReady && !pauseReason && !extensions.error;
-        native.notReady = !postLoaded ? config.strings.loading : !postReady ? config.strings.postOnly
-            : extensions.error?.message || pauseReason;
+        native.notReady = notReadyReason(postLoaded, postReady, pauseReason);
         native.notReadyState = postLoaded ? 'paused' : 'loading';
         const saving = postReady && (state.isSavingPost() || requests > 0);
         const becameReady = ready && !native.ready;

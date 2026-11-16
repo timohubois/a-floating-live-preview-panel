@@ -156,6 +156,12 @@ npm ci
 npm run build
 ```
 
+Prefer guard clauses and early returns, simple two-way ternaries rather than nested decisions, and named options when a call needs several boolean flags. Keep multi-step branches and error handling on separate lines. Extract meaningful operations rather than splitting functions solely for their length; preserve native save/cleanup boundaries.
+
+Prefer logical CSS properties for dimensions, spacing, borders and UI positioning. Keep physical coordinates only where they describe the preview canvas, native window scrolling or compass-based window geometry; protect those rules from automatic RTL mirroring. The cssnano configuration in `package.json` preserves important `/*! rtl:… */` directives until WordPress's RTL build processes them.
+
+Run `npm run lint` to check the focused JavaScript readability rules, logical CSS properties and declaration style. Use `npm run format:css` to format authored panel CSS with four-space indentation. These commands use the existing WordPress development tooling; generated assets are excluded.
+
 Rebuild after changing anything in `src/`; `npm start` watches those inputs during development. All plugin browser code is bundled, including editor/revision coordination, scrolling and the ACF adapter. ACF is initialized only when available. There are no runtime imports from `src/` or PHP-configured module URLs.
 
 `build/` contains only generated assets and is ignored by Git. Build it locally before using a checkout or running the JavaScript tests, and rebuild after pulling source changes. Never edit generated files by hand. The complete directory, including CSS and generated `.asset.php` dependency/version metadata, must still ship in installable packages. The admin bundles intentionally contain the same shared panel source; they load on different screens and need no separate shared runtime. Distribution excludes `src/` and development dependencies; `.distignore` deliberately does not exclude `build/`.

@@ -375,34 +375,59 @@ final class LivePreview
             );
         }
         $base = $this->fingerprint($postId);
-        $dates = ['post_date' => $post->post_date, 'post_date_gmt' => $post->post_date_gmt];
-        if (array_key_exists('date', $input)) {
-            $date = $input['date'];
-            $now = current_time('mysql');
-            $parsed = $date === null || $date === ''
-                ? [$now, get_gmt_from_date($now)] : rest_get_date_with_gmt($date);
-            if (!$parsed) {
-                return new WP_Error('rest_invalid_date', __('Invalid date.', 'default'), ['status' => 400]);
-            }
-            $dates = array_combine(['post_date', 'post_date_gmt'], $parsed);
+        $fields = $this->previewFields($post, $input);
+        if (is_wp_error($fields)) {
+            return $fields;
+        }
+        $revisionId = $this->savePreview($post, $input, $fields);
+        if (is_wp_error($revisionId)) {
+            return $revisionId;
+        }
+
+        // Metadata writers can fail or be short-circuited; a source ID alone does not prove the snapshot was saved.
+        if (
+            get_post_meta($revisionId, self::AUTHOR_META, true) !== (string) $fields['author']
+            || get_post_meta($revisionId, self::DATE_META, true) !== $fields['dates']
+            || get_post_meta($revisionId, self::TERMS_META, true) !== $fields['terms']
+        ) {
+            return new WP_Error(
+                'aflpp_preview_fields_not_saved',
+                __('Some preview fields couldn’t be prepared. Please try again.', 'a-floating-live-preview-panel'),
+                ['status' => 409]
+            );
+        }
+        if (!hash_equals($base, $this->fingerprint($postId))) {
+            return new WP_Error(
+                'aflpp_source_changed',
+                __('The saved post changed while the preview was loading.', 'a-floating-live-preview-panel'),
+                ['status' => 409]
+            );
+        }
+        $action = $this->stateAction($postId, $revisionId);
+        return new WP_REST_Response([
+            // Our state token authorizes this revision; native autosave parameters would select recovery data.
+            'url' => get_preview_post_link($post, [
+                'aflpp_post' => $postId,
+                'aflpp_revision' => $revisionId,
+                'aflpp_token' => wp_create_nonce($action),
+            ]),
+        ]);
+    }
+
+    /** Validate and resolve display fields before any preview writes or integration hooks. */
+    private function previewFields(WP_Post $post, array $input): array|WP_Error
+    {
+        $dates = $this->previewDates($post, $input);
+        if (is_wp_error($dates)) {
+            return $dates;
         }
         $terms = $this->previewTerms($post, $input['terms'] ?? null);
         if (is_wp_error($terms)) {
             return $terms;
         }
-        $authorId = $input['author'] ?? (int) $post->post_author;
-        if (isset($input['author'])) {
-            if (!get_userdata($authorId)) {
-                return new WP_Error('rest_invalid_author', __('Invalid author ID.', 'default'), ['status' => 400]);
-            }
-            $type = get_post_type_object($post->post_type);
-            if ($authorId !== get_current_user_id() && !current_user_can($type->cap->edit_others_posts)) {
-                return new WP_Error(
-                    'rest_cannot_edit_others',
-                    __('Sorry, you are not allowed to edit posts as this user.', 'default'),
-                    ['status' => 403]
-                );
-            }
+        $authorId = $this->previewAuthor($post, $input);
+        if (is_wp_error($authorId)) {
+            return $authorId;
         }
         // Match the native featured-image contract, without calling parent-redirecting post-meta writers.
         $imageId = $input['featured_media'] ?? null;
@@ -419,12 +444,54 @@ final class LivePreview
             );
         }
 
+        return ['author' => $authorId, 'dates' => $dates, 'terms' => $terms, 'image' => $imageId];
+    }
+
+    private function previewDates(WP_Post $post, array $input): array|WP_Error
+    {
+        if (!array_key_exists('date', $input)) {
+            return ['post_date' => $post->post_date, 'post_date_gmt' => $post->post_date_gmt];
+        }
+        $date = $input['date'];
+        $now = current_time('mysql');
+        $parsed = $date === null || $date === ''
+            ? [$now, get_gmt_from_date($now)] : rest_get_date_with_gmt($date);
+        if (!$parsed) {
+            return new WP_Error('rest_invalid_date', __('Invalid date.', 'default'), ['status' => 400]);
+        }
+        return array_combine(['post_date', 'post_date_gmt'], $parsed);
+    }
+
+    private function previewAuthor(WP_Post $post, array $input): int|WP_Error
+    {
+        if (!isset($input['author'])) {
+            return (int) $post->post_author;
+        }
+        $authorId = $input['author'];
+        if (!get_userdata($authorId)) {
+            return new WP_Error('rest_invalid_author', __('Invalid author ID.', 'default'), ['status' => 400]);
+        }
+        $type = get_post_type_object($post->post_type);
+        if ($authorId !== get_current_user_id() && !current_user_can($type->cap->edit_others_posts)) {
+            return new WP_Error(
+                'rest_cannot_edit_others',
+                __('Sorry, you are not allowed to edit posts as this user.', 'default'),
+                ['status' => 403]
+            );
+        }
+        return $authorId;
+    }
+
+    /** Keep native form state, temporary save hooks and their cleanup in one scope. */
+    private function savePreview(WP_Post $post, array $input, array $fields): int|WP_Error
+    {
+        $postId = $post->ID;
         // REST values are unslashed. Native save APIs sanitize HTML and need slashed form data.
         $payload = [
             'post_ID' => $postId,
             'post_type' => $post->post_type,
             'post_status' => $post->post_status,
-            'post_author' => $authorId,
+            'post_author' => $fields['author'],
             'post_title' => $post->post_title,
             'content' => $post->post_content,
             'excerpt' => $post->post_excerpt,
@@ -436,6 +503,7 @@ final class LivePreview
             }
         }
         // Native form-save hooks read $_POST; scope both preparation and saving to this operation.
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- REST nonce verified by preparePreview().
         $originalPost = $_POST;
         $revisionId = 0;
         $seed = null;
@@ -455,7 +523,7 @@ final class LivePreview
                 return $payload;
             }
             $payload = wp_slash($payload);
-            $seed = function (int $revisionId) use ($postId, $imageId, $authorId, $dates, $terms, &$context): void {
+            $seed = function (int $revisionId) use ($postId, $fields, &$context): void {
                 // Remember the owned source before initialization or later save callbacks can throw.
                 if ($this->ownsRevision($postId, $revisionId)) {
                     $context['source'] = ['id' => $revisionId];
@@ -464,17 +532,7 @@ final class LivePreview
                 if (!$this->ownsRevision($postId, $revisionId)) {
                     return;
                 }
-                // Revision authors identify the editor/owner, not the post's selected author.
-                update_metadata('post', $revisionId, self::AUTHOR_META, $authorId);
-                update_metadata('post', $revisionId, self::DATE_META, $dates);
-                update_metadata('post', $revisionId, self::TERMS_META, $terms);
-                if ($imageId !== null) {
-                    if ($imageId) {
-                        update_metadata('post', $revisionId, '_thumbnail_id', $imageId);
-                    } else {
-                        delete_metadata('post', $revisionId, '_thumbnail_id');
-                    }
-                }
+                $this->writePreviewFields($revisionId, $fields);
             };
             add_action('save_post_revision', $seed, 0);
             if (!defined('DOING_AUTOSAVE')) {
@@ -514,34 +572,24 @@ final class LivePreview
             );
         }
 
-        // Metadata writers can fail or be short-circuited; a source ID alone does not prove the snapshot was saved.
-        if (
-            get_post_meta($revisionId, self::AUTHOR_META, true) !== (string) $authorId
-            || get_post_meta($revisionId, self::DATE_META, true) !== $dates
-            || get_post_meta($revisionId, self::TERMS_META, true) !== $terms
-        ) {
-            return new WP_Error(
-                'aflpp_preview_fields_not_saved',
-                __('Some preview fields couldn’t be prepared. Please try again.', 'a-floating-live-preview-panel'),
-                ['status' => 409]
-            );
+        return $revisionId;
+    }
+
+    /** Revision authors identify the editor/owner, not the post's selected author. */
+    private function writePreviewFields(int $revisionId, array $fields): void
+    {
+        update_metadata('post', $revisionId, self::AUTHOR_META, $fields['author']);
+        update_metadata('post', $revisionId, self::DATE_META, $fields['dates']);
+        update_metadata('post', $revisionId, self::TERMS_META, $fields['terms']);
+        $imageId = $fields['image'];
+        if ($imageId === null) {
+            return;
         }
-        if (!hash_equals($base, $this->fingerprint($postId))) {
-            return new WP_Error(
-                'aflpp_source_changed',
-                __('The saved post changed while the preview was loading.', 'a-floating-live-preview-panel'),
-                ['status' => 409]
-            );
+        if ($imageId) {
+            update_metadata('post', $revisionId, '_thumbnail_id', $imageId);
+            return;
         }
-        $action = $this->stateAction($postId, $revisionId);
-        return new WP_REST_Response([
-            // Our state token authorizes this revision; native autosave parameters would select recovery data.
-            'url' => get_preview_post_link($post, [
-                'aflpp_post' => $postId,
-                'aflpp_revision' => $revisionId,
-                'aflpp_token' => wp_create_nonce($action),
-            ]),
-        ]);
+        delete_metadata('post', $revisionId, '_thumbnail_id');
     }
 
     private function revisionName(int $postId): string

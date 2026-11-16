@@ -62,9 +62,12 @@ export function createEditorExtensions(setupAction, context) {
                     const textual = control.localName === 'textarea'
                         || ['text', 'search', 'email', 'url', 'tel'].includes(control.type);
                     const submitted = body.getAll(control.name);
+                    let type = 'value';
+                    if (textual && submitted.length === 1) {
+                        type = control.classList.contains('wp-editor-area') ? 'html' : 'text';
+                    }
                     result.set(control.name, {
-                        type: textual && submitted.length === 1
-                            ? (control.classList.contains('wp-editor-area') ? 'html' : 'text') : 'value',
+                        type,
                         value: submitted.length === 1 ? submitted[0] : JSON.stringify(submitted),
                     });
                 }

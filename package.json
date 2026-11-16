@@ -5,7 +5,11 @@
   "scripts": {
     "build": "wp-scripts build src/classic-editor.js src/block-editor.js src/revision-browser.js src/preview-navigation.js",
     "start": "wp-scripts start src/classic-editor.js src/block-editor.js src/revision-browser.js src/preview-navigation.js",
-    "test": "node --test tests/*.mjs"
+    "test": "node --test tests/*.mjs",
+    "lint": "npm run lint:js && npm run lint:css",
+    "lint:js": "wp-scripts lint-js src --max-warnings=0",
+    "lint:css": "wp-scripts lint-style src/panel/panel.css --max-warnings=0",
+    "format:css": "prettier --write --tab-width 4 --no-use-tabs src/panel/panel.css"
   },
   "dependencies": {
     "@wordpress/api-fetch": "8.1.0",
@@ -19,5 +23,15 @@
   },
   "devDependencies": {
     "@wordpress/scripts": "37.1.0"
+  },
+  "cssnano": {
+    "preset": [
+      "default",
+      {
+        "discardComments": {
+          "removeAll": false
+        }
+      }
+    ]
   }
 }
