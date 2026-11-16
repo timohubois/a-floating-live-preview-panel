@@ -2,8 +2,9 @@
 Contributors: timohubois
 Tags: preview, editor
 Requires at least: 6.7
-Requires PHP: 8.3
+Tested up to: 7.1
 Stable tag: trunk
+Requires PHP: 8.3
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -11,118 +12,119 @@ See your changes in a floating preview while you edit posts, pages and supported
 
 == Description ==
 
-A Floating Live Preview Panel adds a movable, resizable frontend preview to WordPress's post Block Editor, classic editing screens and the native revision browser. Your theme and plugins render the output through WordPress's native preview routing, including redirects and browser-native output such as PDFs.
+A Floating Live Preview Panel adds a movable, resizable frontend preview to WordPress's post Block Editor, classic editing screens and native revision browser. Your theme and plugins render the output through WordPress's normal preview routing.
 
-Live updates write a separate internal preview revision, not the saved parent post or WordPress's recovery autosave, and do not publish changes. Preview revisions do not appear in the normal revision history or trigger the newer-autosave notice. Use the normal WordPress save, update or publish controls to save your changes to the post.
+Live updates use a separate internal preview revision. They do not publish changes, update the saved post or overwrite WordPress's recovery autosave. Use the normal **Save**, **Update** or **Publish** controls to save your work.
 
 **Features**
 
-* Move, resize or dock the preview without leaving the editor. Keyboard movement and resizing are supported.
-* Preview the selected To revision while navigating WordPress's revision browser, without restoring it or changing saved content.
-* Switch between Computer, Tablet and Phone viewports without reloading the preview. Click the selected Tablet or Phone button again to rotate between portrait and landscape. Computer stays in landscape.
-* Use one Zoom control for Auto, Fit to panel, Fill width or Choose zoom, with a native slider and number field. Panel resizing changes only visual scale; the selected viewport dimensions stay fixed.
-* Follow changed content automatically, or turn off Scroll to my changes to retain manual positioning.
-* Remember whether the preview is open, its size and position, and the selected viewport, zoom mode, custom percentage and orientations for each user. Use full screen or Keep on top where supported.
+* Move, resize or dock the preview without leaving the editor, with keyboard movement and resizing.
+* Preview saved revisions while navigating WordPress's revision browser, without restoring or changing content.
+* Switch between Computer, Tablet and Phone viewports. Click the selected Tablet or Phone button again to rotate it.
+* Choose Auto, Fit to panel, Fill width or a custom zoom. Viewport dimensions stay fixed while visual scale changes.
+* Follow detected content changes automatically, or turn off Scroll to my changes to retain manual positioning.
+* Remember visibility, layout, viewport and scrolling preferences per user. Use fullscreen or Keep on top where supported.
 
 **Before you start**
 
-Requires WordPress 6.7+, PHP 8.3+, a saved post in a frontend-viewable post type, and permission to edit it. Live editing requires the post Block Editor or classic editor and enabled revisions. ACF is optional.
+Requires WordPress 6.7+, PHP 8.3+, a saved post in a frontend-viewable post type and permission to edit it. Live editing also requires enabled revisions. ACF, Timber, Yoast SEO and Flynt are optional.
 
-The admin and frontend must share an origin and the browser must support ES modules. Live editing additionally requires working authenticated WordPress REST requests and Web Locks in a secure context. Composer and Node.js are not required to run the plugin.
+The admin and frontend must share an origin. The browser must support ES modules; live editing additionally requires authenticated WordPress REST requests and Web Locks in a secure context. The Site Editor and unsaved changes to separate entities such as synced patterns are not supported.
 
-**Development status:** not a verified release. An installed ZIP has passed core-only browser smoke tests on WordPress 6.7 and 7.1.4 with PHP 8.3 and the default Twenty Twenty-Five theme, covering both editors, featured images, native saves/autosaves and read-only revision previews. Stable-WordPress ACF PRO 6.8.11 checks also passed with its datastore disabled and enabled. Earlier Flynt/ACF checks used WordPress 7.1.2 and 7.2-beta5; administrator classic integration was rechecked with Ask the Origin 1.1.2. These focused checks do not establish a general browser, theme or ACF compatibility range; see README.md for the verified scope.
+This is unreleased development code. Use a disposable local or staging site to check your intended workflow. Focused installed-package checks passed on WordPress 6.7 and 7.1.4 with PHP 8.3 and Twenty Twenty-Five; optional integration checks are configuration-specific, not a general browser, theme or plugin compatibility guarantee.
 
 == Installation ==
 
-Use a disposable local or staging WordPress installation while this is in development.
+1. Upload the built plugin folder to /wp-content/plugins/a-floating-live-preview-panel/ and activate **A Floating Live Preview Panel** under **Plugins**. A Git checkout or automatic source ZIP requires an asset build first; see the repository README. Composer and Node.js are not required to run a built package.
+2. Open a post, page or supported custom post type in its Block Editor or classic editor. Save new posts as drafts first; the Block Editor panel becomes available without reloading.
+3. Open **Live preview**, edit a supported field and the preview refreshes after a short pause.
+4. Move the panel by its titlebar and resize it from its borders or corners. Use **Preview options** for docking, reset and other settings.
+5. Save your work using WordPress's normal save, update or publish controls.
 
-1. Place the plugin in /wp-content/plugins/a-floating-live-preview-panel/ and activate **A Floating Live Preview Panel**.
-2. Open a post, page or frontend-viewable custom post type in its Block Editor or classic editing screen. New posts need a native draft save first; the Block Editor panel becomes available without reloading. The plugin does not force saves or enable revisions for you.
-3. Use the compact preview window or **Live preview** launcher. Edit supported fields and the preview refreshes after a short pause.
-4. Move the window by its plain titlebar or drag the closed **Live preview** launcher; they share one position. Resize from usable borders and corners. Arrow keys work on the move grip, launcher and single boundary resize control; hold Shift for larger steps. Use **Preview options** for **Move preview to**, **Reset preview window** and other window options. The remembering, scrolling and reset actions include short explanations. WordPress’s normal Preview button remains available; the panel has no separate new-tab action.
-5. Use WordPress's normal save, update or publish controls to save your changes to the post.
+The plugin does not force saves or enable revisions. WordPress's normal **Preview** button remains available.
 
 == Frequently Asked Questions ==
 
-= Can I preview saved revisions? =
-
-Yes. Open WordPress's native revision browser and use **Revision preview**. The panel follows the right-hand **To** selection when you move the slider or use Previous/Next. Its caption identifies the displayed revision by date and author. Comparison and Restore remain native WordPress controls; browsing the preview does not restore content, write internal revisions or overwrite recovery autosaves. The same panel controls and per-user preferences apply.
-
-Title, content, excerpt, revision-enabled post metadata and stored ACF values come from the selected revision. The current-post entry uses saved parent data. Themes, styles, global settings, related content and unrevisioned metadata remain current; this is not a complete historical site snapshot. Missing historical fields cannot be reconstructed. Reload the revision browser if a source is removed or its preview URL expires.
-
 = Which fields update live? =
 
-Both editors preview title, content, excerpt and supported post-local ACF fields. The Block Editor supplies serialized blocks in visual or code mode and previews author, publication date/time and taxonomy assignment changes, plus featured-image selection, replacement and removal. ACF meta boxes use native form values and the shared ACF save integration; ACF blocks retain their native content-save hooks, including post-meta storage. With Yoast SEO, the Block Editor also previews native primary-term selections and the configured taxonomy breadcrumb trail. Other arbitrary non-ACF metadata, template selections and unsaved separate entities are not live inputs. Native ACF/legacy meta-box saving remains intact; saved values become the new baseline. ACF support depends on compatible field and revision APIs; not every field type has been verified. Paginated repeaters use ACF's native row merging to preserve unloaded saved rows and edits retained across pages.
+Both editors preview title, content, excerpt and supported post-local ACF fields. The Block Editor also previews author, publication date/time, taxonomy assignments and featured-image selection, replacement and removal. Dates affect the preview, not publishing status or scheduling.
 
-Publication dates update frontend post objects, Timber imports and native Post Date blocks without changing publishing status, scheduling or last-modified fields. Categories, tags and REST-enabled custom taxonomies update standard term lists, native Post Terms blocks and standard Timber post.category, post.categories() and post.terms() reads. The Timber bridge preserves native term objects and query options, but does not replace theme-specific Post subclasses or relationship-dependent query modes. Direct relationship reads such as has_term(), wp_get_object_terms() and related/archive queries remain native; unsaved assignments are never written into shared relationship caches. Saved-history previews retain current saved dates and taxonomy assignments.
-
-Core's native Post Excerpt block uses the authorized preview excerpt, or generates one from preview content when it is cleared. Selected saved revisions work the same way. A scoped adapter delegates to core's unchanged renderer while preserving original-post links, other-post contexts, filters and excerpt settings; it does not change global post IDs or cached posts. Custom renderers and other saved-post-by-ID reads are not adapted automatically. Native WordPress Preview outside the panel remains unchanged, including the stale published-post excerpt behavior reproduced on WordPress 6.7 and 7.1.4. The focused fix passed packaged core-only browser and PHP checks on both versions; see README.md for scope and upstream history.
-
-The plugin respects ACF's opt-in datastore when already enabled; it never enables it or edits Gutenberg's metadata to prepare a preview. After native meta-box saving, the panel waits for ACF to replace its paginated rows before resuming. If that reload fails, it retains the last preview and asks you to reload rather than resetting ACF's row markers. Live previews do not provide crash recovery: Gutenberg skips legacy meta boxes during native autosave, and ACF datastore recovery behavior remains ACF's responsibility.
-
-Yoast support uses its existing primary-term controls and native breadcrumb renderer. Ancestors, unset/deepest-term fallback, custom breadcrumb titles and parent hierarchy are preserved. A scoped guard blocks this post's lazy indexable/primary-model saves; bulk metadata and indexed repositories retain saved values, and saved-history previews retain current saved taxonomy behavior. The theme must already output Yoast breadcrumbs; the adapter does not add or enable them, change ordinary Timber category lists into primary lookups, capture SEO title/meta description, or take over analysis scores. No Flynt changes are required. See README.md for tested versions and integration scope.
+Arbitrary non-ACF metadata, template selections and unsaved separate entities are not live inputs. Standard term lists and supported Timber term reads can use unsaved assignments; direct relationship queries and related/archive queries remain saved.
 
 = Are ACF, Timber, Yoast or Flynt required? =
 
-No. The preview uses WordPress's normal frontend rendering APIs. Explicit compatibility owners keep adaptations separate: CoreBlocks supplies authorized source fields to core's native Post Excerpt renderer and live author/date selections to native author/avatar/date output; optional ACF handles supported post-local fields and their save/read contracts; optional Timber makes its post imports read title, content, excerpt, live author and publication dates from the authorized preview source, and adapts standard category/tag/custom-term lists for the selected live post. Optional Yoast handles native primary-term selections, breadcrumb trails and scoped indexable write protection. These integrations do not change preview permissions or replace theme rendering. Flynt is a local test theme, not a separate integration or requirement. Each adapter checks its own required APIs before use and removes its temporary hooks when the write or preview request ends. Missing dependencies leave core previews working; submitted ACF values without its save APIs produce a clear error rather than being discarded. This is not a guarantee across all dependency versions; see README.md for ownership and scope.
+No. Core previews work without them. Optional ACF support uses native field and revision APIs, including paginated repeater merging and post-meta block saving. Not every field type or dependency version has been verified. The plugin respects ACF's datastore setting; it does not enable it.
 
-= Does this replace saving or publishing? =
+Optional Timber support adapts standard post imports and term lists, not theme-specific Post subclasses or arbitrary relationship queries. Optional Yoast support uses its existing Block Editor primary-term controls and native breadcrumb renderer; the theme must already output breadcrumbs. SEO title, meta description and analysis scores are not live inputs. Flynt is a test theme, not a separate integration or requirement.
 
-No. It writes a separate internal preview revision per user and post, without updating the saved parent post, overwriting recovery autosaves or publishing changes. Preview revisions are reused on refresh and deleted when the parent post is updated or permanently deleted. WordPress's normal server autosave continues independently, including its usual updates to your own drafts. Closing the preview does not discard editor fields.
+= Can I preview saved revisions? =
 
-= What happens when I save, update or publish? =
+Yes. Open WordPress's native revision browser and use **Revision preview**. The panel follows the right-hand **To** selection and identifies the displayed revision by date and author. Comparison and Restore remain native WordPress controls. Browsing does not restore content, write live-preview revisions or overwrite recovery autosaves.
 
-An open panel keeps its last frame while outstanding live writes finish and WordPress validates and submits the form. Live updates pause during this action and resume if browser, WordPress or ACF validation rejects it. Classic saves use the normal editor reload. Block Editor saves and autosaves keep the editor open, wait for legacy meta-box saves, then resume previewing against the acknowledged saved state. A panel you explicitly closed stays closed. If the saved state cannot be confirmed, preserve your edits and reload; the panel never guesses a new baseline or prevents WordPress from saving.
+Title, content, excerpt, revision-enabled metadata and stored ACF values come from the selected source. The current-post entry uses saved parent data. Themes, styles, global settings, dates, taxonomy assignments and unrevisioned metadata remain current. Missing historical fields cannot be reconstructed; this is not a complete historical site snapshot.
 
-= What happens when I use WordPress's Preview button? =
+= Does this replace saving, autosave or crash recovery? =
 
-The panel and its last frame stay visible while outstanding live writes finish. Native Preview retains WordPress's normal behavior, including saving changes to your own drafts, and live updates normally resume afterward. Block Editor native REST saves and autosaves use request-specific fingerprint receipts. Classic Preview and block-editor legacy meta-box saves use an acknowledgement cookie containing fingerprints, not editor content; it is cleared on completion and expires after one minute.
+No. Live previews write a separate internal revision per user and post. These revisions stay out of normal revision history, do not trigger the newer-autosave notice, and are reused on refresh. They are deleted when the parent post is updated or permanently deleted.
 
-In the classic editor, if native Preview saves additions, deletions or reordering in a draft's paginated ACF repeaters, the panel keeps its last frame but asks you to reload. ACF's remaining row changes still refer to the old saved order. Copy any later edits, then reload the editor before saving again.
+WordPress's normal autosaves continue independently, including their usual updates to your own drafts. Closing the preview does not discard editor fields. The panel is not crash recovery; native editor and ACF recovery limitations still apply.
 
-= Does it work with the Block Editor? =
+= What happens when I save or use WordPress's Preview button? =
 
-Yes, for posts, pages and frontend-viewable custom post types that use the post Block Editor. Title, serialized block content, excerpt, author, publication dates, taxonomy term lists, supported post-local ACF fields and featured images update live, and new posts become eligible after their first native save. The Site Editor and unsaved changes to separate entities such as synced patterns are excluded. Saved post revisions can also be previewed through WordPress's native revision browser.
+An open panel keeps its last frame while outstanding live writes finish and WordPress saves or opens native Preview. Live updates pause and resume after the saved state is confirmed, or if validation rejects the save. Classic saves reload the editor normally. Block Editor saves wait for legacy meta-box saving and ACF row reloads where needed. An explicitly closed panel stays closed.
 
-= What does Scroll to my changes do? =
-
-It combines submitted editor-value changes, HTML captured before frontend scripts and the loaded DOM to identify content, structure and attribute changes without theme-specific mapping. Matching old → new values strengthen candidates, but conditional or transformed output does not require a literal text match. Non-content regions, including Xdebug diagnostic tables, are excluded by default; PHP integrations can change the complete list with `aflpp_preview_comparison_excluded_selectors`. After identifying a change, hidden content falls back to its nearest visible ancestor without opening widgets. This can be a broader container. Ambiguous matches retain position instead of guessing. Shorter changes are normally centered; taller ones are shown from their beginning. Ordinary ARIA labels and states are comparable; identity/reference-only changes need corroborating authored values. Stylesheet-only edits, replaced content, transformed values and dynamic output may still resist reliable localization. Complex headers may obscure content. Turn following off to retain manual positioning and skip comparison snapshots. Turning following on refreshes the preview once to establish a baseline while retaining position. Once the preview is ready, further edits can be followed. PDF page, zoom and scroll state are browser-owned and may reset on refresh.
+If the saved state or ACF row reload cannot be confirmed, preserve your edits and reload. The panel does not guess a new baseline or prevent WordPress from saving. In the classic editor, native Preview that saves structural changes to a draft's paginated ACF repeaters also requires reloading before further saving; copy any later edits first.
 
 = How do viewports and zoom work? =
 
-Computer uses a representative 1280 × 800 CSS-pixel viewport, tablet 768 × 1024 and mobile 390 × 844. Click a different device button to select it; click the already selected Tablet or Phone button again to rotate. Computer stays in landscape. The selected Tablet or Phone icon turns with the orientation and its tooltip explains the next action. Tablet and Phone each remember their own orientation; no separate rotate control is needed. These are viewport sizes, not full device, user-agent or touch emulation.
+Computer uses 1280 × 800 CSS pixels, Tablet 768 × 1024 and Phone 390 × 844. Click the selected Tablet or Phone button again to rotate it; each remembers its own orientation. These are representative viewport sizes, not device, user-agent or touch emulation.
 
-One native WordPress Zoom popover offers a Zoom mode radio group with Auto, Fit to panel, Fill width and Choose zoom, each with a short, plain-English explanation. Only Choose zoom reveals the native Zoom (%) slider and number field; choosing a mode applies it without closing the popover. Auto is the default: it fits the whole viewport for every device and orientation, capped at screen-pixel 1:1 (100%), so only the webpage needs scrolling. Auto stays selected while adapting to the device, orientation, available space and displaying-window DPR. Fit to panel fits both dimensions; Fill width fills the canvas width while keeping the full preset height and proportions. Both can enlarge beyond 100%. Choose zoom accepts whole percentages from 10 to 400, including 80% and screen-pixel 1:1 at 100%, and stays fixed even when canvas navigation is needed. The native number field clamps out-of-range numbers to 10–400; empty and fractional values are not saved. Enter closes a valid custom value; Escape closes the popover and restores focus. The closed control shows only the selected mode name. The last custom percentage is retained when switching back to fitting. The adjacent readout combines the selected CSS-pixel viewport size and current zoom, such as 1280 × 800 px · 75%. The earlier capped whole-screen preference is restored as Auto.
+**Auto** fits the whole viewport, capped at screen-pixel 1:1. **Fit to panel** fits both dimensions and can enlarge beyond 100%. **Fill width** fills the canvas width while preserving the full viewport height. **Choose zoom** accepts whole percentages from 10 to 400 and stays fixed when you resize the panel.
 
-Every zoom mode preserves the same CSS-pixel viewport dimensions: panel resizing and zoom never change media queries, text wrapping or viewport-height units. At an exact 100%, each viewport CSS pixel occupies one physical screen pixel, using a CSS transform of 1 / devicePixelRatio. Computed fitting percentages are rounded for display; the "100% = pixel for pixel." note defines the 100% reference rather than describing every current zoom. DPR is detected automatically from the displaying window, including PiP's own window, and shown as two always-visible, read-only lines at the bottom of the Zoom popover, without a heading or collapsible section. Monitor changes and browser zoom update it automatically; selecting a device preset does not select a device DPR. This provides screen-pixel 1:1 sizing, not calibrated handset dimensions in centimetres or device-DPR emulation. If the viewport extends beyond the canvas in Fill width or Choose zoom, use the outer canvas's scrollbars, or Tab to the canvas and use arrow keys. Choose zoom can need navigation on both axes; Fill width needs only vertical navigation. The webpage keeps its own scroll position inside the iframe. Verified HTML previews use native scroll containment, so reaching a webpage boundary does not move the canvas; unverified and browser-native output is left untouched. Empty canvas is allowed around the preview. All presentation modes use the same controls; a narrow footer wraps.
+Every mode preserves CSS viewport dimensions, media queries and text wrapping. At exactly 100%, one preview CSS pixel occupies one physical screen pixel; the displaying window's device pixel ratio is detected automatically. Use the outer canvas scrollbars, or focus the canvas and use arrow keys, when the viewport extends beyond it. The webpage keeps its own scroll position inside the frame.
+
+= What does Scroll to my changes do? =
+
+It compares submitted values and rendered output to locate changed content, structure or attributes without theme-specific mapping. Hidden changes fall back to a visible ancestor without opening widgets. Ambiguous matches retain position rather than guessing. Dynamic output, transformed values and complex headers can limit accuracy.
+
+Turn it off to retain manual positioning and skip comparison snapshots. Turning it on refreshes once to establish a baseline. Known non-content regions, including Xdebug diagnostics, are excluded from comparison without hiding their output. PHP integrations can customize this policy with `aflpp_preview_comparison_excluded_selectors`.
 
 = Which settings are remembered? =
 
-Whether the preview is open, the selected viewport, zoom mode, custom percentage and tablet and phone orientations, Scroll to my changes and layout settings are stored per WordPress user across posts, both editors and the revision browser. Remember open or closed, Remember size and position and Scroll to my changes are on by default; the initial viewport is Computer at Auto, desktop stays in landscape, tablet and mobile start in portrait, and the initial panel is 480 × 393 px, compact, bottom-right. Disabling Remember open or closed starts the preview open on each new screen load, independently of its layout.
+Visibility, size and position, viewport, zoom mode, custom percentage, Tablet and Phone orientations, and Scroll to my changes are stored per user across posts, both editors and the revision browser. Remember open or closed, Remember size and position, and Scroll to my changes are on by default. The initial panel is compact, bottom-right, 480 × 393 px, with Computer at Auto zoom.
 
-Remember size and position restores compact dimensions, custom placement or responsive docking, the shared panel/launcher anchor and expanded/compact mode. Turning it off leaves the current layout untouched and discards its saved geometry. Each new screen load then starts at the default compact size and your preferred Move preview to preset. Move preview to choices are always saved; dragging does not erase that preference. Closing and reopening without reloading keeps the current layout. Re-enabling remembering saves the current layout instead of restoring an old one. Reset preview window restores 480 × 393 px, compact, bottom-right and saves that preset without changing the remembering preference. Restored layouts fit the current window without overwriting preferred bounds; full screen and Keep on top never reopen automatically.
+Disabling visibility remembering starts the preview open on each new screen load. Disabling layout remembering leaves the current layout untouched but discards saved geometry; later loads use the default size at the preferred docking preset. Docking presets are saved independently. Reset preview window restores the default compact size and bottom-right preset without changing the remembering setting. Fullscreen and Keep on top never reopen automatically.
 
-Deactivation keeps preferences; uninstalling through WordPress removes the plugin's server-stored preferences.
+= Can I use the controls with a keyboard? =
 
-= What happens when I uninstall the plugin? =
-
-Uninstalling through WordPress removes internal preview revisions and their metadata, and only this plugin's namespace in persisted user preferences. On multisite, cleanup covers all sites. Saved posts, normal revisions, recovery autosaves and unrelated preferences are preserved. Deactivation alone does not remove data. Browser-local WordPress preference backups cannot be directly erased by PHP; cleaned server preferences receive a fresh timestamp.
+Yes. Arrow keys move the focused move grip or closed launcher and resize through the boundary resize control; hold Shift for larger steps. Opening by keyboard focuses Preview options without trapping focus. Closing returns focus to the launcher. Device buttons use arrow-key navigation, and Escape closes the Zoom popover and restores focus.
 
 = What happens with multiple editor tabs? =
 
-**Use preview here** switches preview ownership after pending writes finish. Each tab keeps its own fields; values are not copied or merged. Handover is cooperative within the same browser. If it fails, preserve unsaved edits and close the other preview manually before retrying. Other browsers and devices are not coordinated; this is not a collaborative editing tool.
+**Use preview here** switches ownership after pending writes finish. Each tab keeps its own fields; values are not copied or merged. Coordination is limited to the same browser. If handover fails, preserve unsaved edits and close the other preview before retrying. Other browsers and devices are not coordinated; this is not collaborative editing.
 
 = Why is the preview blank or not updating? =
 
-Check edit permission, revisions, REST authentication and browser support. Site and browser embedding restrictions still apply; do not weaken them to force an embedded preview. Use WordPress’s normal **Preview** button when a preview cannot be embedded. **Preview updated** means a document loaded, not that its content was verified or published; login or error pages can also load.
+Check edit permission, enabled revisions, REST authentication and browser support. Site and browser embedding restrictions still apply; do not weaken them to force embedding. Use WordPress's normal **Preview** button when a preview cannot be embedded.
+
+**Preview updated** means a document loaded, not that its content was verified or published. Login and error pages can also load. PDFs and other browser-native output may have limited scrolling or state restoration.
 
 = Is the preview isolated from the editor? =
 
 No. The preview is not sandboxed. Frontend scripts run with normal browser permissions, and same-origin scripts can access the editor. Only use trusted theme and plugin code.
 
+= What happens when I disable or remove it? =
+
+Deactivation retains preview data and preferences. Uninstalling through WordPress removes internal preview revisions, their metadata and only this plugin's namespace in persisted user preferences. On Multisite, cleanup covers all sites. Saved posts, normal revisions, recovery autosaves and unrelated preferences are preserved. Browser-local preference backups cannot be directly erased by PHP.
+
 == Want to contribute? ==
 
-For compatibility reports, include the WordPress and PHP versions, browser, editor, theme, any active ACF version and steps to reproduce. Keep credentials and private site data out of reports.
+Report issues or contribute through the project repository. Include WordPress and PHP versions, browser, editor, theme, optional integration versions and steps to reproduce. Keep credentials and private site data out of reports.
+
+== Changelog ==
+
+= Unreleased =
+* Initial development version with live editor previews and read-only saved-revision previews.
 
 == License ==
 
