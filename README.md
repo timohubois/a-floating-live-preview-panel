@@ -14,7 +14,7 @@ Live updates use a separate internal preview revision. They do not publish chang
 
 ACF, Timber, Yoast SEO and Flynt are optional, not requirements. Composer and Node.js are not required to run a built plugin package. The Site Editor and unsaved changes to separate entities such as synced patterns are not supported.
 
-This is unreleased development code. Check your intended workflow on a disposable local or staging site. See [verification scope](docs/development.md#installed-zip-verification) for recorded checks and remaining compatibility limits.
+Check your intended workflow on a local or staging site before using the plugin on a live site. See [verification scope](docs/development.md#installed-zip-verification) for recorded checks and remaining compatibility limits.
 
 ## Installation
 
@@ -84,7 +84,9 @@ Edit authored assets in `src/`, not generated files in `build/`. Rebuild after s
 
 ## Releases
 
-The plugin is currently unreleased (`0.0.0`, stable tag `trunk`). Before releasing, set the plugin header version and `readme.txt` stable tag to the same numeric version and update the changelog. Configure the repository's `SVN_USERNAME` and `SVN_PASSWORD` Actions secrets and confirm access to the WordPress.org slug.
+Version `1.0.0` is prepared for initial WordPress.org submission. Push only `main` and build the submission ZIP locally; do not push a release tag before approval and SVN access. Version metadata alone does not trigger deployment.
+
+For subsequent releases, keep the plugin header version, `readme.txt` stable tag and changelog in sync. Configure the repository's `SVN_USERNAME` and `SVN_PASSWORD` Actions secrets and confirm access to the approved WordPress.org slug.
 
 Push the release commit to `main`, then a numeric tag such as `1.0.0` without a `v` prefix. **Pushing a release tag publishes the plugin:** the workflow runs the checks, builds assets, deploys to WordPress.org and creates a GitHub release with the installable ZIP. GitHub's automatic source ZIP is not an installable package.
 
@@ -92,7 +94,7 @@ The manual **Publish listing assets and readme** workflow updates the live WordP
 
 ## Contributing
 
-For compatibility reports, include WordPress and PHP versions, browser, editor, theme, optional integration versions and steps to reproduce. Keep credentials and private site data out of reports.
+Report issues or contribute on [GitHub](https://github.com/timohubois/a-floating-live-preview-panel/). For compatibility reports, include WordPress and PHP versions, browser, editor, theme, optional integration versions and steps to reproduce. Keep credentials and private site data out of reports.
 
 ## License
 

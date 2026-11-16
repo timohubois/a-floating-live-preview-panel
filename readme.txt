@@ -3,7 +3,7 @@ Contributors: timohubois
 Tags: preview, editor
 Requires at least: 6.7
 Tested up to: 7.1
-Stable tag: trunk
+Stable tag: 1.0.0
 Requires PHP: 8.3
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -31,11 +31,11 @@ Requires WordPress 6.7+, PHP 8.3+, a saved post in a frontend-viewable post type
 
 The admin and frontend must share an origin. The browser must support ES modules; live editing additionally requires authenticated WordPress REST requests and Web Locks in a secure context. The Site Editor and unsaved changes to separate entities such as synced patterns are not supported.
 
-This is unreleased development code. Use a disposable local or staging site to check your intended workflow. Focused installed-package checks passed on WordPress 6.7 and 7.1.4 with PHP 8.3 and Twenty Twenty-Five; optional integration checks are configuration-specific, not a general browser, theme or plugin compatibility guarantee.
+Check your intended workflow on a local or staging site before using the plugin on a live site. Focused installed-package checks passed on WordPress 6.7 and 7.1.4 with PHP 8.3 and Twenty Twenty-Five; optional integration checks are configuration-specific, not a general browser, theme or plugin compatibility guarantee.
 
 == Installation ==
 
-1. Upload the built plugin folder to /wp-content/plugins/a-floating-live-preview-panel/ and activate **A Floating Live Preview Panel** under **Plugins**. A Git checkout or automatic source ZIP requires an asset build first; see the repository README. Composer and Node.js are not required to run a built package.
+1. Upload the built plugin folder to /wp-content/plugins/a-floating-live-preview-panel/ and activate **A Floating Live Preview Panel** under **Plugins**. A Git checkout or automatic source ZIP requires an asset build first; see the [repository README](https://github.com/timohubois/a-floating-live-preview-panel/#installation). Composer and Node.js are not required to run a built package.
 2. Open a post, page or supported custom post type in its Block Editor or classic editor. Save new posts as drafts first; the Block Editor panel becomes available without reloading.
 3. Open **Live preview**, edit a supported field and the preview refreshes after a short pause.
 4. Move the panel by its titlebar and resize it from its borders or corners. Use **Preview options** for docking, reset and other settings.
@@ -119,12 +119,15 @@ Deactivation retains preview data and preferences. Uninstalling through WordPres
 
 == Want to contribute? ==
 
-Report issues or contribute through the project repository. Include WordPress and PHP versions, browser, editor, theme, optional integration versions and steps to reproduce. Keep credentials and private site data out of reports.
+Report issues or contribute on [GitHub](https://github.com/timohubois/a-floating-live-preview-panel/). Include WordPress and PHP versions, browser, editor, theme, optional integration versions and steps to reproduce. Keep credentials and private site data out of reports.
 
 == Changelog ==
 
-= Unreleased =
-* Initial development version with live editor previews and read-only saved-revision previews.
+= 1.0.0 =
+* Initial release with floating live previews in the Block Editor and classic editor.
+* Preview saved revisions without restoring or changing content.
+* Add responsive viewport presets, zoom, change following and per-user window preferences.
+* Integrate supported ACF fields, Timber post reads and Yoast primary terms and breadcrumbs.
 
 == License ==
 

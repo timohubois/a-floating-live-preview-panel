@@ -2,8 +2,9 @@
 
 /**
  * Plugin Name:       A Floating Live Preview Panel
+ * Plugin URI:        https://github.com/timohubois/a-floating-live-preview-panel/
  * Description:       See your changes in a floating preview while you edit posts and pages.
- * Version:           0.0.0
+ * Version:           1.0.0
  * Requires at least: 6.7
  * Requires PHP:      8.3
  * Author:            Timo Hubois
