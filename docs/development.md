@@ -193,6 +193,11 @@ Flynt/ACF browser evidence remains separate and configuration-specific.
 
 ### GitHub Actions and releases
 
+For initial WordPress.org submission, set the plugin version, stable tag and changelog,
+push only `main`, and build the submission ZIP locally. Do not push a release tag before
+approval, SVN access and deployment credentials are in place. Version metadata alone
+does not trigger deployment; pushing a release tag does.
+
 The workflows use the same 10up WordPress.org deployment and GitHub release actions
 as the other plugins, with an explicit asset build before packaging:
 
@@ -207,15 +212,15 @@ as the other plugins, with an explicit asset build before packaging:
   as skipped, not verified. ACF checks still require a separate test site with ACF Pro.
   A separate job checks the built distribution with WordPress Plugin Check.
 - **Deploy and Release Plugin** runs on numeric tags such as `1.0.0`, without a `v`
-  prefix. The tag, plugin header version and `readme.txt` stable tag must match;
-  development placeholders must be updated before releasing. It waits for the
-  checks, builds again in the deploy job, deploys via
+  prefix. The tag, plugin header version and `readme.txt` stable tag must match.
+  It waits for the checks, builds again in the deploy job, deploys via
   `10up/action-wordpress-plugin-deploy`, and attaches that action's ZIP to the GitHub
   release. Jobs do not share local generated files. Packaging uses `.distignore`,
   so the ignored local `build/` directory is included, while development files are
   excluded. The archive is checked for matching versions and built assets.
 - **Publish listing assets and readme** is a manual workflow restricted to `main`;
-  it updates the WordPress.org listing without a plugin release.
+  it updates the live WordPress.org listing without a plugin release. Use it only
+  after the matching code version has been released.
 
 Configure the repository secrets `SVN_USERNAME` and `SVN_PASSWORD` before publishing
 and ensure the WordPress.org slug is available to that account. GitHub's normal
