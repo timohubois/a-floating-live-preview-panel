@@ -416,6 +416,19 @@ async function nativeViewportControlTests(strings) {
             });
             sync();
             await pause();
+            if (mode === 'floating' && width === 480) {
+                panel.style.height = '393px';
+                viewport.select('desktop');
+                await pause();
+                const canvas = panel.querySelector('.aflpp-canvas');
+                check(canvas.clientWidth === 480 && canvas.clientHeight === 300,
+                    `The default panel must hug the Computer preview: ${canvas.clientWidth}×${canvas.clientHeight}.`);
+                check(viewport.zoomPercent === Math.min(100, Math.round(37.5 * devicePixelRatio)),
+                    'Computer Auto respects the fitting scale and the 100% cap.');
+                panel.style.height = '340px';
+                viewport.select('tablet');
+                await pause();
+            }
             const checkIcons = () => {
                 for (const button of panel.querySelectorAll('[data-viewport]')) {
                     const svg = button.querySelector('svg');

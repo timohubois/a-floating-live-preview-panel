@@ -364,10 +364,10 @@ test('compact geometry is restored without writing preferences on load', () => {
     assert.equal(h.writes.length, 0);
 });
 
-test('remembering size and position defaults to on with a 480×400 bottom-right panel', () => {
+test('remembering size and position defaults to on with a 480×393 bottom-right panel', () => {
     const h = fixture(true);
     assert.equal(h.state.rememberPosition, true);
-    assert.deepEqual(h.rect(), { left: 940, top: 580, width: 480, height: 400 });
+    assert.deepEqual(h.rect(), { left: 940, top: 587, width: 480, height: 393 });
     assert.equal(h.actions.size, undefined, 'Named size presets are no longer actions.');
     assert.equal(h.state.dock, 'right');
     assert.equal(h.state.mode, 'expand');
@@ -382,11 +382,11 @@ test('the new default fits a small window temporarily without saving smaller dim
     const h = fixture(true, { width: 390, height: 300 });
     inside(h);
     assert.ok(h.rect().width < 480);
-    assert.ok(h.rect().height < 400);
+    assert.ok(h.rect().height < 393);
     h.window.innerWidth = 1440;
     h.window.innerHeight = 1000;
     h.window.fire('resize');
-    assert.deepEqual(h.rect(), { left: 940, top: 580, width: 480, height: 400 });
+    assert.deepEqual(h.rect(), { left: 940, top: 587, width: 480, height: 393 });
     assert.equal(h.state.fit, 'automatic');
     assert.equal(h.preferences.get('layout'), undefined);
     assert.equal(h.writes.length, 0);
@@ -421,7 +421,7 @@ for (const position of ['left', 'center', 'right']) {
         assert.equal(reopened.rect().width, 480);
         assert.deepEqual(reopened.rect(), {
             left: position === 'left' ? 20 : position === 'center' ? 260 : 500,
-            top: 380, width: 480, height: 400,
+            top: 387, width: 480, height: 393,
         });
         assert.equal(reopened.writes.length, 0);
     });
@@ -735,7 +735,7 @@ for (const rememberPosition of [false, true]) {
         h.resizeTo(640, 440);
         h.actions.mode();
         h.actions.reset();
-        assert.deepEqual(h.rect(), { left: 940, top: 580, width: 480, height: 400 });
+        assert.deepEqual(h.rect(), { left: 940, top: 587, width: 480, height: 393 });
         assert.equal(h.state.rememberPosition, rememberPosition);
         assert.equal(h.preferences.get('position'), 'right');
         assert.equal(!!h.preferences.get('layout'), rememberPosition);
@@ -789,7 +789,7 @@ for (const dock of ['left', 'center', 'right']) {
         h.window.fire('resize');
         assert.equal(h.writes.length, writes, 'automatic fitting must not overwrite user choices');
         assert.equal(h.rect().left, dock === 'left' ? 20 : dock === 'center' ? 260 : 500);
-        assert.equal(h.rect().top, 380);
+        assert.equal(h.rect().top, 387);
         inside(h);
         const reopened = fixture(true, { preferences: h.preferences, width: 1000, height: 800 });
         assert.equal(reopened.state.dock, dock);
@@ -1017,7 +1017,7 @@ for (const invalid of [
         const h = fixture(true, { layout: invalid });
         assert.equal(h.state.dock, 'right');
         assert.equal(h.state.mode, 'expand');
-        assert.deepEqual(h.rect(), { left: 940, top: 580, width: 480, height: 400 });
+        assert.deepEqual(h.rect(), { left: 940, top: 587, width: 480, height: 393 });
     });
 }
 
@@ -1037,7 +1037,7 @@ test('temporary viewport fitting does not lose the preferred custom size or posi
 test('reset restores compact default size and bottom-right position', () => {
     const h = fixture(true, { layout: layout({ expanded: true }) });
     h.actions.reset();
-    assert.deepEqual(h.rect(), { left: 940, top: 580, width: 480, height: 400 });
+    assert.deepEqual(h.rect(), { left: 940, top: 587, width: 480, height: 393 });
     assert.equal(h.state.mode, 'expand');
     assert.equal(h.preferences.get('layout').dock, 'right');
 });
@@ -1238,7 +1238,7 @@ test('reset restores the default dimensions and docking even in a small expanded
     assert.equal(h.state.mode, 'expand');
     assert.equal(h.state.dock, 'right');
     assert.equal(h.preferences.get('layout').bounds.width, 480);
-    assert.equal(h.preferences.get('layout').bounds.height, 400);
+    assert.equal(h.preferences.get('layout').bounds.height, 393);
     inside(h);
 });
 
