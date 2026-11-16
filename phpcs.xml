@@ -27,7 +27,6 @@
         <properties>
             <property name="text_domain" type="array">
                 <element value="a-floating-live-preview-panel"/>
-                <element value="default"/>
             </property>
         </properties>
     </rule>

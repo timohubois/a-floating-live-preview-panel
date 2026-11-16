@@ -50,9 +50,9 @@ defined('ABSPATH') || exit;
             <div class="aflpp-fit-control"></div>
         </div>
     </footer>
-    <?php foreach (['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] as $edge) : ?>
-        <span class="aflpp-edge aflpp-edge-<?php echo esc_attr($edge); ?>"
-            data-resize-edge="<?php echo esc_attr($edge); ?>" aria-hidden="true"></span>
+    <?php foreach (['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] as $aflppEdge) : ?>
+        <span class="aflpp-edge aflpp-edge-<?php echo esc_attr($aflppEdge); ?>"
+            data-resize-edge="<?php echo esc_attr($aflppEdge); ?>" aria-hidden="true"></span>
     <?php endforeach; ?>
     <div class="aflpp-resize-control">
         <button type="button" class="aflpp-resize"
