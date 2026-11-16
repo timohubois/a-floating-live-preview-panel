@@ -145,6 +145,8 @@ for (const inPip of [false, true]) {
         h.controls.update({ ...h.state, inPip, fit: 'width', zoomPercent: 230, customZoom: 80, dpr: 2 });
         const toggle = h.nodes('Button').find(({ props }) => props['data-action'] === 'zoom');
         assert.equal(toggle.props['aria-label'], 'Zoom: Fill width');
+        assert.equal(h.nodes('Dropdown')[0].props.popoverProps.shift, true);
+        assert.equal(h.nodes('Dropdown')[0].props.popoverProps.resize, false, 'Native shifting must not be combined with resizing.');
         assert.equal(h.nodes('RangeControl').length, 0, 'Do not show a permanent custom field.');
         h.nodes('Dropdown')[0].props.onToggle(true);
         let modes = h.nodes('RadioControl')[0];

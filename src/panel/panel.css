@@ -290,9 +290,7 @@
 .aflpp-fit-control {
     flex-shrink: 0;
 }
-/* Keep the mode button stable while viewport size and zoom update beside it. */
 .aflpp-zoom-toggle.components-button {
-    inline-size: 148px;
     justify-content: space-between;
     gap: 6px;
 }

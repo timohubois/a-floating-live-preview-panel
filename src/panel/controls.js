@@ -106,7 +106,7 @@ export function createPreviewControls(panel, strings, callbacks) {
             },
             contentClassName: 'aflpp-zoom-popover',
             focusOnMount: 'firstElement',
-            popoverProps: { placement: 'top-end', offset: 8, shift: true, role: 'dialog', 'aria-label': strings.fitting },
+            popoverProps: { placement: 'top-end', offset: 8, shift: true, resize: false, role: 'dialog', 'aria-label': strings.fitting },
             renderToggle: ({ isOpen, onToggle }) => h(Button, {
                 className: 'aflpp-zoom-toggle', variant: 'secondary', size: 'compact',
                 label, showTooltip: true, 'aria-label': `${strings.fitting}: ${label}`,

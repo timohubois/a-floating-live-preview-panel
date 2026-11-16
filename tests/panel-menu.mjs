@@ -523,7 +523,8 @@ async function nativeViewportControlTests(strings) {
                 check(panel.ownerDocument.querySelector('.aflpp-zoom-popover') === popup && choice(popup, fit).checked, 'Radio selection applies without dismissing the dialog.');
                 check(panel.ownerDocument.activeElement === choice(popup, fit), 'Keep focus in the native radio group when choosing a mode.');
                 check(!popup.querySelector('input[type="number"]'), 'Fitting modes hide the manual percentage.');
-                check(toggle().getBoundingClientRect().width === toggleWidth, 'Changing percentage digit counts must not resize the mode button or trigger fitting loops.');
+                check(fit === 'automatic' ? toggle().getBoundingClientRect().width === toggleWidth : toggle().getBoundingClientRect().width > toggleWidth,
+                    'Size the mode button to its current label rather than a fixed width.');
                 const modeLabel = toggle().querySelector('.aflpp-zoom-value');
                 check(modeLabel.scrollWidth <= modeLabel.clientWidth, 'The complete mode name fits without text truncation.');
             }
