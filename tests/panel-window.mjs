@@ -13,7 +13,7 @@ const source = await sourceForVm(new URL('../src/panel/window.js', import.meta.u
 // Exercise the view's lifecycle and launcher label without starting requests or changing native controls.
 function fixture(open = false, {
     layout, position, rememberPosition, preferences: savedPreferences, labels = {},
-    width = 1440, height = 1000, direction = 'ltr', gutter = 20, scrollbar = 0, toolbarHeight = 32,
+    width = 1440, height = 1000, direction = 'ltr', lang = 'en-US', gutter = 20, scrollbar = 0, toolbarHeight = 32,
     nativeSaving = false, pip = false, pipApi, videoPip = false, stylesheets = [],
 } = {}) {
     const nodes = new Map();
@@ -61,6 +61,7 @@ function fixture(open = false, {
         return element;
     }
     document.documentElement = node('html');
+    document.documentElement.lang = lang;
     Object.defineProperties(document.documentElement, {
         clientWidth: { get: () => window.innerWidth - scrollbar },
         clientHeight: { get: () => window.innerHeight },
@@ -180,6 +181,22 @@ for (const combined of [false, true]) {
         assert.equal(h.panel.ownerDocument, h.document);
         assert.equal(h.state.mode, 'expand');
         assert.equal(h.writes.length, 0, 'PiP styling and document moves must not change layout preferences');
+    });
+}
+
+for (const { direction, lang } of [{ direction: 'ltr', lang: 'en-US' }, { direction: 'rtl', lang: 'ar' }]) {
+    test(`PiP preserves inherited ${direction} direction and ${lang} language`, async () => {
+        const h = fixture(true, { pip: true, direction, lang });
+        assert.equal(h.panel.dir, undefined, 'Direction is inherited, not set on the panel.');
+        await h.actions.popOut();
+        assert.equal(h.state.inPip, true);
+        assert.equal(h.detached.document.documentElement.dir, direction);
+        assert.equal(h.detached.document.documentElement.lang, lang);
+        h.detached.close();
+        assert.equal(h.panel.ownerDocument, h.document);
+        assert.equal(h.document.documentElement.lang, lang);
+        assert.equal(h.panel.dir, undefined, 'Moving back must not add panel-level direction overrides.');
+        assert.equal(h.writes.length, 0, 'Document metadata must not change preferences.');
     });
 }
 

@@ -487,6 +487,9 @@ export function createPreviewPanel(strings, {
                 return;
             }
             const theme = mainWindow.getComputedStyle(panel);
+            // Adoption loses inherited editor language and direction in the new document.
+            detached.document.documentElement.lang = mainDocument.documentElement.lang;
+            detached.document.documentElement.dir = theme.direction;
             for (const name of ['--wp-admin-theme-color', '--wp-admin-theme-color-darker-10', '--wp-admin-border-width-focus']) {
                 const value = theme.getPropertyValue(name);
                 if (value) detached.document.documentElement.style.setProperty(name, value);
