@@ -35,12 +35,14 @@ export function createPreviewFrame(view, scrolling, strings, report, excludedSel
             // Authorization is server-side; sandboxing would block native output such as Chromium's PDF viewer.
             frame.referrerPolicy = 'same-origin';
             let settled = false;
+            let canceled = false;
             const timeout = setTimeout(() => finish(new Error(strings.failed)), 30000);
-            const cancel = () => finish();
+            const cancel = () => { canceled = true; finish(); };
             cancelLoad = cancel;
             function finish(error) {
                 if (settled) return;
                 settled = true;
+                if (error) canceled = true;
                 clearTimeout(timeout);
                 if (cancelLoad === cancel) cancelLoad = null;
                 if (frame !== activeFrame) {
@@ -51,10 +53,10 @@ export function createPreviewFrame(view, scrolling, strings, report, excludedSel
                 if (error) reject(error);
                 else resolve();
             }
-            frame.onload = () => {
+            frame.onload = async () => {
                 const replacing = frame !== activeFrame;
                 if (!replacing) activeDocument = null;
-                if (!isCurrent()) { finish(); return; }
+                if (canceled || !isCurrent()) { finish(); return; }
                 let doc;
                 try {
                     const candidate = frame.contentDocument;
@@ -84,7 +86,12 @@ export function createPreviewFrame(view, scrolling, strings, report, excludedSel
                 frame.classList.remove('aflpp-loading');
                 frame.removeAttribute('aria-hidden');
                 frame.removeAttribute('tabindex');
-                if (doc && replacing) scrolling.restore(doc, target);
+                const isActive = () => !canceled && isCurrent() && frame === activeFrame && doc === activeDocument
+                    && (!doc || frame.contentDocument === doc);
+                if (doc && replacing) {
+                    await scrolling.restore(doc, target, () => isActive() && view.followChanges && followChanges());
+                }
+                if (!isActive()) { finish(); return; }
                 // A load is not proof of valid content; only marked HTML receives scroll enhancements.
                 report(strings.current, 'ready');
                 finish();

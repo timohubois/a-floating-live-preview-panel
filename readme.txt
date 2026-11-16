@@ -85,7 +85,7 @@ Every mode preserves CSS viewport dimensions, media queries and text wrapping. A
 
 = What does Scroll to my changes do? =
 
-It compares submitted values and rendered output to locate changed content, structure or attributes without theme-specific mapping. Hidden changes fall back to a visible ancestor without opening widgets. Ambiguous matches retain position rather than guessing. Dynamic output, transformed values and complex headers can limit accuracy.
+It compares submitted values and rendered output to locate changed content, structure or attributes without theme-specific mapping. Following reveals enclosing native details disclosures and hidden="until-found" containers through their beforematch contract. Other hidden changes fall back to a visible ancestor; custom widgets are not clicked automatically. Native exclusive groups may close another item. Late initialization, transitions and lazy content are not guaranteed to settle before scrolling. Ambiguous matches retain position rather than guessing. Dynamic output, transformed values and complex headers can limit accuracy.
 
 Turn it off to retain manual positioning and skip comparison snapshots. Turning it on refreshes once to establish a baseline. Known non-content regions, including Xdebug diagnostics, are excluded from comparison without hiding their output. PHP integrations can customize this policy with `aflpp_preview_comparison_excluded_selectors`.
 

@@ -10,9 +10,9 @@ const revision = (id, address = url(id)) => ({
     id, get: (key) => ({ aflppPreviewUrl: address, dateShort: `Date ${id}`, author: { name: `Author ${id}` } })[key],
 });
 
-function fixture({ visible = true, selected = revision(11), isolated = false, excludedSelectors = [] } = {}) {
+function fixture({ visible = true, selected = revision(11), isolated = false, excludedSelectors = [], deferRestore = false } = {}) {
     const timers = new Map(), listeners = new Map(), events = new Map(), reports = [], allFrames = [], scrolls = [];
-    const captures = [], comparisons = [];
+    const captures = [], comparisons = [], restorations = [];
     let options, comparisonSelectors, nextTimer = 0, title = '', clears = 0, returned = 0;
     const children = [];
     const stage = {
@@ -62,7 +62,12 @@ function fixture({ visible = true, selected = revision(11), isolated = false, ex
         } },
         '../preview/scroll.js': { createPreviewScroll: () => ({
             remember: (doc) => scrolls.push(['remember', doc]),
-            restore: (doc, target) => scrolls.push(['restore', doc, target]),
+            restore(doc, target, canFollow) {
+                scrolls.push(['restore', doc, target]);
+                const restoration = { doc, target, canFollow };
+                restorations.push(restoration);
+                if (deferRestore && target) return new Promise((resolve) => { restoration.resolve = resolve; });
+            },
         }) },
         '../preview/comparison.js': { createPreviewComparison: (selectors) => {
             comparisonSelectors = selectors;
@@ -83,7 +88,7 @@ function fixture({ visible = true, selected = revision(11), isolated = false, ex
     const init = vm.runInNewContext(`${source}\ninitRevisionPreview`, context);
     init({ postId: 1, currentPreviewUrl: url(1), strings, comparisonExcludedSelectors: excludedSelectors }, model);
     return {
-        view, options, reports, children, allFrames, timers, scrolls, captures, comparisons, comparisonSelectors, listeners,
+        view, options, reports, children, allFrames, timers, scrolls, captures, comparisons, restorations, comparisonSelectors, listeners,
         get title() { return title; }, get clears() { return clears; }, get returned() { return returned; },
         get last() { return reports.at(-1); },
         select(next) { selected = next; listeners.get('update:revisions')?.(); },
@@ -137,7 +142,8 @@ test('frame capture precedes comparison and deletion analysis runs before the ol
     assert.equal(comparison.after.revision.value, 12, 'The next baseline must exist before comparison.');
     const restored = h.scrolls.filter(([operation]) => operation === 'restore').at(-1);
     assert.deepEqual(restored, ['restore', comparison.next, 'target']);
-    assert.equal(restored.length, 3, 'Scrolling receives only a document and one identified element.');
+    assert.equal(restored.length, 3, 'Scrolling still receives one identified element, not comparison state.');
+    assert.equal(h.restorations.at(-1).canFollow(), true, 'The frame owns deferred reveal eligibility.');
     assert.equal(h.children.length, 1);
 });
 
@@ -403,6 +409,26 @@ test('a timed-out frame can be retried without accepting its stale load', async 
     h.options.onRetry(); await h.load();
     assert.equal(h.last.state, 'ready');
 });
+
+for (const reason of ['selection', 'close', 'navigation', 'document replacement before load', 'follow disabled']) {
+    test(`deferred reveal is no longer eligible after ${reason}`, async () => {
+        const h = fixture({ deferRestore: true });
+        await h.load();
+        h.select(revision(12)); await h.runTimers(); await h.load();
+        const pending = h.restorations.at(-1);
+        assert.equal(pending.canFollow(), true);
+        if (reason === 'selection') h.select(revision(13));
+        if (reason === 'close') h.options.onClose();
+        if (reason === 'navigation') await h.load();
+        if (reason === 'document replacement before load') h.allFrames.at(-1).contentDocument = {};
+        if (reason === 'follow disabled') h.view.followChanges = false;
+        assert.equal(pending.canFollow(), false);
+        const ready = h.reports.filter(({ state }) => state === 'ready').length;
+        pending.resolve(); await flush();
+        assert.equal(h.reports.filter(({ state }) => state === 'ready').length,
+            ready + (reason === 'follow disabled' ? 1 : 0), 'Stale documents must not report ready after settling.');
+    });
+}
 
 test('normal page exit detaches the native model listener, while bfcache preserves it', () => {
     const h = fixture();

@@ -81,8 +81,13 @@ buffering, large responses and unchanged non-HTML, error and partial response fa
 Frame/scroll tests cover isolation and capture opt-in, nested insertion/deletion,
 repeated content, ambiguity, initialization noise, source-to-live element mapping,
 generic visible-container fallbacks with directly visible changes taking precedence,
-unchanged widget state, and non-executing source parsing. These do not replace
-authenticated browser testing of native editor controls.
+unchanged custom-widget state, and non-executing source parsing. Native reveal tests
+cover details/until-found nesting, named exclusivity, visible summary/wrapper edits,
+notification order and immediate owner updates, target removal/reparenting, cancellation,
+initial rendering, focus/history preservation and reduced-motion scrolling. Frame tests
+also invalidate deferred following after selection changes, closing, navigation or
+following being disabled. These do not replace authenticated browser testing of native
+editor controls.
 
 The core-blocks fixture renders the actual native Post Excerpt block with explicit,
 cleared, whitespace-only and empty excerpts. It checks preview-content generation,
@@ -108,6 +113,23 @@ and runs them again. Never point them at a project database:
 ```sh
 AFLPP_TEST_UNINSTALL=1 wp eval-file /path/to/a-floating-live-preview-panel/tests/uninstall.php
 ```
+
+### Native reveal browser verification
+
+The built checkout was checked on the local WordPress 7.2-beta5 / Flynt development
+site using actual core Details, Accordion and Tabs blocks, including their shipped
+frontend modules and inline block styles. A disposable administrator edited saved
+fixture content through Gutenberg's code-editor textarea; the normal live-preview
+request and iframe replacement then revealed and scrolled to the unsaved text.
+The checks passed at 1280 × 800 and 390 × 844 preview viewports, preserving textarea
+focus, the editor URL and browser history length. Disabled following and the
+re-enable baseline refresh opened nothing. Separate actual-output checks confirmed
+that core's beforematch handlers synchronize expanded/selected state.
+
+These are Chromium-only checks of this configuration, not a guarantee across all
+core versions, themes or engines. Initialization after the bounded rendering
+opportunity, asynchronous transitions/lazy content and custom-widget activation
+remain outside the reveal contract. The disposable author and content were removed.
 
 ### Installed-ZIP verification
 

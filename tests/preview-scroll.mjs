@@ -46,7 +46,7 @@ async function browserTests(source) {
             },
             restore(doc, element, values) {
                 comparison.capture(doc, values);
-                scrolling.restore(doc, element);
+                return scrolling.restore(doc, element);
             },
         };
         try { await run(frame, documentFor); results.push({ name }); }
@@ -58,17 +58,17 @@ async function browserTests(source) {
     const equal = (actual, expected, message) => { if (actual !== expected) throw new Error(message); };
     await check('edited block text wins over incidental lazy-loading classes', async (scrolling, doc) => {
         const previous = await doc(content());
-        scrolling.restore(previous);
+        await scrolling.restore(previous);
         previous.querySelector('img').className = 'lazyloaded';
         const next = await doc(content('Changed paragraph', 'ls-is-cached lazyloaded'));
         const target = scrolling.findTarget(previous, next);
         equal(target, next.querySelector('#edited'), 'Follow the edited paragraph, not the unchanged avatar.');
-        scrolling.restore(next, target);
+        await scrolling.restore(next, target);
         if (next.defaultView.scrollY <= 0) throw new Error('Reveal the off-screen change.');
     });
     await check('content changes win over incidental ancestor presentation changes', async (scrolling, doc) => {
         const previous = await doc(content());
-        scrolling.restore(previous);
+        await scrolling.restore(previous);
         const next = await doc(content('Changed paragraph'));
         next.documentElement.style.scrollPaddingTop = '32px';
         equal(scrolling.findTarget(previous, next), next.querySelector('#edited'), 'A runtime root style must not hide the actual content change.');
@@ -97,7 +97,7 @@ async function browserTests(source) {
         equal(scrolling.findTarget(previous, deleted), deleted.querySelector('p:last-child'), 'Deletion lands on the next surviving content.');
         previous.defaultView.scrollTo(0, 60);
         scrolling.remember(previous);
-        scrolling.restore(next);
+        await scrolling.restore(next);
         equal(next.defaultView.scrollY, 60, 'No target means retaining the last scroll position.');
     });
     const section = (heading, text = 'Repeated paragraph') => `<section><h2>${heading}</h2><p>${text}</p></section>`;
@@ -127,7 +127,7 @@ async function browserTests(source) {
         equal(scrolling.findTarget(previous, next), null, 'The output alone cannot identify which of the reordered sections the user moved.');
         previous.defaultView.scrollTo(0, 100);
         scrolling.remember(previous);
-        scrolling.restore(next);
+        await scrolling.restore(next);
         equal(next.defaultView.scrollY, 100, 'An ambiguous reorder must not reset the reader position.');
     });
     await check('repeated paragraphs are matched within their unchanged section context', async (scrolling, doc) => {
@@ -185,7 +185,7 @@ async function browserTests(source) {
             container.querySelector('button').addEventListener('click', () => { clicks++; });
             const target = scrolling.findTarget(previous, next);
             equal(target, container, 'No ID, ARIA relationship or theme attribute is required.');
-            scrolling.restore(next, target);
+            await scrolling.restore(next, target);
             equal(container.outerHTML, original, 'Leave widget markup and hidden state unchanged.');
             equal(clicks, 0, 'Do not simulate interaction to force the region open.');
             if (next.defaultView.scrollY <= 0) throw new Error('Reveal the offscreen container.');
@@ -236,7 +236,7 @@ async function browserTests(source) {
         };
         equal(visibleTarget(target), target, 'The visible identified element remains the target.');
         equal(queries, 0, 'Do not collect descendants when the target itself is visible.');
-        frame.scrolling.restore(document, target);
+        await frame.scrolling.restore(document, target);
         equal(queries, 0, 'Scroll restoration must use the same fast path.');
         if (document.defaultView.scrollY <= 0) throw new Error('The visible target is still revealed.');
     });
@@ -245,7 +245,7 @@ async function browserTests(source) {
             const document = await doc(content() + `<section id="target" style="${style}"><div hidden><p>Hidden</p></div><h2 id="visible" style="visibility:visible">First visible</h2><p style="visibility:visible">Second visible</p></section>`);
             const target = document.querySelector('#target');
             equal(visibleTarget(target), document.querySelector('#visible'), 'Skip hidden descendants and retain document order.');
-            frame.scrolling.restore(document, target);
+            await frame.scrolling.restore(document, target);
             if (document.defaultView.scrollY <= 0) throw new Error('The visible descendant is still revealed.');
         });
     }
@@ -253,7 +253,7 @@ async function browserTests(source) {
         const document = await doc(content() + '<section id="context"><h2>Closed widget</h2><div id="target" hidden><p>Hidden</p></div></section>');
         const target = document.querySelector('#target');
         equal(visibleTarget(target), document.querySelector('#context'), 'Retain the nearest visible ancestor fallback.');
-        frame.scrolling.restore(document, target);
+        await frame.scrolling.restore(document, target);
         if (document.defaultView.scrollY <= 0) throw new Error('The visible ancestor is still revealed.');
     });
     await check('boxless inserted wrappers reveal their visible content instead of main', async (scrolling, doc) => {
@@ -285,7 +285,7 @@ async function browserTests(source) {
             const html = warning.outerHTML;
             const target = scrolling.findTarget(previous, next);
             equal(target, next.querySelector('#edited'), 'Per-request diagnostic rows are not a second author edit.');
-            scrolling.restore(next, target);
+            await scrolling.restore(next, target);
             equal(warning.outerHTML, html, 'Comparison must not suppress or rewrite the warning.');
             if (!warning.getClientRects().length) throw new Error('Leave the diagnostic output visible.');
         });
@@ -296,7 +296,7 @@ async function browserTests(source) {
             scrolling.remember(previous);
             const target = scrolling.findTarget(previous, next);
             equal(target, null, 'A changing warning is not content to follow.');
-            scrolling.restore(next, target);
+            await scrolling.restore(next, target);
             equal(next.defaultView.scrollY, 60, 'Keep the reader position for diagnostic-only updates.');
         });
         await check(`${mode}: diagnostic noise does not hide a presentation-only edit`, async (scrolling, doc) => {
@@ -344,7 +344,7 @@ async function browserTests(source) {
             const next = await doc(content('Changed paragraph') + '<nav><p>After</p></nav>', { captured });
             const target = scrolling.findTarget(previous, next);
             equal(target, next.querySelector('#edited'), 'Reject malformed contributions without losing the valid policy.');
-            scrolling.restore(next, target);
+            await scrolling.restore(next, target);
             if (next.defaultView.scrollY <= 0) throw new Error('Invalid selectors must not prevent revealing the change.');
         }, ['nav', '[broken', null, 42, '', '  ']);
     }
@@ -426,7 +426,7 @@ async function browserTests(source) {
         const previous = await doc(padding + content(), {
             captured: true, script: 'document.querySelector("p").textContent = "Runtime before";',
         });
-        scrolling.restore(previous);
+        await scrolling.restore(previous);
         const next = await doc(padding + content('Changed paragraph'), {
             captured: true, script: 'document.querySelector("p").textContent = "Runtime after";',
         });
@@ -439,7 +439,7 @@ async function browserTests(source) {
         const next = await doc(content('Changed paragraph'), { captured: true, script });
         equal(window.aflppSourceScriptRuns, 2, 'Normal iframe initialization still executes once per page.');
         const target = scrolling.findTarget(previous, next);
-        scrolling.restore(next, target);
+        await scrolling.restore(next, target);
         equal(window.aflppSourceScriptRuns, 2, 'Parsing and caching the source must not execute it.');
         delete window.aflppSourceScriptRuns;
     });
@@ -754,7 +754,7 @@ async function browserTests(source) {
         const identified = frame.comparison.findChange(before, after);
         equal(identified, after.querySelector('#hidden-change'), 'Identification must not substitute a visible ancestor.');
         const container = after.querySelector('#context'), original = container.outerHTML;
-        frame.scrolling.restore(after, identified);
+        await frame.scrolling.restore(after, identified);
         if (after.defaultView.scrollY <= 0) throw new Error('Scroll presentation should reveal the offscreen ancestor.');
         equal(container.outerHTML, original, 'Neither owner opens or rewrites the hidden widget.');
     });
@@ -782,7 +782,7 @@ async function browserTests(source) {
         let reads = 0;
         const marker = document.querySelector('meta');
         marker.getAttribute = () => { reads++; throw new Error('Source access is not scroll presentation.'); };
-        frame.scrolling.restore(document, document.querySelector('#edited'));
+        await frame.scrolling.restore(document, document.querySelector('#edited'));
         equal(reads, 0, 'No comparison source is read during restoration.');
         if (document.defaultView.scrollY <= 0) throw new Error('Scroll presentation works independently of comparison.');
     });
@@ -797,14 +797,14 @@ async function browserTests(source) {
             frame.capture(baseline, hints('Fresh following baseline'));
             const target = frame.comparison.findChange(disabled, baseline);
             equal(target, null, 'Neither an uncaptured document nor an older following snapshot supplies a baseline.');
-            frame.scrolling.restore(baseline, target);
+            await frame.scrolling.restore(baseline, target);
             equal(baseline.defaultView.scrollY, 60, 'The first following load retains the remembered position.');
             baseline.querySelector('#edited').textContent = 'Later frontend mutation';
             const next = await doc(content('Next authored change'), { captured });
             frame.capture(next, hints('Next authored change'));
             const change = frame.comparison.findChange(baseline, next);
             equal(change, next.querySelector('#edited'), 'Subsequent updates follow against the frozen new baseline.');
-            frame.scrolling.restore(next, change);
+            await frame.scrolling.restore(next, change);
         });
     }
     for (const captured of [false, true]) {
@@ -830,6 +830,187 @@ async function browserTests(source) {
         frame.comparison.capture(after);
         equal(frame.comparison.findChange(before, after), after.querySelector('aside > #moved'), 'Do not lose source/live correspondence when reducing to one element.');
     });
+    for (const captured of [false, true]) {
+        await check(`native reveal preserves comparison identity and frozen snapshots, captured=${captured}`, async (frame, doc) => {
+            const markup = (text) => `${content()}<details><summary>Disclosure</summary><section hidden="until-found"><p id="native">${text}</p></section></details><p>End</p>`;
+            const before = await doc(markup('Before native edit'), { captured });
+            const after = await doc(markup('After native edit'), { captured });
+            frame.comparison.capture(before);
+            frame.comparison.capture(after);
+            const target = after.querySelector('#native');
+            equal(frame.comparison.findChange(before, after), target, 'Keep the original hidden changed element.');
+            let notifications = 0, scrolls = 0;
+            target.parentElement.addEventListener('beforematch', (event) => {
+                notifications++;
+                equal(event.bubbles, true, 'beforematch bubbles.');
+                equal(event.cancelable, false, 'beforematch is a notification, not a cancellation API.');
+                equal(event.target.getAttribute('hidden'), 'until-found', 'Notify before removing the attribute.');
+            });
+            const scroll = target.scrollIntoView;
+            target.scrollIntoView = function (...args) { scrolls++; return scroll.apply(this, args); };
+            await frame.scrolling.restore(after, target);
+            equal(after.querySelector('details').open, true, 'Open the enclosing native body.');
+            equal(target.parentElement.hasAttribute('hidden'), false, 'Remove only discoverable hiding.');
+            equal(target.checkVisibility({ visibilityProperty: true }), true, 'The actual text must render, not just have a rectangle.');
+            equal(notifications, 1, 'Notify once.');
+            equal(scrolls, 1, 'Scroll once after activation.');
+            equal(frame.comparison.findChange(before, after), target, 'Presentation must not alter captured comparison evidence.');
+        });
+    }
+    await check('nested details open only the required ancestry and retain native named exclusivity', async (frame, doc) => {
+        const after = await doc(`${content()}<details name="exclusive" open id="peer"><summary>Peer</summary><p>Peer body</p></details><section><details name="exclusive" id="outer"><summary>Outer</summary><details id="inner"><summary>Inner</summary><p id="native">Changed body</p></details></details></section><details id="unrelated"><summary>Unrelated</summary><p>Other</p></details>`);
+        await frame.scrolling.restore(after, after.querySelector('#native'));
+        equal(after.querySelector('#outer').open, true, 'Open the outer native container.');
+        equal(after.querySelector('#inner').open, true, 'Open the inner native container.');
+        equal(after.querySelector('#peer').open, false, 'Let the browser enforce its named group across non-siblings.');
+        equal(after.querySelector('#unrelated').open, false, 'Leave other disclosures alone.');
+        equal(after.querySelector('#native').checkVisibility(), true, 'Nested body renders.');
+    });
+    for (const target of ['#summary-child', '#disclosure']) {
+        await check(`visible disclosure target ${target} does not open its own body`, async (frame, doc) => {
+            const after = await doc(`${content()}<details id="disclosure"><summary><span id="summary-child">Edited heading</span></summary><p>Unchanged body</p></details>`);
+            await frame.scrolling.restore(after, after.querySelector(target));
+            equal(after.querySelector('details').open, false, 'An already visible heading/wrapper needs no opening.');
+        });
+    }
+    await check('until-found owner microtasks settle before one final scroll, without focus or navigation changes', async (frame, doc) => {
+        const after = await doc(`${content()}<button id="focus">Focused control</button><section hidden="until-found" id="outer"><section hidden="UNTIL-FOUND" id="inner"><p id="native">Changed body</p></section></section>`);
+        const focus = after.querySelector('#focus');
+        focus.focus({ preventScroll: true });
+        const url = after.URL, history = after.defaultView.history.length;
+        const order = [];
+        for (const id of ['inner', 'outer']) after.querySelector(`#${id}`).addEventListener('beforematch', (event) => {
+            if (event.target.id !== id) return;
+            order.push(id);
+            Promise.resolve().then(() => { event.target.dataset.settled = 'yes'; });
+        });
+        const target = after.querySelector('#native');
+        const scroll = target.scrollIntoView;
+        target.scrollIntoView = function (...args) {
+            equal(after.querySelector('#inner').dataset.settled, 'yes', 'Flush inner owner microtasks.');
+            equal(after.querySelector('#outer').dataset.settled, 'yes', 'Flush outer owner microtasks.');
+            return scroll.apply(this, args);
+        };
+        await frame.scrolling.restore(after, target);
+        equal(order.join(','), 'inner,outer', 'Reveal from the inner path outward.');
+        equal(after.activeElement, focus, 'Do not force focus.');
+        equal(after.URL, url, 'Do not navigate to a fragment.');
+        equal(after.defaultView.history.length, history, 'Do not add history entries.');
+        equal(target.checkVisibility(), true, 'Both discoverable containers reveal their body.');
+    });
+    await check('ordinary hidden and custom widget controls retain the existing fallback', async (frame, doc) => {
+        const after = await doc(`${content()}<section id="context"><button aria-controls="panel" aria-expanded="false">Open</button><div id="panel" hidden aria-hidden="true"><details><summary>Native inner</summary><p id="native">Changed body</p></details></div></section>`);
+        let clicks = 0;
+        after.querySelector('button').addEventListener('click', () => clicks++);
+        await frame.scrolling.restore(after, after.querySelector('#native'));
+        equal(clicks, 0, 'Never guess or click a custom widget control.');
+        equal(after.querySelector('#panel').hidden, true, 'Do not remove ordinary hidden.');
+        equal(after.querySelector('#panel').getAttribute('aria-hidden'), 'true', 'Do not override author accessibility state.');
+        equal(after.querySelector('button').getAttribute('aria-expanded'), 'false', 'Do not invent ARIA activation.');
+        equal(after.querySelector('details').open, false, 'Do not activate native content behind unsupported hiding.');
+        equal(visibleTarget(after.querySelector('#native')), after.querySelector('#context'), 'Use the existing visible context.');
+    });
+    for (const hiding of ['hidden', 'style="display:none"']) {
+        await check(`unreachable native content preserves its visible exclusive peer, ${hiding}`, async (frame, doc) => {
+            const after = await doc(`${content()}<details name="shared" open id="peer"><summary>Visible peer</summary><p>Visible body</p></details><section id="context"><div ${hiding}><section hidden="until-found" id="discoverable"><details name="shared" id="unreachable"><summary>Hidden disclosure</summary><p id="native">Changed body</p></details></section></div></section>`);
+            let notifications = 0;
+            after.querySelector('#discoverable').addEventListener('beforematch', () => { notifications++; });
+            await frame.scrolling.restore(after, after.querySelector('#native'));
+            equal(after.querySelector('#peer').open, true, 'Keep the visible exclusive peer open.');
+            equal(after.querySelector('#unreachable').open, false, 'Do not open an unreachable disclosure.');
+            equal(after.querySelector('#discoverable').getAttribute('hidden'), 'until-found', 'Preserve unreachable discoverable state too.');
+            equal(notifications, 0, 'Do not notify owners when unsupported hiding prevents reveal.');
+            equal(visibleTarget(after.querySelector('#native')), after.querySelector('#context'), 'Use the existing visible-container fallback.');
+        });
+    }
+    await check('until-found hiding remains revealable when author CSS uses display none', async (frame, doc) => {
+        const after = await doc(`${content()}<style>[hidden]{display:none!important}</style><section hidden="until-found"><details><summary>Inner</summary><p id="native">Changed body</p></details></section>`);
+        await frame.scrolling.restore(after, after.querySelector('#native'));
+        equal(after.querySelector('[hidden]'), null, 'The discoverable attribute itself is supported hiding.');
+        equal(after.querySelector('details').open, true, 'Reveal supported nested native containers.');
+        equal(after.querySelector('#native').checkVisibility(), true, 'The actual target renders.');
+    });
+    await check('until-found handlers may replace hiding with ordinary hidden without it being removed', async (frame, doc) => {
+        const after = await doc(`${content()}<section id="context"><div hidden="until-found" id="panel"><p id="native">Changed body</p></div></section>`);
+        after.querySelector('#panel').addEventListener('beforematch', (event) => event.target.setAttribute('hidden', ''));
+        await frame.scrolling.restore(after, after.querySelector('#native'));
+        equal(after.querySelector('#panel').getAttribute('hidden'), '', 'Respect the owner state after notification.');
+        equal(visibleTarget(after.querySelector('#native')), after.querySelector('#context'), 'Fall back instead of forcing visibility.');
+    });
+    await check('a beforematch handler removing the target prevents subsequent native activation', async (frame, doc) => {
+        const after = await doc(`${content()}<details><summary>Outer</summary><div hidden="until-found"><p id="native">Changed body</p></div></details>`);
+        const target = after.querySelector('#native');
+        target.parentElement.addEventListener('beforematch', () => target.remove());
+        await frame.scrolling.restore(after, target);
+        equal(after.querySelector('details').open, false, 'Do not continue opening a stale path.');
+        equal(visibleTarget(target), null, 'A detached target must not be scrolled.');
+    });
+    await check('reparenting during beforematch does not open unrelated ancestors', async (frame, doc) => {
+        const after = await doc(`${content()}<details><summary>Outer</summary><div hidden="until-found"><p id="native">Changed body</p></div></details><section id="destination"></section>`);
+        const target = after.querySelector('#native');
+        target.parentElement.addEventListener('beforematch', () => after.querySelector('#destination').append(target));
+        await frame.scrolling.restore(after, target);
+        equal(after.querySelector('details').open, false, 'Do not open ancestors that no longer contain the target.');
+    });
+    await check('null or ineligible follow targets open nothing', async (frame, doc) => {
+        const after = await doc(`${content()}<details><summary>Disclosure</summary><div hidden="until-found"><p id="native">Changed body</p></div></details>`);
+        await frame.scrolling.restore(after);
+        await frame.scrolling.restore(after, after.querySelector('#native'), () => false);
+        equal(after.querySelector('details').open, false, 'Disabled/baseline/ambiguous following must not reveal.');
+        equal(after.querySelector('[hidden]').getAttribute('hidden'), 'until-found', 'Keep discoverable hiding untouched too.');
+    });
+    for (const reason of ['canceled', 'superseded']) {
+        await check(`a ${reason} deferred reveal never performs a late scroll`, async (frame, doc) => {
+            const after = await doc(`${content()}<details><summary>Disclosure</summary><p id="native">Changed body</p></details>`);
+            const target = after.querySelector('#native');
+            let eligible = true, scrolls = 0;
+            target.scrollIntoView = () => { scrolls++; };
+            const pending = frame.scrolling.restore(after, target, () => eligible);
+            if (reason === 'canceled') eligible = false;
+            else await frame.scrolling.restore(after);
+            await pending;
+            equal(scrolls, 0, 'Discard the deferred scroll after cancellation/new restoration.');
+            equal(after.querySelector('details').open, false, 'Cancel before any deferred opening too.');
+        });
+    }
+    await check('initial rendering can apply discoverable hiding before the reveal inspection', async (frame, doc) => {
+        const after = await doc(`${content()}<section id="panel"><p id="native">Changed body</p></section>`);
+        const panel = after.querySelector('#panel');
+        let notifications = 0;
+        panel.addEventListener('beforematch', () => { notifications++; });
+        after.defaultView.setTimeout(() => panel.setAttribute('hidden', 'until-found'), 0);
+        await frame.scrolling.restore(after, after.querySelector('#native'));
+        equal(notifications, 1, 'Inspect discoverable hiding after the initial rendering opportunity.');
+        equal(panel.hasAttribute('hidden'), false, 'Reveal the initialized container before scrolling.');
+    });
+    await check('mixed until-found outer and details inner containers both reveal', async (frame, doc) => {
+        const after = await doc(`${content()}<section hidden="until-found"><details><summary>Inner</summary><p id="native">Changed body</p></details></section>`);
+        const target = after.querySelector('#native');
+        await frame.scrolling.restore(after, target);
+        equal(after.querySelector('details').open, true, 'Open the inner native body.');
+        equal(after.querySelector('[hidden]'), null, 'Reveal the outer discoverable container.');
+        equal(target.checkVisibility(), true, 'The mixed nested target must render.');
+    });
+    await check('cancellation inside beforematch preserves the remaining hidden state', async (frame, doc) => {
+        const after = await doc(`${content()}<details><summary>Outer</summary><div hidden="until-found"><p id="native">Changed body</p></div></details>`);
+        let eligible = true;
+        after.querySelector('[hidden]').addEventListener('beforematch', () => { eligible = false; });
+        await frame.scrolling.restore(after, after.querySelector('#native'), () => eligible);
+        equal(after.querySelector('[hidden]').getAttribute('hidden'), 'until-found', 'Stop mutation when the owner cancels following.');
+        equal(after.querySelector('details').open, false, 'Do not continue opening ancestors after cancellation.');
+    });
+    await check('reduced-motion following does not inherit author smooth scrolling', async (frame, doc) => {
+        const after = await doc(content());
+        after.documentElement.style.scrollBehavior = 'smooth';
+        after.defaultView.matchMedia = () => ({ matches: true });
+        const target = after.querySelector('#edited');
+        let behavior;
+        const scroll = target.scrollIntoView;
+        target.scrollIntoView = function (options) { behavior = options.behavior; return scroll.call(this, options); };
+        await frame.scrolling.restore(after, target);
+        equal(behavior, 'instant', 'Request instant following when reduced motion is preferred.');
+        if (after.defaultView.scrollY <= 0) throw new Error('The reduced-motion follow must be immediate.');
+    });
     return results;
 }
 
@@ -837,5 +1018,5 @@ test('preview scrolling matches changed sections conservatively in Chromium', as
     const comparison = await readFile(new URL('../src/preview/comparison.js', import.meta.url), 'utf8');
     const scrolling = await readFile(new URL('../src/preview/scroll.js', import.meta.url), 'utf8');
     const source = `${comparison.replace('export function', 'function')}\n${scrolling.replace(/^import .*;\n/, '')}`;
-    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify(source)})`, count: 164 });
+    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify(source)})`, count: 184 });
 });
