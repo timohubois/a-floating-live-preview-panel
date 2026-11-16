@@ -43,7 +43,7 @@ defined('ABSPATH') || exit;
         <div class="aflpp-viewport-controls">
             <span class="aflpp-dimensions"
                 title="<?php esc_attr_e(
-                    'Shows the selected viewport width and height in CSS pixels. Zoom does not change these dimensions.', // phpcs:ignore Generic.Files.LineLength.TooLong -- Keep the translatable message intact.
+                    'Viewport size in CSS pixels and current zoom.',
                     'a-floating-live-preview-panel'
                 ); ?>">
             </span>

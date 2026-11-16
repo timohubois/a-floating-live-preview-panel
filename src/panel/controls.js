@@ -1,7 +1,7 @@
 import { createElement as h, createPortal, createRoot, flushSync, Fragment } from '@wordpress/element';
 import {
     Button, Dropdown, DropdownMenu, MenuGroup, MenuItem, MenuItemsChoice, Notice, Placeholder,
-    Popover, RadioControl, SlotFillProvider, Spinner, TextControl, Toolbar, ToolbarButton,
+    Popover, RadioControl, RangeControl, SlotFillProvider, Spinner, Toolbar, ToolbarButton,
 } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import { InlineNotices, store as noticesStore } from '@wordpress/notices';
@@ -35,7 +35,6 @@ export function createPreviewControls(panel, strings, callbacks) {
     let state;
     let open = false;
     let zoomOpen = false;
-    let zoomDraft = '100';
     let focusZoomField = false;
     // InlineNotices is public in newer core; older core retains its native Notice component.
     const noticeActions = InlineNotices ? dispatch(noticesStore) : null;
@@ -90,25 +89,17 @@ export function createPreviewControls(panel, strings, callbacks) {
         return h(Notice, { ...props, onRemove: callbacks.dismissNotice, spokenMessage: '', politeness: 'polite' }, message);
     }
 
-    function zoomValue(value) {
-        const number = Number(value);
-        return /^\d+$/.test(value) && Number.isInteger(number) && number >= 10 && number <= 400 ? number : null;
-    }
-
     function zoomControl() {
-        const { fit, customZoom = 100, zoomPercent = 100, dpr = 1 } = state;
+        const { fit, customZoom = 100, dpr = 1 } = state;
         const labels = { automatic: strings.automatic, window: strings.fitToWindow, width: strings.fitToWidth };
         const descriptions = { automatic: strings.automaticHelp, window: strings.fitToWindowHelp, width: strings.fitToWidthHelp };
-        const value = `${zoomPercent}%`;
-        const label = fit === 'custom' ? value : `${labels[fit] ?? strings.automatic} · ${value}`;
-        const valid = zoomValue(zoomDraft) !== null;
+        const label = fit === 'custom' ? strings.fixedZoom : labels[fit] ?? strings.automatic;
         return h(Dropdown, {
             open: zoomOpen,
             onToggle(value) {
                 zoomOpen = value;
                 if (value) {
                     open = false;
-                    zoomDraft = String(state.customZoom ?? 100);
                     focusZoomField = state.fit === 'custom';
                 }
                 render();
@@ -132,7 +123,7 @@ export function createPreviewControls(panel, strings, callbacks) {
                         if (!focusZoomField) return;
                         focusZoomField = false;
                         // Native opening focuses the checked radio after recording the focus-return target.
-                        const field = event.currentTarget.closest('.aflpp-zoom-content')?.querySelector('[data-action="custom-zoom"]');
+                        const field = event.currentTarget.closest('.aflpp-zoom-content')?.querySelector('.aflpp-custom-zoom input[type="number"]');
                         field?.focus({ preventScroll: true });
                         const content = field?.closest('.components-popover__content');
                         if (content) {
@@ -146,28 +137,26 @@ export function createPreviewControls(panel, strings, callbacks) {
                         // Keep radio-key navigation in the group; focus the number only when reopening fixed zoom.
                         focusZoomField = false;
                         if (value === 'custom') {
-                            zoomDraft = String(customZoom);
                             callbacks.zoom(customZoom);
                             return;
                         }
                         callbacks.fit(value);
                     },
                 }),
-                fit === 'custom' && h('div', { className: 'aflpp-custom-zoom' }, h(TextControl, {
-                    label: strings.customZoom, type: 'number', min: 10, max: 400, step: 1,
-                    __nextHasNoMarginBottom: true, __next40pxDefaultSize: true,
-                    value: zoomDraft, help: strings.customZoomHelp,
-                    'aria-invalid': !valid, 'data-action': 'custom-zoom',
+                fit === 'custom' && h('div', {
+                    className: 'aflpp-custom-zoom',
                     onKeyDown(event) {
                         if (event.key !== 'Enter') return;
                         event.preventDefault();
-                        if (valid) closeMenu();
+                        const number = Number(event.target.value);
+                        if (event.target.validity?.valid !== false && Number.isInteger(number) && number >= 10 && number <= 400) closeMenu();
                     },
+                }, h(RangeControl, {
+                    label: strings.customZoom, min: 10, max: 400, step: 1,
+                    __nextHasNoMarginBottom: true, __next40pxDefaultSize: true,
+                    value: customZoom, help: strings.customZoomHelp, withInputField: true,
                     onChange(value) {
-                        zoomDraft = value;
-                        const number = zoomValue(value);
-                        if (number !== null) callbacks.zoom(number);
-                        render();
+                        if (Number.isInteger(value) && value >= 10 && value <= 400) callbacks.zoom(value);
                     },
                 })),
                 h('div', { className: 'aflpp-dpr-note', role: 'group', 'aria-label': strings.displayInformation },

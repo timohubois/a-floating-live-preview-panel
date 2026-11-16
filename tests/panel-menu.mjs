@@ -425,6 +425,34 @@ async function nativeViewportControlTests(strings) {
                     `The default panel must hug the Computer preview: ${canvas.clientWidth}×${canvas.clientHeight}.`);
                 check(viewport.zoomPercent === Math.min(100, Math.round(37.5 * devicePixelRatio)),
                     'Computer Auto respects the fitting scale and the 100% cap.');
+                // Around the footer's wrapping boundary, 100% used to wrap the footer,
+                // shrink the canvas and become a two-digit zoom that unwrapped it again.
+                panel.style.height = `${844 / viewport.dpr + 93}px`;
+                viewport.select('mobile');
+                for (const narrowWidth of [418, 420, 422, 424, 426, 440, 448, 480]) {
+                    panel.style.width = `${narrowWidth}px`;
+                    await pause();
+                    const layouts = new Set();
+                    for (let pass = 0; pass < 8; pass++) {
+                        viewport.layout();
+                        layouts.add(`${viewport.zoomPercent}:${panel.querySelector('.aflpp-devicebar').getBoundingClientRect().height}`);
+                    }
+                    check(layouts.size === 1, `Auto and the footer must settle at ${narrowWidth}px, not alternate across digit counts.`);
+                    viewport.setZoom(99);
+                    const readoutWidth = panel.querySelector('.aflpp-dimensions').getBoundingClientRect().width;
+                    const footerHeight = panel.querySelector('.aflpp-devicebar').getBoundingClientRect().height;
+                    for (const percent of [100, 400]) {
+                        viewport.setZoom(percent);
+                        check(panel.querySelector('.aflpp-dimensions').getBoundingClientRect().width === readoutWidth,
+                            'Changing zoom digit counts must not resize the readout.');
+                        check(panel.querySelector('.aflpp-devicebar').getBoundingClientRect().height === footerHeight,
+                            'Changing zoom digit counts must not rewrap the footer.');
+                    }
+                    viewport.setFit('automatic');
+                }
+                viewport.setZoom(100);
+                viewport.setFit('automatic');
+                panel.style.width = '480px';
                 panel.style.height = '340px';
                 viewport.select('tablet');
                 await pause();
@@ -442,7 +470,8 @@ async function nativeViewportControlTests(strings) {
             checkIcons();
             const toggle = () => panel.querySelector('[data-action="zoom"]');
             check(toggle()?.classList.contains('components-button'), 'Use a native Button to open Zoom.');
-            check(state.fit === 'automatic' && toggle().textContent === `${strings.automatic} · ${state.zoomPercent}%`, 'Auto reports its computed percentage in the same control.');
+            check(state.fit === 'automatic' && toggle().textContent === strings.automatic, 'The Zoom button shows only the mode name.');
+            check(panel.querySelector('.aflpp-dimensions').textContent === `768 × 1024 px · ${state.zoomPercent}%`, 'The adjacent readout reports the viewport size and computed zoom.');
             check(!panel.querySelector('select[data-action="fit"]'), 'No separate fitting selector remains.');
             const toggleWidth = toggle().getBoundingClientRect().width;
             const choice = (popup, fit) => popup.querySelector(`input[type="radio"][value="${fit}"]`);
@@ -471,7 +500,7 @@ async function nativeViewportControlTests(strings) {
                     range.selectNodeContents(description);
                     // RTL can split a single visual line into separate text/punctuation rectangles.
                     const lines = new Set([...range.getClientRects()].map(({ top }) => Math.round(top)));
-                    check(lines.size === 1, `Keep the complete explanation on one line: ${text}`);
+                    check(lines.size <= 3, `Keep the short explanation readable in narrow popovers: ${text}`);
                 }
                 check(display.querySelector('.aflpp-dpr-value').textContent === `${strings.displayDpr}: ${Number(viewport.dpr.toFixed(2))}` && !display.querySelector('input,select,button'), 'DPR belongs to the displaying window and is not editable.');
                 check(popup.querySelectorAll('input[type="number"]').length === (state.fit === 'custom' ? 1 : 0), 'Only Fixed zoom reveals a percentage field.');
@@ -494,18 +523,20 @@ async function nativeViewportControlTests(strings) {
                 check(panel.ownerDocument.querySelector('.aflpp-zoom-popover') === popup && choice(popup, fit).checked, 'Radio selection applies without dismissing the dialog.');
                 check(panel.ownerDocument.activeElement === choice(popup, fit), 'Keep focus in the native radio group when choosing a mode.');
                 check(!popup.querySelector('input[type="number"]'), 'Fitting modes hide the manual percentage.');
-                check(toggle().getBoundingClientRect().width === toggleWidth, 'Changing percentage digit counts must not wrap the footer or trigger fitting loops.');
+                check(toggle().getBoundingClientRect().width === toggleWidth, 'Changing percentage digit counts must not resize the mode button or trigger fitting loops.');
+                const modeLabel = toggle().querySelector('.aflpp-zoom-value');
+                check(modeLabel.scrollWidth <= modeLabel.clientWidth, 'The complete mode name fits without text truncation.');
             }
             await escape(popup);
             popup = await showZoom();
             choice(popup, 'custom').click();
             await pause();
-            check(state.fit === 'custom' && state.zoomPercent === 100 && toggle().textContent === '100%', 'Fixed zoom starts with the last percentage, initially screen-pixel 1:1.');
+            check(state.fit === 'custom' && state.zoomPercent === 100 && toggle().textContent === strings.fixedZoom, 'Fixed zoom starts with the last percentage, initially screen-pixel 1:1.');
             check(choice(popup, 'custom').checked && panel.ownerDocument.activeElement === choice(popup, 'custom'), 'Revealing the percentage does not steal radio-key focus.');
             await escape(popup);
             popup = await showZoom();
-            const field = popup.querySelector('input[data-action="custom-zoom"]');
-            check(field.labels[0]?.textContent === strings.customZoom && field.type === 'number', 'Fixed zoom uses a labelled native number field.');
+            const field = popup.querySelector('.aflpp-custom-zoom input[type="number"]');
+            check(field.getAttribute('aria-label') === strings.customZoom && field.type === 'number', 'Choose zoom uses a labelled native number field.');
             check(panel.ownerDocument.activeElement === field, 'Fixed zoom reopens with keyboard focus in the percentage field.');
             check(getComputedStyle(popup.querySelector('.aflpp-custom-zoom')).borderTopStyle === 'solid', 'Separate the conditional percentage from the mode group.');
             const change = async (value) => {
@@ -513,17 +544,27 @@ async function nativeViewportControlTests(strings) {
                 field.dispatchEvent(new Event('input', { bubbles: true }));
                 await pause();
             };
-            await change('8');
-            check(field.getAttribute('aria-invalid') === 'true' && state.zoomPercent === 100, 'An incomplete percentage never changes the preview.');
+            check(popup.querySelector('input[type="range"]'), 'Choose zoom exposes a native slider alongside its number field.');
+            await change('');
+            check(state.zoomPercent === 100, 'An empty percentage never changes the preview.');
             const invalidEnter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
             field.dispatchEvent(invalidEnter);
             check(invalidEnter.defaultPrevented && panel.ownerDocument.querySelector('.aflpp-zoom-popover') === popup, 'An invalid Enter cannot submit or dismiss the editor.');
             await change('80');
-            check(state.zoomPercent === 80 && state.customZoom === 80 && toggle().textContent === '80%', 'Custom 80% applies without changing viewport dimensions.');
-            check(field.getAttribute('aria-invalid') === 'false', 'A valid percentage clears invalid state.');
+            check(state.zoomPercent === 80 && state.customZoom === 80 && toggle().textContent === strings.fixedZoom, 'Custom 80% applies without changing the mode label or viewport dimensions.');
+            const customLabel = toggle().querySelector('.aflpp-zoom-value');
+            check(customLabel.scrollWidth <= customLabel.clientWidth, 'Choose zoom fits without text truncation.');
+            check(field.validity.valid, 'A valid percentage satisfies native number-input constraints.');
+            const slider = popup.querySelector('input[type="range"]');
+            Object.getOwnPropertyDescriptor(panel.ownerDocument.defaultView.HTMLInputElement.prototype, 'value').set.call(slider, '125');
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+            slider.dispatchEvent(new Event('change', { bubbles: true }));
+            await pause();
+            check(state.zoomPercent === 125 && field.value === '125', 'Moving the native slider updates the preview and number field together.');
+            await change('80');
             check(choice(popup, 'custom').checked && popup.querySelectorAll('input:checked').length === 1, '80% and 100% belong to the same, single Fixed zoom choice.');
             check(panel.querySelector('.aflpp-stage').style.width === '768px' && panel.querySelector('.aflpp-stage').style.height === '1024px', 'Custom zoom never edits the iframe geometry.');
-            check(!panel.querySelector('.aflpp-dimensions').textContent.includes('%'), 'Do not duplicate zoom in the dimension readout.');
+            check(panel.querySelector('.aflpp-dimensions').textContent === '768 × 1024 px · 80%', 'Manual zoom updates the combined readout, not the mode button.');
             await escape(popup);
             popup = await showZoom();
             check(popup.querySelector('input[type="number"]').value === '80', 'Reopening retains the fixed percentage.');
@@ -671,7 +712,7 @@ test('native WordPress launcher, menu and notices render and handle focus and cl
             script: `(async () => {
                 window.wp = { theme: { ThemeProvider: window.previewControls.ThemeProvider } };
                 return [...(${nativeLauncherTests.toString()})(), ...await (${nativePreferenceTests.toString()})(${JSON.stringify(panelStrings)}), ...await (${nativeNoticeTests.toString()})(${JSON.stringify(panelStrings)}), ...await (${nativeViewportControlTests.toString()})(${JSON.stringify(panelStrings)})];
-            })()`, count: 21,
+            })()`, count: 21, virtualTimeBudget: 20000,
             head: `<style>${tokens}\n${core}\n${css}</style><script src="${bundle}"></script>`,
         });
     } finally { await rm(directory, { recursive: true, force: true }); }

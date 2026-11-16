@@ -18,8 +18,8 @@ export function createPreviewViewport(container, stage, dimensions, saved = {}, 
             ? saved[`${name}Orientation`] : defaultOrientation(name),
     ]));
     const size = () => orientations[device] === defaultOrientation(device) ? sizes[device] : [...sizes[device]].reverse();
-    // Portrait handhelds prioritize readable width; Computer and landscape keep the whole viewport visible.
-    const widthFirst = () => fit === 'width' || (fit === 'automatic' && device !== 'desktop' && orientations[device] === 'portrait');
+    // Width fitting is explicit; Auto always keeps the whole screen visible.
+    const widthFirst = () => fit === 'width';
     let scale;
     let animation;
     let removeResolutionListener;
@@ -33,7 +33,7 @@ export function createPreviewViewport(container, stage, dimensions, saved = {}, 
     function scaleFor(width, height) {
         if (fit === 'custom') return customZoom / 100 / pixelRatio();
         const widthScale = canvas.clientWidth / width;
-        if (widthFirst()) return fit === 'automatic' ? Math.min(1 / pixelRatio(), widthScale) : widthScale;
+        if (widthFirst()) return widthScale;
         const windowScale = Math.min(widthScale, canvas.clientHeight / height);
         // 100% is one physical screen pixel per viewport CSS pixel, not native CSS zoom.
         return fit === 'automatic' ? Math.min(1 / pixelRatio(), windowScale) : windowScale;
@@ -97,7 +97,7 @@ export function createPreviewViewport(container, stage, dimensions, saved = {}, 
         const changed = nextZoom !== zoomPercent || dpr !== lastDpr;
         zoomPercent = nextZoom;
         lastDpr = dpr;
-        const text = `${width} × ${height}`;
+        const text = `${width} × ${height} px · ${fit === 'custom' ? customZoom : zoomPercent}%`;
         if (dimensions.textContent !== text) dimensions.textContent = text;
         if (changed) onChange();
         const from = scale ?? target;

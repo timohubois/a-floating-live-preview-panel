@@ -13,7 +13,7 @@ function fixture() {
     const calls = [];
     const container = {};
     const h = (type, props, ...children) => ({ type, props: props || {}, children });
-    const components = Object.fromEntries(['Button', 'Dropdown', 'DropdownMenu', 'MenuGroup', 'MenuItem', 'MenuItemsChoice', 'Notice', 'Placeholder', 'RadioControl', 'TextControl', 'Spinner', 'Toolbar', 'ToolbarButton', 'SlotFillProvider'].map((name) => [name, name]));
+    const components = Object.fromEntries(['Button', 'Dropdown', 'DropdownMenu', 'MenuGroup', 'MenuItem', 'MenuItemsChoice', 'Notice', 'Placeholder', 'RadioControl', 'RangeControl', 'Spinner', 'Toolbar', 'ToolbarButton', 'SlotFillProvider'].map((name) => [name, name]));
     components.Popover = { Slot: 'Popover.Slot' };
     const element = {
         createElement: h, Fragment: 'Fragment', createPortal: (child, target) => h('Portal', { target }, child), flushSync: (callback) => callback(),
@@ -144,18 +144,18 @@ for (const inPip of [false, true]) {
         const h = fixture();
         h.controls.update({ ...h.state, inPip, fit: 'width', zoomPercent: 230, customZoom: 80, dpr: 2 });
         const toggle = h.nodes('Button').find(({ props }) => props['data-action'] === 'zoom');
-        assert.equal(toggle.props['aria-label'], 'Zoom: Fit width · 230%');
-        assert.equal(h.nodes('TextControl').length, 0, 'Do not show a permanent custom field.');
+        assert.equal(toggle.props['aria-label'], 'Zoom: Fill width');
+        assert.equal(h.nodes('RangeControl').length, 0, 'Do not show a permanent custom field.');
         h.nodes('Dropdown')[0].props.onToggle(true);
         let modes = h.nodes('RadioControl')[0];
         assert.equal(modes.props.label, 'Zoom mode');
         assert.equal(modes.props.selected, 'width');
         assert.deepEqual(Array.from(modes.props.options, ({ value }) => value), ['automatic', 'window', 'width', 'custom']);
-        assert.deepEqual(Array.from(modes.props.options, ({ label }) => label), ['Auto', 'Fit', 'Fit width', 'Fixed zoom']);
+        assert.deepEqual(Array.from(modes.props.options, ({ label }) => label), ['Auto', 'Fit to panel', 'Fill width', 'Choose zoom']);
         assert.deepEqual(Array.from(modes.props.options, ({ description }) => description), [
             panelStrings.automaticHelp, panelStrings.fitToWindowHelp, panelStrings.fitToWidthHelp, panelStrings.fixedZoomHelp,
         ]);
-        assert.equal(h.nodes('TextControl').length, 0, 'Fitting modes do not expose an unrelated percentage field.');
+        assert.equal(h.nodes('RangeControl').length, 0, 'Fitting modes do not expose an unrelated percentage field.');
         modes.props.onChange('window');
         assert.deepEqual(h.calls.at(-1), { name: 'fit', args: ['window'] });
         assert.equal(h.nodes('Dropdown')[0].props.open, true, 'A radio choice does not dismiss the dialog.');
@@ -165,7 +165,7 @@ for (const inPip of [false, true]) {
         assert.deepEqual(h.calls.at(-1), { name: 'zoom', args: [80] }, 'Use the last fixed percentage, not an implicit 100% reset.');
         h.controls.update({ ...h.state, inPip, fit: 'custom', customZoom: 80, zoomPercent: 80 });
         assert.equal(h.nodes('RadioControl')[0].props.selected, 'custom');
-        assert.equal(h.nodes('TextControl')[0].props.value, '80');
+        assert.equal(h.nodes('RangeControl')[0].props.value, 80);
         assert.equal(h.nodes('Button').some(({ props }) => props['data-zoom-mode']), false, 'Do not duplicate fixed zoom with a separate 100% choice.');
     });
 }
@@ -176,30 +176,25 @@ test('all fitting modes hide the percentage field; 80% and 100% select the same 
     for (const fit of ['automatic', 'window', 'width', 'custom']) for (const customZoom of [80, 100]) {
         h.controls.update({ ...h.state, fit, customZoom });
         assert.equal(h.nodes('RadioControl')[0].props.selected, fit);
-        assert.equal(h.nodes('TextControl').length, fit === 'custom' ? 1 : 0);
+        assert.equal(h.nodes('RangeControl').length, fit === 'custom' ? 1 : 0);
         assert.equal(h.nodes('RadioControl')[0].props.options.length, 4);
     }
 });
 
-test('custom zoom accepts whole percentages only, keeps invalid drafts out of preferences and supports 80%', () => {
+test('custom zoom uses a native slider and number field, and accepts only whole percentages in range', () => {
     const h = fixture();
     h.controls.update({ ...h.state, fit: 'custom', customZoom: 80, zoomPercent: 80 });
     h.nodes('Dropdown')[0].props.onToggle(true);
-    let field = h.nodes('TextControl')[0];
+    const field = h.nodes('RangeControl')[0];
     assert.equal(field.props.label, 'Zoom (%)');
-    assert.equal(field.props.value, '80');
-    assert.deepEqual([field.props.type, field.props.min, field.props.max, field.props.step], ['number', 10, 400, 1]);
-    for (const value of ['', '8', '0', '401', '80.5', 'NaN', '1e2']) {
-        field.props.onChange(value);
-        field = h.nodes('TextControl')[0];
-        assert.equal(field.props.value, value);
-        assert.equal(field.props['aria-invalid'], true);
-    }
+    assert.equal(field.props.value, 80);
+    assert.equal(field.props.withInputField, true);
+    assert.deepEqual([field.props.min, field.props.max, field.props.step], [10, 400, 1]);
+    for (const value of [undefined, null, NaN, 8, 0, 401, 80.5, '80']) field.props.onChange(value);
     assert.equal(h.calls.length, 0);
-    for (const value of ['10', '80', '400']) {
-        h.nodes('TextControl')[0].props.onChange(value);
-        assert.deepEqual(h.calls.at(-1), { name: 'zoom', args: [Number(value)] });
-        assert.equal(h.nodes('TextControl')[0].props['aria-invalid'], false);
+    for (const value of [10, 80, 400]) {
+        field.props.onChange(value);
+        assert.deepEqual(h.calls.at(-1), { name: 'zoom', args: [value] });
     }
 });
 
@@ -207,14 +202,13 @@ test('switching from an invalid draft back to fixed zoom restores the last valid
     const h = fixture();
     h.controls.update({ ...h.state, fit: 'custom', customZoom: 80, zoomPercent: 80 });
     h.nodes('Dropdown')[0].props.onToggle(true);
-    h.nodes('TextControl')[0].props.onChange('');
+    h.nodes('RangeControl')[0].props.onChange('');
     h.nodes('RadioControl')[0].props.onChange('automatic');
     h.controls.update({ ...h.state, fit: 'automatic', customZoom: 80 });
-    assert.equal(h.nodes('TextControl').length, 0);
+    assert.equal(h.nodes('RangeControl').length, 0);
     h.nodes('RadioControl')[0].props.onChange('custom');
     h.controls.update({ ...h.state, fit: 'custom', customZoom: 80, zoomPercent: 80 });
-    assert.equal(h.nodes('TextControl')[0].props.value, '80');
-    assert.equal(h.nodes('TextControl')[0].props['aria-invalid'], false);
+    assert.equal(h.nodes('RangeControl')[0].props.value, 80);
     assert.deepEqual(h.calls, [{ name: 'fit', args: ['automatic'] }, { name: 'zoom', args: [80] }]);
 });
 
@@ -257,25 +251,26 @@ test('Enter closes valid custom zoom, but incomplete drafts cannot submit or clo
     h.controls.update({ ...h.state, fit: 'custom' });
     h.nodes('Dropdown')[0].props.onToggle(true);
     let prevented = 0;
-    const enter = () => h.nodes('TextControl')[0].props.onKeyDown({ key: 'Enter', preventDefault() { prevented++; } });
-    h.nodes('TextControl')[0].props.onChange('8');
-    enter();
+    const enter = (value) => h.nodes('div').find(({ props }) => props.className === 'aflpp-custom-zoom').props.onKeyDown({
+        key: 'Enter', target: { value }, preventDefault() { prevented++; },
+    });
+    enter('8');
     assert.equal(h.nodes('Dropdown')[0].props.open, true);
     assert.equal(h.calls.length, 0);
-    h.nodes('TextControl')[0].props.onChange('80');
-    enter();
+    h.nodes('RangeControl')[0].props.onChange(80);
+    enter('80');
     assert.equal(h.nodes('Dropdown')[0].props.open, false);
     assert.equal(prevented, 2);
     assert.deepEqual(h.calls.at(-1), { name: 'zoom', args: [80] });
 });
 
-test('Zoom descriptions use short, plain English without changing the mode labels', () => {
+test('Zoom descriptions use the agreed short, plain English', () => {
     assert.deepEqual([
         panelStrings.automaticHelp, panelStrings.fitToWindowHelp, panelStrings.fitToWidthHelp,
         panelStrings.fixedZoomHelp, panelStrings.customZoomHelp,
     ], [
-        'Picks a size for you.', 'Shows the whole view.', 'Fits side to side.',
-        'You pick the size.', 'Choose 10% to 400%.',
+        'Show the whole screen, up to 100%.', 'Make the whole screen fit the panel.', 'Fill the width. May need extra scrolling.',
+        'Set a percentage. May need extra scrolling.', 'Choose 10% to 400%.',
     ]);
 });
 
@@ -291,11 +286,11 @@ test('DPR is separate read-only display information, not another setting or devi
     assert.equal(display.children[1].children[0], '100% = pixel for pixel.');
     assert.equal(display.props.hidden, undefined, 'Display information is always visible, never collapsible.');
     assert.equal(h.nodes('strong').some(({ props }) => props.className === 'aflpp-dpr-title'), false);
-    assert.equal(h.nodes('TextControl').length, 1, 'Only the fixed percentage is editable.');
-    assert.equal(h.nodes('Button').find(({ props }) => props['data-action'] === 'zoom').props['aria-label'], 'Zoom: 80%');
+    assert.equal(h.nodes('RangeControl').length, 1, 'Only the fixed percentage is editable.');
+    assert.equal(h.nodes('Button').find(({ props }) => props['data-action'] === 'zoom').props['aria-label'], 'Zoom: Choose zoom');
     h.controls.update({ ...h.state, fit: 'custom', customZoom: 80, zoomPercent: 80, dpr: 1.25 });
     assert.equal(dpr(), 'Display DPR: 1.25');
-    assert.equal(h.nodes('TextControl')[0].props.value, '80');
+    assert.equal(h.nodes('RangeControl')[0].props.value, 80);
     assert.equal(h.calls.length, 0);
 });
 

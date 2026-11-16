@@ -290,12 +290,11 @@
 .aflpp-fit-control {
     flex-shrink: 0;
 }
-/* A stable width prevents percentage digit changes from wrapping the footer and changing fit again. */
+/* Keep the mode button stable while viewport size and zoom update beside it. */
 .aflpp-zoom-toggle.components-button {
     inline-size: 148px;
     justify-content: space-between;
     gap: 6px;
-    font-variant-numeric: tabular-nums;
 }
 .aflpp-zoom-value {
     overflow: hidden;
@@ -346,6 +345,8 @@
     background: transparent;
 }
 .aflpp-dimensions {
+    /* Reserve the full readout so zoom digit changes cannot wrap the footer and change zoom again. */
+    min-inline-size: 20ch;
     color: var(--aflpp-muted);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
