@@ -248,8 +248,9 @@ export function createLivePreview(config, nativeEditor) {
         }
     }
 
-    function refreshPreview() {
+    function refreshPreview(follow = true) {
         if (nativeEditor.saving) return;
+        if (!follow) followPending = false;
         if (!previewActive) { startPreview(); return; }
         generation += 1;
         frames.cancel();

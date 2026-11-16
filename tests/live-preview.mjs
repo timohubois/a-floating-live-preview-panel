@@ -12,14 +12,14 @@ let nextSite = 0;
 // Use native lock queues and cross-context messages; only the panel and frame are fakes.
 function fixture(t) {
     const endpoint = `/ownership-test-${process.pid}-${++nextSite}`;
-    return ({ site = endpoint, userId = 1, broadcast = true, pending = false, error, hasPreview = false, excludedSelectors = [], prepare } = {}) => {
+    return ({ site = endpoint, userId = 1, broadcast = true, pending = false, error, hasPreview = false, followChanges = true, excludedSelectors = [], prepare } = {}) => {
         const write = Promise.withResolvers(), started = Promise.withResolvers();
         const reports = [], timers = new Map();
         const frames = { loads: 0, cancels: 0, clears: 0, hasPreview,
             load(...args) { this.loads++; this.lastLoad = args; }, cancel() { this.cancels++; }, clear() { this.clears++; },
         };
-        let callbacks, channel, exit, comparisonSelectors, writes = 0;
-        const view = { visible: true, setTitle() {}, returnToEditor() {},
+        let callbacks, channel, exit, comparisonSelectors, frameReport, writes = 0;
+        const view = { visible: true, followChanges, setTitle() {}, returnToEditor() {},
             setVisible(value) { this.visible = value; },
             report(text, state, details) { reports.push({ text, state, ...details }); },
         };
@@ -36,7 +36,7 @@ function fixture(t) {
                 '../panel/window.js': { createPreviewPanel: (strings, options) => { callbacks = options; return view; } },
                 '../preview/scroll.js': { createPreviewScroll: () => ({}) },
                 '../preview/frame.js': { createPreviewFrame: (view, scrolling, strings, report, selectors) => {
-                    comparisonSelectors = selectors; return frames;
+                    comparisonSelectors = selectors; frameReport = report; return frames;
                 } },
             },
         })({ endpoint: site, postId: 12, userId, available: true, strings: {}, comparisonExcludedSelectors: excludedSelectors }, {
@@ -58,7 +58,8 @@ function fixture(t) {
             await session.pending;
             await settle();
         });
-        return { session, callbacks, channel, reports, timers, frames, comparisonSelectors, started: started.promise,
+        return { session, callbacks, channel, view, reports, timers, frames, comparisonSelectors, started: started.promise,
+            frameReady: () => frameReport('', 'ready'),
             release: () => write.resolve({ url: '/preview' }), get writes() { return writes; },
         };
     };
@@ -86,6 +87,42 @@ test('only accepted preview generations pass their own input hints to frame load
     assert.equal(h.frames.lastLoad[0], '/latest');
     assert.equal(h.frames.lastLoad[3], newValues);
 });
+
+for (const failedEdit of [false, true]) {
+    test(`the enable refresh seeds the live baseline without following, after ${failedEdit ? 'a failed edit' : 'a ready preview'}`, async (t) => {
+        let text = 'Current preview', attempts = 0;
+        const h = fixture(t)({ hasPreview: true, followChanges: false, prepare: () => {
+            if (++attempts === 2 && failedEdit) throw new Error('Temporary preview failure');
+            return Promise.resolve({ url: '/preview', comparisonValues: { content: { type: 'text', value: text } } });
+        } });
+        const update = async () => {
+            for (const [callback, delay] of [...h.timers]) if (delay === 1000) {
+                h.timers.delete(callback);
+                callback();
+            }
+            await h.session.pending;
+        };
+        h.session.start(); await h.started; await h.session.pending;
+        h.frameReady();
+        if (failedEdit) {
+            h.session.changed(); await update();
+            assert.equal(h.reports.at(-1).state, 'error');
+            assert.equal(h.reports.at(-1).canRefresh, true);
+        }
+        h.view.followChanges = true;
+        const before = h.writes;
+        h.callbacks.onRefresh(false); await h.session.pending;
+        assert.equal(h.writes, before + 1, 'Enabling uses one normal preview refresh.');
+        assert.equal(h.frames.lastLoad[2](), false, 'A baseline refresh must not inherit old edit-following intent.');
+        assert.equal(h.frames.lastLoad[3].content.value, 'Current preview');
+        assert.equal(h.timers.size, 0, 'Do not queue another refresh after the baseline succeeds.');
+        h.frameReady();
+        text = 'First edit after the baseline is ready';
+        h.session.changed(); await update();
+        assert.equal(h.frames.lastLoad[2](), true, 'The first subsequent edit can follow normally.');
+        assert.equal(h.frames.lastLoad[3].content.value, text);
+    });
+}
 
 test('live comparison receives the complete PHP exclusion policy, including an empty list', async (t) => {
     const open = fixture(t);

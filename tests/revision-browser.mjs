@@ -75,7 +75,7 @@ function fixture({ visible = true, selected = revision(11), isolated = false, ex
                 findChange(previous, next) {
                     comparisons.push({ previous, next, before: values.get(previous), after: values.get(next),
                         previousMounted: children.some((frame) => frame.contentDocument === previous) });
-                    return 'target';
+                    return values.has(previous) && values.has(next) ? 'target' : null;
                 },
             };
         } },
@@ -154,14 +154,107 @@ test('verified iframe scrolling is contained after capture on initial, replaceme
     }
 });
 
-test('disabled following still captures a baseline without calling comparison', async () => {
+test('disabled following skips snapshots and comparison while preserving preview scrolling', async () => {
     const h = fixture({ visible: false });
     h.view.followChanges = false;
     h.options.onOpen(); await h.load();
     h.select(revision(12)); await h.runTimers(); await h.load();
-    assert.equal(h.captures.length, 2);
+    await h.load(); // Native iframe navigation must not create a snapshot either.
+    assert.equal(h.captures.length, 0);
     assert.equal(h.comparisons.length, 0);
     assert.equal(h.scrolls.filter(([operation]) => operation === 'restore').length, 2);
+    assert.equal(h.last.state, 'ready');
+    assert.equal(h.last.previewUrl, url(12));
+    assert.equal(h.children[0].contentDocument.documentElement.style.getPropertyValue('overscroll-behavior'), 'contain');
+    assert.equal(h.children[0].contentDocument.documentElement.style.getPropertyPriority('overscroll-behavior'), 'important');
+});
+
+test('the enable refresh establishes a fresh baseline before the first later revision selection', async () => {
+    const h = fixture({ visible: false });
+    h.view.followChanges = false;
+    h.options.onOpen(); await h.load();
+    h.select(revision(12)); await h.runTimers(); await h.load();
+    const uncaptured = h.children[0].contentDocument;
+    h.view.followChanges = true;
+    h.options.onRefresh(false); await h.load();
+    assert.equal(h.captures.length, 1);
+    assert.equal(h.captures[0].values.revision.value, 12);
+    assert.notEqual(h.captures[0].doc, uncaptured, 'Do not reconstruct the old baseline from runtime-mutated output.');
+    assert.equal(h.comparisons.length, 0, 'Enabling establishes a baseline without following a change.');
+    assert.equal(h.scrolls.filter(([operation]) => operation === 'restore').at(-1)[2], undefined);
+    h.select(revision(13)); await h.runTimers(); await h.load();
+    assert.deepEqual(h.captures.map(({ values }) => values.revision.value), [12, 13]);
+    assert.equal(h.comparisons[0].before.revision.value, 12);
+    assert.equal(h.comparisons[0].after.revision.value, 13);
+    assert.equal(h.scrolls.filter(([operation]) => operation === 'restore').at(-1)[2], 'target');
+});
+
+test('an enable refresh preserves position even when the previous document already has a snapshot', async () => {
+    const h = fixture(); await h.load();
+    h.view.followChanges = false;
+    h.view.followChanges = true;
+    h.options.onRefresh(false); await h.load();
+    assert.deepEqual(h.captures.map(({ values }) => values.revision.value), [11, 11]);
+    assert.equal(h.comparisons.length, 0, 'A baseline refresh must not follow incidental frontend changes.');
+    assert.equal(h.scrolls.filter(([operation]) => operation === 'restore').at(-1)[2], undefined);
+    h.select(revision(12)); await h.runTimers(); await h.load();
+    assert.equal(h.comparisons[0].before.revision.value, 11);
+    assert.equal(h.comparisons[0].after.revision.value, 12);
+    assert.equal(h.scrolls.filter(([operation]) => operation === 'restore').at(-1)[2], 'target');
+});
+
+test('toggling following without accepting disabled output keeps the current frozen baseline', async () => {
+    const h = fixture(); await h.load();
+    h.view.followChanges = false;
+    h.view.followChanges = true;
+    h.select(revision(12)); await h.runTimers(); await h.load();
+    assert.equal(h.captures.length, 2);
+    assert.equal(h.comparisons[0].before.revision.value, 11);
+    assert.equal(h.comparisons[0].after.revision.value, 12);
+    assert.equal(h.scrolls.filter(([operation]) => operation === 'restore').at(-1)[2], 'target');
+});
+
+test('enabling following during a disabled load establishes a baseline even without captured source', async () => {
+    const h = fixture({ visible: false });
+    h.view.followChanges = false;
+    h.options.onOpen(); await h.load();
+    h.select(revision(12)); await h.runTimers();
+    assert.equal(new URL(h.children.at(-1).src).searchParams.has('aflpp_source'), false);
+    h.view.followChanges = true;
+    await h.load();
+    assert.equal(h.captures.length, 1);
+    assert.equal(h.captures[0].values.revision.value, 12);
+    assert.equal(h.scrolls.filter(([operation]) => operation === 'restore').at(-1)[2], null);
+    h.select(revision(13)); await h.runTimers(); await h.load();
+    assert.equal(h.comparisons.at(-1).before.revision.value, 12);
+    assert.equal(h.comparisons.at(-1).after.revision.value, 13);
+    assert.equal(h.scrolls.filter(([operation]) => operation === 'restore').at(-1)[2], 'target');
+});
+
+test('disabling following during an initial load skips snapshots even when source was requested', async () => {
+    const h = fixture();
+    assert.equal(new URL(h.children[0].src).searchParams.get('aflpp_source'), '1');
+    h.view.followChanges = false;
+    await h.load();
+    assert.equal(h.captures.length, 0);
+    assert.equal(h.comparisons.length, 0);
+    assert.equal(h.last.state, 'ready');
+    assert.equal(h.scrolls.filter(([operation]) => operation === 'restore').length, 1);
+});
+
+test('a disabled replacement cannot reuse an earlier following baseline', async () => {
+    const h = fixture(); await h.load();
+    h.select(revision(12)); await h.runTimers();
+    h.view.followChanges = false;
+    await h.load();
+    assert.equal(h.captures.length, 1, 'Do not snapshot the disabled replacement.');
+    assert.equal(h.comparisons.length, 0);
+    assert.equal(h.scrolls.filter(([operation]) => operation === 'restore').at(-1)[2], undefined);
+    h.view.followChanges = true;
+    h.select(revision(13)); await h.runTimers(); await h.load();
+    assert.equal(h.captures.length, 2);
+    assert.equal(h.comparisons[0].before, undefined, 'The displayed uncaptured document has no comparison baseline.');
+    assert.equal(h.scrolls.filter(([operation]) => operation === 'restore').at(-1)[2], null);
 });
 
 test('read-only comparison receives the complete PHP exclusion policy, including an empty list', () => {
@@ -236,7 +329,7 @@ test('previous preview retains its identity while loading and after a failed rep
     assert.equal(h.last.state, 'error');
     assert.equal(h.last.hasPreview, true);
     assert.equal(h.title, 'Date 11 — Author 11');
-    h.options.onRetry(); await h.load();
+    h.options.onRetry(false); await h.load(); // The panel passes the takeover flag, not following intent.
     assert.equal(h.title, 'Date 12 — Author 12');
     assert.equal(h.comparisons.length, 1);
 });

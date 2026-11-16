@@ -756,6 +756,27 @@ async function browserTests(source) {
         if (document.defaultView.scrollY <= 0) throw new Error('Scroll presentation works independently of comparison.');
     });
     for (const captured of [false, true]) {
+        await check(`following resumes from a fresh baseline after uncaptured previews, captured=${captured}`, async (frame, doc) => {
+            const old = await doc(content('Older following output'), { captured });
+            frame.capture(old, hints('Older following output'));
+            const disabled = await doc(content('Output while following is disabled'));
+            disabled.defaultView.scrollTo(0, 60);
+            frame.remember(disabled);
+            const baseline = await doc(content('Fresh following baseline'), { captured });
+            frame.capture(baseline, hints('Fresh following baseline'));
+            const target = frame.comparison.findChange(disabled, baseline);
+            equal(target, null, 'Neither an uncaptured document nor an older following snapshot supplies a baseline.');
+            frame.scrolling.restore(baseline, target);
+            equal(baseline.defaultView.scrollY, 60, 'The first following load retains the remembered position.');
+            baseline.querySelector('#edited').textContent = 'Later frontend mutation';
+            const next = await doc(content('Next authored change'), { captured });
+            frame.capture(next, hints('Next authored change'));
+            const change = frame.comparison.findChange(baseline, next);
+            equal(change, next.querySelector('#edited'), 'Subsequent updates follow against the frozen new baseline.');
+            frame.scrolling.restore(next, change);
+        });
+    }
+    for (const captured of [false, true]) {
         for (const custom of [false, true]) {
             await check(`boxless insertions preserve their comparison-eligible descendant, captured=${captured}, custom policy=${custom}`, async (frame, doc) => {
                 const before = await doc(section('First') + section('Last'), { captured });
@@ -785,5 +806,5 @@ test('preview scrolling matches changed sections conservatively in Chromium', as
     const comparison = await readFile(new URL('../src/preview/comparison.js', import.meta.url), 'utf8');
     const scrolling = await readFile(new URL('../src/preview/scroll.js', import.meta.url), 'utf8');
     const source = `${comparison.replace('export function', 'function')}\n${scrolling.replace(/^import .*;\n/, '')}`;
-    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify(source)})`, count: 158 });
+    await runChromiumTests(t, { script: `(${browserTests.toString()})(${JSON.stringify(source)})`, count: 160 });
 });

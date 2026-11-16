@@ -120,6 +120,7 @@ function fixture(open = false, {
     let state;
     const focusCalls = [];
     const retryCalls = [];
+    const refreshCalls = [];
     const controls = { closeMenu() {}, focus(action) { focusCalls.push(action); }, beforeMove() {}, remount() {}, update(next) { state = next; } };
     const createControls = (panel, labels, callbacks) => { actions = callbacks; return controls; };
     const imports = {
@@ -134,11 +135,12 @@ function fixture(open = false, {
     const view = createPreviewPanel(strings, {
         nativeSaving, beforeMove() {}, afterMove() {},
         onOpen() { view.setVisible(true); }, onClose() { view.setVisible(false); }, onRetry(takeOver) { retryCalls.push(takeOver); },
+        onRefresh(follow = true) { refreshCalls.push({ follow, enabled: preferences.get('scrollToChanges') }); },
     });
     const panel = node('aflpp-panel');
     return {
         view, launcher, launcherContainer, panel, node, actions, window, document, preferences, writes, detached, copiedStyles,
-        requests, focusCalls, retryCalls,
+        requests, focusCalls, retryCalls, refreshCalls,
         get state() { return state; },
         rect: () => Object.fromEntries(['left', 'top', 'width', 'height'].map((key) => [key, parseFloat(panel.style[key])])),
         resizeTo(width, height) {
@@ -308,6 +310,34 @@ test('pending, loading, ready and problem states keep refresh activity and acces
     assert.equal(h.state.busy, false, 'A failed refresh must not leave the spinner running.');
     assert.equal(h.state.notice.heading, 'Could not refresh');
 });
+
+test('enabling following refreshes its baseline once without following, while disabling only saves the preference', () => {
+    const h = fixture(true, { preferences: [['scrollToChanges', false]] });
+    h.view.report(panelStrings.current, 'ready', { hasPreview: true, canRefresh: true });
+    assert.equal(h.refreshCalls.length, 0, 'Restoring a preference must not request an extra refresh.');
+    h.actions.follow();
+    assert.equal(h.view.followChanges, true);
+    assert.equal(h.state.followChanges, true);
+    assert.deepEqual(h.refreshCalls, [{ follow: false, enabled: true }]);
+    h.actions.follow();
+    assert.equal(h.view.followChanges, false);
+    assert.equal(h.preferences.get('scrollToChanges'), false);
+    assert.equal(h.refreshCalls.length, 1, 'Disabling following must not reload the preview.');
+    h.actions.follow();
+    assert.deepEqual(h.refreshCalls, [{ follow: false, enabled: true }, { follow: false, enabled: true }]);
+    h.actions.refresh();
+    assert.deepEqual(h.refreshCalls.at(-1), { follow: true, enabled: true }, 'Manual refresh keeps its existing following behavior.');
+});
+
+for (const state of ['loading', 'stale', 'paused', 'conflict', 'error']) {
+    test(`enabling following respects the existing refresh gate while ${state}`, () => {
+        const h = fixture(true, { preferences: [['scrollToChanges', false]] });
+        h.view.report('Not ready to refresh', state, { hasPreview: true, canRefresh: false });
+        h.actions.follow();
+        assert.equal(h.preferences.get('scrollToChanges'), true);
+        assert.equal(h.refreshCalls.length, 0, 'An in-flight load or native recovery must not be restarted by a preference.');
+    });
+}
 
 test('hidden-panel drain and error messages do not replace the launcher action label', () => {
     const { view, launcher } = fixture();

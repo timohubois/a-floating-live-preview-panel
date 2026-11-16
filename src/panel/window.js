@@ -198,6 +198,8 @@ export function createPreviewPanel(strings, {
         followChanges = !followChanges;
         preferenceActions.set(scope, 'scrollToChanges', followChanges);
         syncControls();
+        // Seed the baseline now, not with the next edit; existing loads/recovery retain their refresh gate.
+        if (followChanges && current.canRefresh) onRefresh(false);
     }
 
     function rememberPanelVisibility(value) {

@@ -13,7 +13,7 @@ export function initRevisionPreview(config, model) {
         onOpen() { view.setVisible(true); refresh(); },
         onClose: close,
         onRefresh: refresh,
-        onRetry: refresh,
+        onRetry: () => refresh(),
         beforeMove() { generation++; frames.clear(); },
         afterMove() { if (view.visible) refresh(); },
     });
@@ -37,7 +37,7 @@ export function initRevisionPreview(config, model) {
         });
     }
 
-    async function refresh() {
+    async function refresh(follow = true) {
         clearTimeout(timer);
         frames.cancel();
         const version = ++generation;
@@ -51,7 +51,7 @@ export function initRevisionPreview(config, model) {
             return;
         }
         try {
-            await frames.load(url, () => view.visible && version === generation, () => view.followChanges,
+            await frames.load(url, () => view.visible && version === generation, () => view.followChanges && follow,
                 { revision: { type: 'value', value: selected.id } });
         } catch (error) {
             if (view.visible && version === generation) {
