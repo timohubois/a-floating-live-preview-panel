@@ -59,7 +59,7 @@ export function initLivePreview(config, nativeEditor) {
         preview.resume(extensions.error || error);
     };
     function watchEditor(editor) {
-        if (!editor || editors.has(editor)) return;
+        if (destroyed || !editor || editors.has(editor)) return;
         editors.add(editor);
         editor.on('input change undo redo SetContent', changed);
     }
@@ -68,6 +68,9 @@ export function initLivePreview(config, nativeEditor) {
         window.tinymce.on('AddEditor', onEditorAdded);
     }
     function onEditorAdded(event) { watchEditor(event.editor); }
+    // Core may load TinyMCE after this entry, including on the first switch from Text to Visual.
+    window.jQuery?.(document).on('tinymce-editor-init.aflppClassicEditor', onEditorInitialized);
+    function onEditorInitialized(event, editor) { watchEditor(editor); }
     function cancelNativeSave() {
         if (!nativeEditor.saving) return;
         nativeEditor.saving = false;
@@ -88,6 +91,7 @@ export function initLivePreview(config, nativeEditor) {
         form.removeEventListener('submit', onSaveSubmit, true);
         window.removeEventListener('pagehide', onPageHide);
         window.tinymce?.off('AddEditor', onEditorAdded);
+        window.jQuery?.(document).off('tinymce-editor-init.aflppClassicEditor', onEditorInitialized);
         for (const editor of editors) editor.off('input change undo redo SetContent', changed);
         editors.clear();
         destroyNative?.();

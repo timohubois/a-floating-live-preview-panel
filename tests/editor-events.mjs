@@ -16,7 +16,7 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
     window.BroadcastChannel = undefined;
     Object.defineProperty(navigator, 'locks', { value: { request: (name, options, run) => run({}) } });
 
-    async function fixture(withAcf, withWordPress) {
+    async function fixture(withAcf, withWordPress, withTinyMce = true) {
         const form = document.createElement('form');
         form.id = 'post';
         form.innerHTML = '<input id="title" name="post_title"><textarea name="content"></textarea><textarea name="excerpt"></textarea><input name="unrelated"><input name="_acf_nonce" value="nonce"><div class="acf-field"><input name="acf[field_text]" value="ACF text"><input name="_acf_fields[field_rows]" value="rows"><div class="widget"></div></div>';
@@ -29,7 +29,9 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         const editorEvents = new Map();
         const editor = { on: (events, callback) => {
             for (const event of events.split(' ')) editorEvents.set(event, callback);
-        }, off() {} };
+        }, off: (events, callback) => {
+            for (const event of events.split(' ')) if (editorEvents.get(event) === callback) editorEvents.delete(event);
+        } };
         let addEditor;
         let options;
         let finishNative;
@@ -38,25 +40,37 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         window.setTimeout = (callback, delay) => { timers.set(++nextTimer, { callback, delay }); return nextTimer; };
         window.clearTimeout = (id) => timers.delete(id);
         window.fetch = (url, request) => { requests.push(request); return new Promise(() => {}); };
-        window.tinymce = {
+        const tinymce = {
             editors: [editor],
             on: (event, callback) => { addEditor = callback; }, off() {},
             triggerSave: () => {
-                editorEvents.get('SetContent')();
+                editorEvents.get('SetContent')?.();
                 if (withWordPress) window.jQuery(form.querySelector('[name="content"]')).trigger('change');
             },
         };
+        if (withTinyMce) window.tinymce = tinymce;
+        else delete window.tinymce;
         const handlers = new Map();
         const jqueryListeners = [];
+        const jqueryCalls = [];
+        const jqueryMethods = realJQuery && { on: realJQuery.fn.on, off: realJQuery.fn.off };
         delete window.jQuery;
         if (withAcf) window.acf = {
             addAction: (name, callback) => actions.set(name, callback),
             removeAction: (name) => actions.delete(name),
         };
         if (withAcf || withWordPress) {
+            // Observe the public subscription contract with real jQuery as well as the boundary mock.
+            if (realJQuery) for (const method of ['on', 'off']) {
+                realJQuery.fn[method] = function (...args) {
+                    jqueryCalls.push({ method, target: this[0], args });
+                    return jqueryMethods[method].apply(this, args);
+                };
+            }
             // Use real WordPress assets when supplied; otherwise model only the jQuery event boundary.
             window.jQuery = realJQuery || ((target) => ({
                 on(events, callback) {
+                    jqueryCalls.push({ method: 'on', target, args: [events, callback] });
                     if (!handlers.has(target)) handlers.set(target, []);
                     for (const event of events.split(' ')) {
                         const type = event.split('.')[0];
@@ -75,7 +89,12 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
                     }
                     return this;
                 },
-                off() { return this; },
+                triggerHandler(type, args = []) {
+                    for (const handler of handlers.get(target) || []) {
+                        if (handler.type === type) handler.callback({ type, target }, ...args);
+                    }
+                },
+                off(...args) { jqueryCalls.push({ method: 'off', target, args }); return this; },
             }));
         }
         const trigger = (type, target) => window.jQuery(target).trigger(type);
@@ -104,11 +123,15 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         initPreview(config, nativeEditor);
         equal(reports.at(-1).state, 'loading');
         return {
-            form, titles, timers, actions, editorEvents, trigger, nativeEditor,
+            form, titles, timers, actions, editorEvents, trigger, nativeEditor, jqueryCalls,
             stale: () => reports.filter(({ state }) => state === 'stale').length,
             canRefresh: () => reports.at(-1).canRefresh,
             dispatch: (selector, type = 'input', bubbles = true) => form.querySelector(selector).dispatchEvent(new Event(type, { bubbles })),
             addEditor: (editor) => addEditor({ editor }),
+            initializeEditor(initialized = editor) {
+                window.tinymce = tinymce;
+                window.jQuery(document).triggerHandler('tinymce-editor-init', [initialized]);
+            },
             close: () => options.onClose(),
             async capture() { finishNative(); await Promise.resolve(); return requests[0].body; },
             async runTask() {
@@ -125,15 +148,16 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
                     window.jQuery(form).off('.aflpp .aflppAcf');
                 }
                 for (const { target, type, listener } of jqueryListeners) target.removeEventListener(type, listener);
+                if (jqueryMethods) Object.assign(realJQuery.fn, jqueryMethods);
                 Object.assign(window, original);
                 form.remove();
             },
         };
     }
-    async function check(name, run, withAcf = false, withWordPress = false) {
+    async function check(name, run, withAcf = false, withWordPress = false, withTinyMce = true) {
         let context;
         try {
-            context = await fixture(withAcf, withWordPress);
+            context = await fixture(withAcf, withWordPress, withTinyMce);
             await run(context);
             results.push({ name });
         } catch (error) { results.push({ name, error: error.message }); }
@@ -257,6 +281,51 @@ async function browserTests(editorSource, initAcf, nativeSource, extensionSource
         context.addEditor(editor);
         equal(registrations, 1);
     });
+    await check('WordPress readiness attaches Visual-editor listeners when TinyMCE loads after the panel', (context) => {
+        equal(window.tinymce, undefined);
+        equal(context.editorEvents.size, 0);
+        context.initializeEditor();
+        for (const event of ['input', 'change', 'undo', 'redo', 'SetContent']) context.editorEvents.get(event)();
+        equal(context.stale(), 5);
+        equal(context.timers.size, 1);
+    }, false, true, false);
+    await check('WordPress, TinyMCE and ACF readiness do not duplicate editor listeners', (context) => {
+        let registrations = 0;
+        const editor = { on: () => registrations++, off() {} };
+        context.addEditor(editor);
+        context.initializeEditor(editor);
+        context.initializeEditor(editor);
+        context.actions.get('wysiwyg_tinymce_init')(editor);
+        equal(registrations, 1);
+    }, true, true);
+    await check('late TinyMCE initialization preserves native Text-mode editing and capture', async (context) => {
+        context.form.querySelector('[name="content"]').value = 'Text-mode content';
+        context.dispatch('[name="content"]');
+        const body = await context.capture();
+        equal(window.tinymce, undefined);
+        equal(body.get('content'), 'Text-mode content');
+        equal(context.stale(), 1);
+    }, false, true, false);
+    await check('teardown unsubscribes the document readiness handler, detaches editors and ignores later readiness', (context) => {
+        const event = 'tinymce-editor-init.aflppClassicEditor';
+        const subscription = context.jqueryCalls.find(({ method, target, args }) =>
+            method === 'on' && target === document && args[0] === event);
+        equal(!!subscription, true);
+        const removals = () => context.jqueryCalls.filter(({ method, target, args }) =>
+            method === 'off' && target === document && args[0] === event);
+        equal(removals().length, 0);
+        context.initializeEditor();
+        equal(context.editorEvents.size, 5);
+        context.nativeEditor.destroy();
+        equal(context.editorEvents.size, 0);
+        equal(removals().length, 1);
+        equal(removals()[0].args[1] === subscription.args[1], true);
+        context.nativeEditor.destroy();
+        equal(removals().length, 1);
+        let registrations = 0;
+        context.initializeEditor({ on: () => registrations++, off() {} });
+        equal(registrations, 0);
+    }, false, true, false);
     await check('native ACF events refresh once, including dynamically added fields', (context) => {
         context.dispatch('.acf-field input');
         context.dispatch('.acf-field input', 'change');
@@ -315,6 +384,6 @@ test('native editor events and ACF compatibility boundaries in Chromium', async 
     await runChromiumTests(t, {
         head: `<script>window.quicktagsL10n = new Proxy({}, { get: (target, key) => key });</script>${wordpressScripts.join('')}`,
         script: `(${browserTests.toString()})(${JSON.stringify(editorSource)}, (await import(${JSON.stringify(acfUrl)})).initAcf, ${JSON.stringify(nativeSource)}, ${JSON.stringify(browserEditorExtensionsSource)})`,
-        count: process.env.WORDPRESS_ROOT ? 19 : 16,
+        count: process.env.WORDPRESS_ROOT ? 23 : 20,
     });
 });
