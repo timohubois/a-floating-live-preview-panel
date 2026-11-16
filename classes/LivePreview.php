@@ -265,7 +265,11 @@ final class LivePreview
         }
         $parts = date_parse($value);
         if ($parts['error_count'] || $parts['warning_count']) {
-            return new WP_Error('rest_invalid_date', __('Invalid date.', 'default'), ['status' => 400]);
+            return new WP_Error(
+                'rest_invalid_date',
+                __('Invalid date.', 'a-floating-live-preview-panel'),
+                ['status' => 400]
+            );
         }
         return true;
     }
@@ -286,7 +290,11 @@ final class LivePreview
         foreach ((array) $input as $name => $ids) {
             $taxonomy = $taxonomies[$name] ?? null;
             if (!$taxonomy || !$taxonomy->show_in_rest) {
-                return new WP_Error('rest_invalid_taxonomy', __('Invalid taxonomy.', 'default'), ['status' => 400]);
+                return new WP_Error(
+                    'rest_invalid_taxonomy',
+                    __('Invalid taxonomy.', 'a-floating-live-preview-panel'),
+                    ['status' => 400]
+                );
             }
             if (!is_array($ids) || !array_is_list($ids)) {
                 return new WP_Error(
@@ -304,7 +312,7 @@ final class LivePreview
             if (!current_user_can($taxonomy->cap->assign_terms)) {
                 return new WP_Error(
                     'rest_cannot_assign_term',
-                    __('Sorry, you are not allowed to assign terms.', 'default'),
+                    __('Sorry, you are not allowed to assign terms.', 'a-floating-live-preview-panel'),
                     ['status' => 403]
                 );
             }
@@ -312,12 +320,16 @@ final class LivePreview
             foreach ($ids as $id) {
                 $term = get_term($id, $name);
                 if (!$term || is_wp_error($term)) {
-                    return new WP_Error('rest_invalid_term', __('Invalid term ID.', 'default'), ['status' => 400]);
+                    return new WP_Error(
+                        'rest_invalid_term',
+                        __('Invalid term ID.', 'a-floating-live-preview-panel'),
+                        ['status' => 400]
+                    );
                 }
                 if (!current_user_can('assign_term', $id)) {
                     return new WP_Error(
                         'rest_cannot_assign_term',
-                        __('Sorry, you are not allowed to assign terms.', 'default'),
+                        __('Sorry, you are not allowed to assign terms.', 'a-floating-live-preview-panel'),
                         ['status' => 403]
                     );
                 }
@@ -457,7 +469,11 @@ final class LivePreview
         $parsed = $date === null || $date === ''
             ? [$now, get_gmt_from_date($now)] : rest_get_date_with_gmt($date);
         if (!$parsed) {
-            return new WP_Error('rest_invalid_date', __('Invalid date.', 'default'), ['status' => 400]);
+            return new WP_Error(
+                'rest_invalid_date',
+                __('Invalid date.', 'a-floating-live-preview-panel'),
+                ['status' => 400]
+            );
         }
         return array_combine(['post_date', 'post_date_gmt'], $parsed);
     }
@@ -469,13 +485,17 @@ final class LivePreview
         }
         $authorId = $input['author'];
         if (!get_userdata($authorId)) {
-            return new WP_Error('rest_invalid_author', __('Invalid author ID.', 'default'), ['status' => 400]);
+            return new WP_Error(
+                'rest_invalid_author',
+                __('Invalid author ID.', 'a-floating-live-preview-panel'),
+                ['status' => 400]
+            );
         }
         $type = get_post_type_object($post->post_type);
         if ($authorId !== get_current_user_id() && !current_user_can($type->cap->edit_others_posts)) {
             return new WP_Error(
                 'rest_cannot_edit_others',
-                __('Sorry, you are not allowed to edit posts as this user.', 'default'),
+                __('Sorry, you are not allowed to edit posts as this user.', 'a-floating-live-preview-panel'),
                 ['status' => 403]
             );
         }
@@ -536,6 +556,7 @@ final class LivePreview
             };
             add_action('save_post_revision', $seed, 0);
             if (!defined('DOING_AUTOSAVE')) {
+                // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- Core save flag.
                 define('DOING_AUTOSAVE', true);
             }
             $_POST = $payload;

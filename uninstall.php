@@ -9,7 +9,7 @@ defined('WP_UNINSTALL_PLUGIN') || exit;
 // The deactivated plugin has not registered this status; WP_Query ignores unregistered statuses.
 register_post_status('aflpp-preview', ['internal' => true]);
 
-$cleanupSite = static function (): void {
+$aflppCleanupSite = static function (): void {
     global $wpdb;
 
     $offset = 0;
@@ -63,26 +63,26 @@ $cleanupSite = static function (): void {
 };
 
 if (!is_multisite()) {
-    $cleanupSite();
+    $aflppCleanupSite();
     return;
 }
 
-$offset = 0;
+$aflppOffset = 0;
 do {
-    $siteIds = get_sites([
+    $aflppSiteIds = get_sites([
         'fields' => 'ids',
         'number' => 100,
-        'offset' => $offset,
+        'offset' => $aflppOffset,
         'orderby' => 'id',
         'order' => 'ASC',
     ]);
-    foreach ($siteIds as $siteId) {
-        switch_to_blog($siteId);
+    foreach ($aflppSiteIds as $aflppSiteId) {
+        switch_to_blog($aflppSiteId);
         try {
-            $cleanupSite();
+            $aflppCleanupSite();
         } finally {
             restore_current_blog();
         }
     }
-    $offset += count($siteIds);
-} while (count($siteIds) === 100);
+    $aflppOffset += count($aflppSiteIds);
+} while (count($aflppSiteIds) === 100);

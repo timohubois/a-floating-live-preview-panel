@@ -68,6 +68,7 @@ final class FrontendPreview
             return;
         }
         if (!defined('DONOTCACHEPAGE')) {
+            // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- Shared cache flag.
             define('DONOTCACHEPAGE', true);
         }
         nocache_headers();
@@ -118,6 +119,7 @@ final class FrontendPreview
          *
          * @param array $context Original post and authorized source identities; unrelated posts stay untouched.
          */
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Both names are prefixed.
         do_action($saved
             ? 'aflpp_frontend_saved_preview_source_selected'
             : 'aflpp_frontend_live_preview_source_selected', [
