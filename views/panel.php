@@ -10,7 +10,7 @@ defined('ABSPATH') || exit;
     data-title="<?php echo esc_attr($title); ?>"
     data-move-help="<?php esc_attr_e(
         'Drag to move the preview, or use the arrow keys. Hold Shift to move farther.',
-        'a-floating-live-preview-panel'
+        'meet-the-frontend-live-preview-panel'
     ); ?>"></div>
 <section id="aflpp-panel" class="aflpp-panel" data-state="loading" data-has-preview="false" data-has-feedback="false"
     aria-labelledby="aflpp-title" hidden>
@@ -25,14 +25,14 @@ defined('ABSPATH') || exit;
     <div class="aflpp-feedback" hidden></div>
     <div class="aflpp-viewport">
         <div class="aflpp-canvas" role="region" tabindex="-1"
-            aria-label="<?php esc_attr_e('Preview canvas', 'a-floating-live-preview-panel'); ?>"
+            aria-label="<?php esc_attr_e('Preview canvas', 'meet-the-frontend-live-preview-panel'); ?>"
             aria-describedby="aflpp-canvas-help">
             <div class="aflpp-canvas-space"><div class="aflpp-stage"></div></div>
         </div>
         <span id="aflpp-canvas-help" class="aflpp-sr-only">
             <?php esc_html_e(
                 'Use this area’s scrollbars, or focus it and use the arrow keys, to move around the preview screen. The page scrolls separately inside the preview.', // phpcs:ignore Generic.Files.LineLength.TooLong -- Keep the translatable message intact.
-                'a-floating-live-preview-panel'
+                'meet-the-frontend-live-preview-panel'
             ); ?>
         </span>
         <div class="aflpp-empty"></div>
@@ -44,7 +44,7 @@ defined('ABSPATH') || exit;
             <span class="aflpp-dimensions"
                 title="<?php esc_attr_e(
                     'Viewport size in CSS pixels and current zoom.',
-                    'a-floating-live-preview-panel'
+                    'meet-the-frontend-live-preview-panel'
                 ); ?>">
             </span>
             <div class="aflpp-fit-control"></div>
@@ -56,12 +56,12 @@ defined('ABSPATH') || exit;
     <?php endforeach; ?>
     <div class="aflpp-resize-control">
         <button type="button" class="aflpp-resize"
-            aria-label="<?php esc_attr_e('Resize preview', 'a-floating-live-preview-panel'); ?>"
+            aria-label="<?php esc_attr_e('Resize preview', 'meet-the-frontend-live-preview-panel'); ?>"
             aria-describedby="aflpp-resize-help"></button>
         <span id="aflpp-resize-help" class="aflpp-resize-help" role="tooltip">
             <?php esc_html_e(
                 'Use the arrow keys to change the preview’s size. Hold Shift for bigger steps.',
-                'a-floating-live-preview-panel'
+                'meet-the-frontend-live-preview-panel'
             ); ?>
         </span>
     </div>

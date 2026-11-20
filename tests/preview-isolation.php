@@ -10,7 +10,7 @@ use RuntimeException;
 use WP_CLI;
 
 if (!defined('WP_CLI') || !WP_CLI || !class_exists(FrontendPreview::class)) {
-    throw new RuntimeException('Run through WP-CLI with A Floating Live Preview Panel active.');
+    throw new RuntimeException('Run through WP-CLI with Meet the Frontend – Live Preview Panel active.');
 }
 
 // Namespaced HTTP/core doubles exercise both supported core versions without sending CLI headers.

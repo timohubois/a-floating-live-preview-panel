@@ -1,6 +1,6 @@
-# A Floating Live Preview Panel
+# Meet the Frontend – Live Preview Panel
 
-A Floating Live Preview Panel adds a movable, resizable frontend preview to WordPress's Block Editor, classic editor and revision browser. See changes while editing, or browse saved revisions without restoring them. Your theme and plugins render the preview through WordPress's normal frontend rendering.
+Meet the Frontend – Live Preview Panel adds a movable, resizable frontend preview to WordPress's Block Editor, classic editor and revision browser. See changes while editing, or browse saved revisions without restoring them. Your theme and plugins render the preview through WordPress's normal frontend rendering.
 
 ## Requirements
 
@@ -13,8 +13,8 @@ ACF, Timber and Yoast SEO integrations are available when those plugins or libra
 
 ## Installation
 
-1. Place the plugin in `wp-content/plugins/a-floating-live-preview-panel/`. For a Git checkout or GitHub's automatic source ZIP, run `npm ci && npm run build` first. Installable plugin packages include the generated assets.
-2. Activate **A Floating Live Preview Panel** under **Plugins**.
+1. Place the plugin in `wp-content/plugins/meet-the-frontend-live-preview-panel/`. For a Git checkout or GitHub's automatic source ZIP, run `npm ci && npm run build` first. Installable plugin packages include the generated assets.
+2. Activate **Meet the Frontend – Live Preview Panel** under **Plugins**.
 3. Open a post, page or supported custom post type in the Block Editor or classic editor. Save new posts as drafts first.
 4. Open **Live preview** and edit a supported field. Use WordPress's normal **Save**, **Update** or **Publish** controls to save your work.
 

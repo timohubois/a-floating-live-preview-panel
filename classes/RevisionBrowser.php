@@ -49,30 +49,30 @@ final class RevisionBrowser
             // Core's synthetic current-post entry does not always pass through revisionData().
             'currentPreviewUrl' => $this->preview->savedPreviewUrl($post, $post->ID),
             'strings' => [
-                'title' => __('Revision preview', 'a-floating-live-preview-panel'),
-                'preview' => __('Revision preview', 'a-floating-live-preview-panel'),
-                'closeLivePreview' => __('Close revision preview', 'a-floating-live-preview-panel'),
+                'title' => __('Revision preview', 'meet-the-frontend-live-preview-panel'),
+                'preview' => __('Revision preview', 'meet-the-frontend-live-preview-panel'),
+                'closeLivePreview' => __('Close revision preview', 'meet-the-frontend-live-preview-panel'),
                 'preparing' => __(
                     'Showing this saved version won’t change your post.',
-                    'a-floating-live-preview-panel'
+                    'meet-the-frontend-live-preview-panel'
                 ),
                 'bootFailed' => __(
                     'Couldn’t start revision preview. You can still compare and restore saved versions in WordPress.',
-                    'a-floating-live-preview-panel'
+                    'meet-the-frontend-live-preview-panel'
                 ),
-                'unavailableTitle' => __('Can’t show this revision', 'a-floating-live-preview-panel'),
+                'unavailableTitle' => __('Can’t show this revision', 'meet-the-frontend-live-preview-panel'),
                 'unavailable' => __(
                     'We can’t show this saved version. Choose another version, or reload this page.',
-                    'a-floating-live-preview-panel'
+                    'meet-the-frontend-live-preview-panel'
                 ),
-                'browserTitle' => __('Revision preview can’t run here', 'a-floating-live-preview-panel'),
+                'browserTitle' => __('Revision preview can’t run here', 'meet-the-frontend-live-preview-panel'),
                 'browser' => __(
                     'Ask your site admin to make WordPress and the preview use the same website address.',
-                    'a-floating-live-preview-panel'
+                    'meet-the-frontend-live-preview-panel'
                 ),
                 /* translators: 1: Revision date, 2: Revision author. */
-                'revisionLabel' => __('%1$s — %2$s', 'a-floating-live-preview-panel'),
-                'currentVersion' => __('Current version', 'a-floating-live-preview-panel'),
+                'revisionLabel' => __('%1$s — %2$s', 'meet-the-frontend-live-preview-panel'),
+                'currentVersion' => __('Current version', 'meet-the-frontend-live-preview-panel'),
             ],
         ], ['revisions']);
     }
@@ -80,7 +80,7 @@ final class RevisionBrowser
     public function renderPanel(): void
     {
         if ($this->revisionPost()) {
-            $this->panel->render(__('Revision preview', 'a-floating-live-preview-panel'));
+            $this->panel->render(__('Revision preview', 'meet-the-frontend-live-preview-panel'));
         }
     }
 }

@@ -42,15 +42,15 @@ final class Acf
         $config['acfEnabled'] = true;
         $config['strings']['acfRefreshing'] = __(
             'Waiting for ACF to reload repeating fields. If the fields don’t finish loading, reload the editor.',
-            'a-floating-live-preview-panel'
+            'meet-the-frontend-live-preview-panel'
         );
         $config['strings']['nativePreviewAcf'] = __(
             'WordPress Preview saved changes in your repeating fields to the post.',
-            'a-floating-live-preview-panel'
+            'meet-the-frontend-live-preview-panel'
         );
         $config['strings']['acfUnavailable'] = __(
             'The preview can’t read your custom fields.',
-            'a-floating-live-preview-panel'
+            'meet-the-frontend-live-preview-panel'
         );
         return $config;
     }
@@ -91,7 +91,7 @@ final class Acf
         ) {
             return new WP_Error(
                 'aflpp_acf_unavailable',
-                __('The preview can’t read your custom fields.', 'a-floating-live-preview-panel'),
+                __('The preview can’t read your custom fields.', 'meet-the-frontend-live-preview-panel'),
                 ['status' => 400]
             );
         }
@@ -148,7 +148,7 @@ final class Acf
             if (!$revisionId || $this->savedId !== $revisionId) {
                 return new WP_Error(
                     'aflpp_acf_not_saved',
-                    __('We couldn’t add your field changes to the preview.', 'a-floating-live-preview-panel'),
+                    __('We couldn’t add your field changes to the preview.', 'meet-the-frontend-live-preview-panel'),
                     ['status' => 409]
                 );
             }

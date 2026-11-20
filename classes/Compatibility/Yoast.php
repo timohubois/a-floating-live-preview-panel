@@ -95,7 +95,10 @@ final class Yoast
             if (!in_array($taxonomy, $allowed, true)) {
                 return new WP_Error(
                     'aflpp_yoast_primary_forbidden',
-                    __('You cannot change this primary taxonomy in the preview.', 'a-floating-live-preview-panel'),
+                    __(
+                        'You cannot change this primary taxonomy in the preview.',
+                        'meet-the-frontend-live-preview-panel'
+                    ),
                     ['status' => 403]
                 );
             }
@@ -114,7 +117,7 @@ final class Yoast
                 if (!current_user_can('assign_term', $id)) {
                     return new WP_Error(
                         'aflpp_yoast_primary_forbidden',
-                        __('You cannot assign this primary term.', 'a-floating-live-preview-panel'),
+                        __('You cannot assign this primary term.', 'meet-the-frontend-live-preview-panel'),
                         ['status' => 403]
                     );
                 }
@@ -129,7 +132,7 @@ final class Yoast
     {
         return new WP_Error(
             'aflpp_invalid_yoast_primary_terms',
-            __('Choose a valid assigned primary term for the preview.', 'a-floating-live-preview-panel'),
+            __('Choose a valid assigned primary term for the preview.', 'meet-the-frontend-live-preview-panel'),
             ['status' => 400]
         );
     }
@@ -160,7 +163,7 @@ final class Yoast
                 ) {
                     return new WP_Error(
                         'aflpp_yoast_primary_not_saved',
-                        __('We couldn’t prepare the primary-term preview.', 'a-floating-live-preview-panel'),
+                        __('We couldn’t prepare the primary-term preview.', 'meet-the-frontend-live-preview-panel'),
                         ['status' => 409]
                     );
                 }

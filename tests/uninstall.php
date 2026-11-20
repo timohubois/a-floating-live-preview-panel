@@ -23,7 +23,7 @@ $check = static function (bool $condition, string $message): void {
         throw new RuntimeException(esc_html($message));
     }
 };
-$plugin = 'a-floating-live-preview-panel/a-floating-live-preview-panel.php';
+$plugin = 'meet-the-frontend-live-preview-panel/meet-the-frontend-live-preview-panel.php';
 $active = is_plugin_active($plugin);
 $network = is_plugin_active_for_network($plugin);
 $originalUser = get_current_user_id();

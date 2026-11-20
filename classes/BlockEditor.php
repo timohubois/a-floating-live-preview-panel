@@ -48,11 +48,11 @@ final class BlockEditor
         }
         $config['strings']['nativeSaveFailed'] = __(
             'We couldn’t check whether WordPress saved your latest changes.',
-            'a-floating-live-preview-panel'
+            'meet-the-frontend-live-preview-panel'
         );
         $config['strings']['postOnly'] = __(
             'Return to editing this post to resume its live preview.',
-            'a-floating-live-preview-panel'
+            'meet-the-frontend-live-preview-panel'
         );
         $this->panel->enqueue('block-editor', $config, ['wp-editor']);
     }

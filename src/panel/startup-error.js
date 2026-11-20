@@ -9,5 +9,5 @@ export function showStartupError(message, error) {
     paragraph.textContent = message;
     notice.append(paragraph);
     (document.getElementById('wpbody-content') || document.body).prepend(notice);
-    console.error('A Floating Live Preview Panel could not start.', error);
+    console.error('Meet the Frontend – Live Preview Panel could not start.', error);
 }

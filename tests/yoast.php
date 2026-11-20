@@ -43,7 +43,7 @@ foreach ($previewHooks as $hook) {
 }
 $adapter = new YoastAdapter();
 $live = new LivePreview();
-$frontend = new FrontendPreview(dirname(__DIR__) . '/a-floating-live-preview-panel.php', $live);
+$frontend = new FrontendPreview(dirname(__DIR__) . '/meet-the-frontend-live-preview-panel.php', $live);
 $posts = $terms = [];
 $user = 0;
 $mainTaxonomy = 'category';

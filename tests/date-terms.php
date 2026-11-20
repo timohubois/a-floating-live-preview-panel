@@ -39,7 +39,7 @@ register_taxonomy('aflpp_ordered', 'post', [
     'public' => true, 'show_in_rest' => true, 'args' => ['orderby' => 'id', 'order' => 'DESC'],
 ]);
 $live = new LivePreview();
-$frontend = new FrontendPreview(dirname(__DIR__) . '/a-floating-live-preview-panel.php', $live);
+$frontend = new FrontendPreview(dirname(__DIR__) . '/meet-the-frontend-live-preview-panel.php', $live);
 $send = static function (string $route, array $data, string $method = 'POST'): WP_REST_Response {
     $request = new WP_REST_Request($method, $route);
     $request->set_header('X-WP-Nonce', wp_create_nonce('wp_rest'));

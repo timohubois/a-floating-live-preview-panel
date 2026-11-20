@@ -34,7 +34,7 @@ jobs:
             echo "::error::Use a numeric version tag such as 1.0.0 without a v prefix."
             exit 1
           fi
-          plugin_version=$(awk '/^[[:space:]]*\* Version:/ {print $NF; exit}' a-floating-live-preview-panel.php)
+          plugin_version=$(awk '/^[[:space:]]*\* Version:/ {print $NF; exit}' meet-the-frontend-live-preview-panel.php)
           stable_tag=$(awk '/^Stable tag:/ {print $NF; exit}' readme.txt)
           if [[ "$plugin_version" != "$RELEASE_VERSION" || "$stable_tag" != "$RELEASE_VERSION" ]]; then
             echo "::error::The tag, plugin version and readme stable tag must match."
@@ -57,21 +57,21 @@ jobs:
         env:
           SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
           SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
-          SLUG: a-floating-live-preview-panel
+          SLUG: meet-the-frontend-live-preview-panel
       - name: Verify release archive
         env:
           RELEASE_ZIP: ${{ steps.deploy.outputs.zip-path }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
-          plugin_version=$(unzip -p "$RELEASE_ZIP" a-floating-live-preview-panel/a-floating-live-preview-panel.php | awk '/^[[:space:]]*\* Version:/ && !found {print $NF; found=1}')
-          stable_tag=$(unzip -p "$RELEASE_ZIP" a-floating-live-preview-panel/readme.txt | awk '/^Stable tag:/ && !found {print $NF; found=1}')
+          plugin_version=$(unzip -p "$RELEASE_ZIP" meet-the-frontend-live-preview-panel/meet-the-frontend-live-preview-panel.php | awk '/^[[:space:]]*\* Version:/ && !found {print $NF; found=1}')
+          stable_tag=$(unzip -p "$RELEASE_ZIP" meet-the-frontend-live-preview-panel/readme.txt | awk '/^Stable tag:/ && !found {print $NF; found=1}')
           if [[ "$plugin_version" != "$RELEASE_VERSION" || "$stable_tag" != "$RELEASE_VERSION" ]]; then
             echo "::error::The generated ZIP must match the version being released."
             exit 1
           fi
           for asset in build/*; do
             test -s "$asset"
-            unzip -p "$RELEASE_ZIP" "a-floating-live-preview-panel/$asset" | cmp --silent "$asset" -
+            unzip -p "$RELEASE_ZIP" "meet-the-frontend-live-preview-panel/$asset" | cmp --silent "$asset" -
           done
       - name: Create GitHub release
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4

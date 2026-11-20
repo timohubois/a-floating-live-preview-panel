@@ -8,7 +8,7 @@ use RuntimeException;
 use WP_CLI;
 
 if (!defined('WP_CLI') || !WP_CLI || !\class_exists(Acf::class) || !\class_exists(Timber::class)) {
-    throw new RuntimeException('Run through WP-CLI with A Floating Live Preview Panel active.');
+    throw new RuntimeException('Run through WP-CLI with Meet the Frontend – Live Preview Panel active.');
 }
 
 // Hide optional APIs without deactivating real site plugins or changing their configuration.

@@ -99,8 +99,8 @@ jobs:
               "require \"$RUNNER_TEMP/timber/vendor/autoload.php\";" \
               '\Timber\Timber::init();' > "$RUNNER_TEMP/site/wp-content/mu-plugins/timber.php"
           fi
-          ln -s "$GITHUB_WORKSPACE" "$RUNNER_TEMP/site/wp-content/plugins/a-floating-live-preview-panel"
-          wp plugin activate a-floating-live-preview-panel --path="$RUNNER_TEMP/site"
+          ln -s "$GITHUB_WORKSPACE" "$RUNNER_TEMP/site/wp-content/plugins/meet-the-frontend-live-preview-panel"
+          wp plugin activate meet-the-frontend-live-preview-panel --path="$RUNNER_TEMP/site"
       - name: Verify fixture environment
         run: |
           wp core version --path="$RUNNER_TEMP/site"
@@ -150,11 +150,11 @@ jobs:
           npm run build
       - name: Build release directory
         run: |
-          mkdir -p "$RUNNER_TEMP/a-floating-live-preview-panel"
-          rsync -a --exclude-from=.distignore ./ "$RUNNER_TEMP/a-floating-live-preview-panel/"
+          mkdir -p "$RUNNER_TEMP/meet-the-frontend-live-preview-panel"
+          rsync -a --exclude-from=.distignore ./ "$RUNNER_TEMP/meet-the-frontend-live-preview-panel/"
       - name: WordPress Plugin Check
         uses: wordpress/plugin-check-action@10857da14b6c2246d15402b3e69f777edcf8c12e # v1.1.9
         with:
-          build-dir: ${{ runner.temp }}/a-floating-live-preview-panel
-          slug: a-floating-live-preview-panel
+          build-dir: ${{ runner.temp }}/meet-the-frontend-live-preview-panel
+          slug: meet-the-frontend-live-preview-panel
           strict: true

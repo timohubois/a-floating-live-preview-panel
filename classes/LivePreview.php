@@ -77,7 +77,7 @@ final class LivePreview
         ) {
             return new WP_Error(
                 'aflpp_cannot_preview',
-                __('You cannot preview this post.', 'a-floating-live-preview-panel'),
+                __('You cannot preview this post.', 'meet-the-frontend-live-preview-panel'),
                 ['status' => rest_authorization_required_code()]
             );
         }
@@ -267,7 +267,7 @@ final class LivePreview
         if ($parts['error_count'] || $parts['warning_count']) {
             return new WP_Error(
                 'rest_invalid_date',
-                __('Invalid date.', 'a-floating-live-preview-panel'),
+                __('Invalid date.', 'meet-the-frontend-live-preview-panel'),
                 ['status' => 400]
             );
         }
@@ -281,7 +281,7 @@ final class LivePreview
         if (!$input instanceof \stdClass) {
             return new WP_Error(
                 'rest_invalid_param',
-                __('The preview can’t read your taxonomy selections.', 'a-floating-live-preview-panel'),
+                __('The preview can’t read your taxonomy selections.', 'meet-the-frontend-live-preview-panel'),
                 ['status' => 400]
             );
         }
@@ -292,14 +292,14 @@ final class LivePreview
             if (!$taxonomy || !$taxonomy->show_in_rest) {
                 return new WP_Error(
                     'rest_invalid_taxonomy',
-                    __('Invalid taxonomy.', 'a-floating-live-preview-panel'),
+                    __('Invalid taxonomy.', 'meet-the-frontend-live-preview-panel'),
                     ['status' => 400]
                 );
             }
             if (!is_array($ids) || !array_is_list($ids)) {
                 return new WP_Error(
                     'rest_invalid_param',
-                    __('The preview can’t read your taxonomy selections.', 'a-floating-live-preview-panel'),
+                    __('The preview can’t read your taxonomy selections.', 'meet-the-frontend-live-preview-panel'),
                     ['status' => 400]
                 );
             }
@@ -312,7 +312,7 @@ final class LivePreview
             if (!current_user_can($taxonomy->cap->assign_terms)) {
                 return new WP_Error(
                     'rest_cannot_assign_term',
-                    __('Sorry, you are not allowed to assign terms.', 'a-floating-live-preview-panel'),
+                    __('Sorry, you are not allowed to assign terms.', 'meet-the-frontend-live-preview-panel'),
                     ['status' => 403]
                 );
             }
@@ -322,14 +322,14 @@ final class LivePreview
                 if (!$term || is_wp_error($term)) {
                     return new WP_Error(
                         'rest_invalid_term',
-                        __('Invalid term ID.', 'a-floating-live-preview-panel'),
+                        __('Invalid term ID.', 'meet-the-frontend-live-preview-panel'),
                         ['status' => 400]
                     );
                 }
                 if (!current_user_can('assign_term', $id)) {
                     return new WP_Error(
                         'rest_cannot_assign_term',
-                        __('Sorry, you are not allowed to assign terms.', 'a-floating-live-preview-panel'),
+                        __('Sorry, you are not allowed to assign terms.', 'meet-the-frontend-live-preview-panel'),
                         ['status' => 403]
                     );
                 }
@@ -355,7 +355,7 @@ final class LivePreview
         if (!wp_verify_nonce((string) $request->get_header('X-WP-Nonce'), 'wp_rest')) {
             return new WP_Error(
                 'aflpp_invalid_nonce',
-                __('This preview has expired.', 'a-floating-live-preview-panel'),
+                __('This preview has expired.', 'meet-the-frontend-live-preview-panel'),
                 ['status' => 403]
             );
         }
@@ -371,7 +371,7 @@ final class LivePreview
                 'aflpp_post_locked',
                 __(
                     'Another user is editing this post. Take over editing to continue.',
-                    'a-floating-live-preview-panel'
+                    'meet-the-frontend-live-preview-panel'
                 ),
                 ['status' => 409]
             );
@@ -381,7 +381,7 @@ final class LivePreview
                 'aflpp_preview_conflict',
                 __(
                     'The saved post has changed, or WordPress can’t save versions of it.',
-                    'a-floating-live-preview-panel'
+                    'meet-the-frontend-live-preview-panel'
                 ),
                 ['status' => 409]
             );
@@ -404,14 +404,17 @@ final class LivePreview
         ) {
             return new WP_Error(
                 'aflpp_preview_fields_not_saved',
-                __('Some preview fields couldn’t be prepared. Please try again.', 'a-floating-live-preview-panel'),
+                __(
+                    'Some preview fields couldn’t be prepared. Please try again.',
+                    'meet-the-frontend-live-preview-panel'
+                ),
                 ['status' => 409]
             );
         }
         if (!hash_equals($base, $this->fingerprint($postId))) {
             return new WP_Error(
                 'aflpp_source_changed',
-                __('The saved post changed while the preview was loading.', 'a-floating-live-preview-panel'),
+                __('The saved post changed while the preview was loading.', 'meet-the-frontend-live-preview-panel'),
                 ['status' => 409]
             );
         }
@@ -451,7 +454,7 @@ final class LivePreview
         ) {
             return new WP_Error(
                 'rest_invalid_featured_media',
-                __('The featured image can’t be used in this preview.', 'a-floating-live-preview-panel'),
+                __('The featured image can’t be used in this preview.', 'meet-the-frontend-live-preview-panel'),
                 ['status' => 400]
             );
         }
@@ -471,7 +474,7 @@ final class LivePreview
         if (!$parsed) {
             return new WP_Error(
                 'rest_invalid_date',
-                __('Invalid date.', 'a-floating-live-preview-panel'),
+                __('Invalid date.', 'meet-the-frontend-live-preview-panel'),
                 ['status' => 400]
             );
         }
@@ -487,7 +490,7 @@ final class LivePreview
         if (!get_userdata($authorId)) {
             return new WP_Error(
                 'rest_invalid_author',
-                __('Invalid author ID.', 'a-floating-live-preview-panel'),
+                __('Invalid author ID.', 'meet-the-frontend-live-preview-panel'),
                 ['status' => 400]
             );
         }
@@ -495,7 +498,7 @@ final class LivePreview
         if ($authorId !== get_current_user_id() && !current_user_can($type->cap->edit_others_posts)) {
             return new WP_Error(
                 'rest_cannot_edit_others',
-                __('Sorry, you are not allowed to edit posts as this user.', 'a-floating-live-preview-panel'),
+                __('Sorry, you are not allowed to edit posts as this user.', 'meet-the-frontend-live-preview-panel'),
                 ['status' => 403]
             );
         }
@@ -588,7 +591,7 @@ final class LivePreview
         if (!$revisionId || !$this->ownsRevision($postId, $revisionId)) {
             return new WP_Error(
                 'aflpp_revision_unavailable',
-                __('We couldn’t prepare the preview.', 'a-floating-live-preview-panel'),
+                __('We couldn’t prepare the preview.', 'meet-the-frontend-live-preview-panel'),
                 ['status' => 409]
             );
         }

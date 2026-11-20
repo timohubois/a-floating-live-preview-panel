@@ -1,5 +1,5 @@
 {
-    "name": "timohubois/a-floating-live-preview-panel",
+    "name": "timohubois/meet-the-frontend-live-preview-panel",
     "description": "A floating live frontend preview while editing WordPress posts and pages.",
     "type": "wordpress-plugin",
     "license": "GPL-3.0-or-later",

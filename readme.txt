@@ -1,4 +1,4 @@
-=== A Floating Live Preview Panel ===
+=== Meet the Frontend – Live Preview Panel ===
 Contributors: timohubois
 Tags: preview, editor
 Requires at least: 6.7
@@ -12,7 +12,7 @@ See your changes in a floating preview while you edit posts, pages and supported
 
 == Description ==
 
-A Floating Live Preview Panel adds a movable, resizable frontend preview to WordPress's post Block Editor, classic editing screens and native revision browser. Your theme and plugins render the output through WordPress's normal preview routing.
+Meet the Frontend – Live Preview Panel adds a movable, resizable frontend preview to WordPress's post Block Editor, classic editing screens and native revision browser. Your theme and plugins render the output through WordPress's normal preview routing.
 
 Live updates use a separate internal preview revision. They do not publish changes, update the saved post or overwrite WordPress's recovery autosave. Use the normal **Save**, **Update** or **Publish** controls to save your work.
 
@@ -31,7 +31,7 @@ Save new posts as drafts before opening the preview. Live updates require revisi
 
 == Installation ==
 
-1. Upload the built plugin folder to /wp-content/plugins/a-floating-live-preview-panel/ and activate **A Floating Live Preview Panel** under **Plugins**. A Git checkout or automatic source ZIP requires an asset build first; see the [repository README](https://github.com/timohubois/a-floating-live-preview-panel/#installation). Composer and Node.js are not required to run a built package.
+1. Upload the built plugin folder to /wp-content/plugins/meet-the-frontend-live-preview-panel/ and activate **Meet the Frontend – Live Preview Panel** under **Plugins**. A Git checkout or automatic source ZIP requires an asset build first; see the [repository README](https://github.com/timohubois/meet-the-frontend-live-preview-panel/#installation). Composer and Node.js are not required to run a built package.
 2. Open a post, page or supported custom post type in its Block Editor or classic editor. Save new posts as drafts first; the Block Editor panel becomes available without reloading.
 3. Open **Live preview**, edit a supported field and the preview refreshes after a short pause.
 4. Move the panel by its titlebar and resize it from its borders or corners. Use **Preview options** for docking, reset and other settings.
@@ -127,7 +127,7 @@ Your posts, normal revisions and recovery autosaves are preserved. Browser-local
 
 == Want to contribute? ==
 
-Report issues or contribute on [GitHub](https://github.com/timohubois/a-floating-live-preview-panel/). Include WordPress and PHP versions, browser, editor, theme, optional integration versions and steps to reproduce. Keep credentials and private site data out of reports.
+Report issues or contribute on [GitHub](https://github.com/timohubois/meet-the-frontend-live-preview-panel/). Include WordPress and PHP versions, browser, editor, theme, optional integration versions and steps to reproduce. Keep credentials and private site data out of reports.
 
 == Changelog ==
 

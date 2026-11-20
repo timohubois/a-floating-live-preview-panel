@@ -8,7 +8,7 @@ use AFloatingLivePreviewPanel\FrontendPreview;
 use AFloatingLivePreviewPanel\LivePreview;
 
 if (!defined('WP_CLI') || !WP_CLI || !class_exists(FrontendPreview::class)) {
-    throw new RuntimeException('Run this through WP-CLI with A Floating Live Preview Panel active.');
+    throw new RuntimeException('Run this through WP-CLI with Meet the Frontend – Live Preview Panel active.');
 }
 
 if (is_multisite()) {
@@ -38,7 +38,7 @@ foreach ($previewHooks as $hook) {
     $originalHooks[$hook] = isset($GLOBALS['wp_filter'][$hook]) ? clone $GLOBALS['wp_filter'][$hook] : null;
 }
 $livePreview = new LivePreview();
-$preview = new FrontendPreview(dirname(__DIR__) . '/a-floating-live-preview-panel.php', $livePreview);
+$preview = new FrontendPreview(dirname(__DIR__) . '/meet-the-frontend-live-preview-panel.php', $livePreview);
 $sources = [];
 $observeSource = static function (array $context, bool $readOnly) use ($check, &$sources): void {
     $check(
@@ -77,7 +77,7 @@ try {
     // Inspect the real rendered view, not PHP source formatting or obsolete CSS class names.
     $panelTitle = 'Preview "<strong>literal text</strong>" & more';
     ob_start();
-    (new Panel(dirname(__DIR__) . '/a-floating-live-preview-panel.php'))->render($panelTitle);
+    (new Panel(dirname(__DIR__) . '/meet-the-frontend-live-preview-panel.php'))->render($panelTitle);
     $document = new DOMDocument();
     $document->loadHTML(ob_get_clean(), LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
     $xpath = new DOMXPath($document);

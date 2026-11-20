@@ -1,15 +1,15 @@
 <?php
 
 /**
- * Plugin Name:       A Floating Live Preview Panel
- * Plugin URI:        https://github.com/timohubois/a-floating-live-preview-panel/
+ * Plugin Name:       Meet the Frontend – Live Preview Panel
+ * Plugin URI:        https://github.com/timohubois/meet-the-frontend-live-preview-panel/
  * Description:       See your changes in a floating preview while you edit posts and pages.
  * Version:           1.0.0
  * Requires at least: 6.7
  * Requires PHP:      8.3
  * Author:            Timo Hubois
  * Author URI:        https://pixelsaft.wtf
- * Text Domain:       a-floating-live-preview-panel
+ * Text Domain:       meet-the-frontend-live-preview-panel
  * License:           GPLv3 or later
  * License URI:       https://www.gnu.org/licenses/gpl-3.0.html
  */

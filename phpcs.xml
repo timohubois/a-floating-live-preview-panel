@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<ruleset name="a-floating-live-preview-panel">
+<ruleset name="meet-the-frontend-live-preview-panel">
     <description>PSR-12, PHP compatibility and WordPress correctness checks.</description>
     <file>./</file>
     <exclude-pattern>*/vendor/*</exclude-pattern>
@@ -26,7 +26,7 @@
     <rule ref="WordPress.WP.I18n">
         <properties>
             <property name="text_domain" type="array">
-                <element value="a-floating-live-preview-panel"/>
+                <element value="meet-the-frontend-live-preview-panel"/>
             </property>
         </properties>
     </rule>

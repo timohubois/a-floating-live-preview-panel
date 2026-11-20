@@ -7,7 +7,7 @@ use AFloatingLivePreviewPanel\Compatibility\Yoast;
 use AFloatingLivePreviewPanel\Panel;
 
 if (!defined('WP_CLI') || !WP_CLI || !class_exists(Panel::class)) {
-    throw new RuntimeException('Run through WP-CLI with A Floating Live Preview Panel active.');
+    throw new RuntimeException('Run through WP-CLI with Meet the Frontend – Live Preview Panel active.');
 }
 $check = static function (bool $condition, string $message): void {
     if (!$condition) {
@@ -46,7 +46,7 @@ try {
         wp_register_script('acf-input', false, ['jquery']);
         $check($acf->editorDependencies() === ['acf-input'], 'Registered ACF assets must precede the entry.');
     }
-    $panel = new Panel(dirname(__DIR__) . '/a-floating-live-preview-panel.php');
+    $panel = new Panel(dirname(__DIR__) . '/meet-the-frontend-live-preview-panel.php');
     $base = ['postId' => 123, 'base' => str_repeat('a', 64), 'strings' => []];
     $context = ['post' => ['id' => 123], 'source' => null];
     $comparisonDefaults = [

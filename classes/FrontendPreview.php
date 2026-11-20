@@ -92,7 +92,7 @@ final class FrontendPreview
             wp_die(
                 esc_html__(
                     'This preview has expired or can’t be opened. Open a new preview from the editor or Revisions page.', // phpcs:ignore Generic.Files.LineLength.TooLong -- Keep the translatable message intact.
-                    'a-floating-live-preview-panel'
+                    'meet-the-frontend-live-preview-panel'
                 ),
                 '',
                 ['response' => 403]
@@ -281,7 +281,7 @@ final class FrontendPreview
             while ($processor->next_tag()) {
                 $tag = $processor->get_tag();
                 if (
-                    $tag === 'META' && $processor->get_attribute('name') === 'a-floating-live-preview-panel'
+                    $tag === 'META' && $processor->get_attribute('name') === 'meet-the-frontend-live-preview-panel'
                     && $processor->get_attribute('content') === $this->previewToken
                 ) {
                     if ($found || $processor->get_attribute('data-aflpp-source') !== null) {

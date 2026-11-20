@@ -36,7 +36,7 @@ remove_all_actions('aflpp_frontend_live_preview_source_selected');
 remove_all_actions('aflpp_frontend_saved_preview_source_selected');
 $adapter = new TimberAdapter();
 $live = new LivePreview();
-$frontend = new FrontendPreview(dirname(__DIR__) . '/a-floating-live-preview-panel.php', $live);
+$frontend = new FrontendPreview(dirname(__DIR__) . '/meet-the-frontend-live-preview-panel.php', $live);
 $posts = $terms = [];
 $user = 0;
 register_taxonomy('aflpp_timber_topic', 'post', ['public' => true, 'show_in_rest' => true]);

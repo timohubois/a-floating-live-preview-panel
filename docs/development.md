@@ -53,19 +53,19 @@ fields and rejects attempted ACF updates/deletions of the saved source without
 blocking live-editor or unrelated writes:
 
 ```sh
-wp eval-file /path/to/a-floating-live-preview-panel/tests/revisions.php
-wp eval-file /path/to/a-floating-live-preview-panel/tests/block-editor.php
-wp eval-file /path/to/a-floating-live-preview-panel/tests/author.php
-wp eval-file /path/to/a-floating-live-preview-panel/tests/date-terms.php
-wp eval-file /path/to/a-floating-live-preview-panel/tests/preview-fields.php
-wp eval-file /path/to/a-floating-live-preview-panel/tests/core-blocks.php
-wp eval-file /path/to/a-floating-live-preview-panel/tests/compatibility.php
-wp eval-file /path/to/a-floating-live-preview-panel/tests/compatibility-dependencies.php
-wp eval-file /path/to/a-floating-live-preview-panel/tests/editor-extensions.php
-wp eval-file /path/to/a-floating-live-preview-panel/tests/timber-terms.php
-wp eval-file /path/to/a-floating-live-preview-panel/tests/yoast.php
-wp eval-file /path/to/a-floating-live-preview-panel/tests/preview-isolation.php
-wp eval-file /path/to/a-floating-live-preview-panel/tests/preview-source.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/revisions.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/block-editor.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/author.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/date-terms.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/preview-fields.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/core-blocks.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/compatibility.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/compatibility-dependencies.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/editor-extensions.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/timber-terms.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/yoast.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/preview-isolation.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/preview-source.php
 ```
 
 The block-editor fixture checks native REST save receipts, source conflicts,
@@ -101,7 +101,7 @@ native post-meta block saving/rendering and source isolation. It exits successfu
 repeater support is absent:
 
 ```sh
-wp eval-file /path/to/a-floating-live-preview-panel/tests/acf.php
+wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/acf.php
 ```
 
 Uninstall checks are destructive and require both an explicit opt-in and the dedicated
@@ -111,7 +111,7 @@ CI runs them on single-site WordPress, then converts that disposable site to mul
 and runs them again. Never point them at a project database:
 
 ```sh
-AFLPP_TEST_UNINSTALL=1 wp eval-file /path/to/a-floating-live-preview-panel/tests/uninstall.php
+AFLPP_TEST_UNINSTALL=1 wp eval-file /path/to/meet-the-frontend-live-preview-panel/tests/uninstall.php
 ```
 
 ### Native reveal browser verification

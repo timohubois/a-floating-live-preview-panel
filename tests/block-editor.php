@@ -147,7 +147,7 @@ try {
         foreach ($previewHooks as $hook) {
             $originalHooks[$hook] = isset($GLOBALS['wp_filter'][$hook]) ? clone $GLOBALS['wp_filter'][$hook] : null;
         }
-        $frontend = new FrontendPreview(dirname(__DIR__) . '/a-floating-live-preview-panel.php', $live);
+        $frontend = new FrontendPreview(dirname(__DIR__) . '/meet-the-frontend-live-preview-panel.php', $live);
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Preserve request globals in the CLI fixture.
         $originalGet = $_GET;
         try {
