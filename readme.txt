@@ -1,7 +1,7 @@
 === Meet the Frontend – Live Preview Panel ===
 Contributors: timohubois
 Tags: preview, editor
-Requires at least: 6.7
+Requires at least: 6.9
 Tested up to: 7.1
 Stable tag: 1.0.0
 Requires PHP: 8.3

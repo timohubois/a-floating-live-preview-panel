@@ -12,22 +12,15 @@ use WP_HTML_Tag_Processor;
 use WP_Post;
 
 if (!defined('WP_CLI') || !WP_CLI || !class_exists(FrontendPreview::class)) {
-    throw new RuntimeException('Run through WP-CLI with A Floating Live Preview Panel active.');
+    throw new RuntimeException('Run through WP-CLI with Meet the Frontend – Live Preview Panel active.');
 }
 
-// Exercise native and older-core registration, plus HTTP response guards, without sending CLI headers.
+// Exercise native registration and HTTP response guards without sending CLI headers.
 final class PreviewSourceFixture
 {
-    public static bool $native = false;
     public static bool $target = true;
     public static int $status = 200;
     public static array $headers = ['Content-Type: text/html; charset=UTF-8'];
-}
-
-function function_exists(string $name): bool
-{
-    return $name === 'wp_start_template_enhancement_output_buffer'
-        ? PreviewSourceFixture::$native : \function_exists($name);
 }
 
 function headers_list(): array
@@ -91,6 +84,7 @@ $readSource = static function (string $output): ?string {
 };
 $hooks = [
     'template_include', 'wp_template_enhancement_output_buffer', 'show_admin_bar', 'wp_head', 'wp_enqueue_scripts',
+    'shutdown',
 ];
 $originalHooks = [];
 foreach ($hooks as $hook) {
@@ -178,85 +172,59 @@ try {
         );
     }
 
-    $level = ob_get_level();
-    $check($makePreview()->bufferSource(false) === false, 'Preserve a plugin-suppressed template.');
-    $check(ob_get_level() === $level, 'Do not buffer a template that WordPress will not include.');
+    // Exercise the required core buffer and respect its streaming opt-out.
+    $check(\function_exists('wp_start_template_enhancement_output_buffer'), 'WordPress 6.9 or later is required.');
+    $preview = $makePreview();
+    add_filter('wp_template_enhancement_output_buffer', [$preview, 'captureSource'], PHP_INT_MAX);
+    ob_start();
+    $check(wp_start_template_enhancement_output_buffer(), 'The real native buffer must start.');
+    echo $html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Trusted test response.
+    ob_end_flush();
+    $check(is_string($readSource(ob_get_clean())), 'The real native buffer must expose the source.');
 
-    // On supporting core, exercise the real native buffer and respect its streaming opt-out.
-    if (\function_exists('wp_start_template_enhancement_output_buffer')) {
-        $preview = $makePreview();
-        add_filter('wp_template_enhancement_output_buffer', [$preview, 'captureSource'], PHP_INT_MAX);
-        ob_start();
-        $check(wp_start_template_enhancement_output_buffer(), 'The real native buffer must start.');
-        echo $html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Trusted test response.
-        ob_end_flush();
-        $check(is_string($readSource(ob_get_clean())), 'The real native buffer must expose the source.');
-        add_filter('wp_should_output_buffer_template_for_enhancement', '__return_false', PHP_INT_MAX);
-        try {
+    // Core owns buffer phases: cleaning must not publish a source.
+    ob_start();
+    $check(wp_start_template_enhancement_output_buffer(), 'The native cleanup fixture must start.');
+    echo $html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Trusted test response.
+    ob_end_clean();
+    $check(ob_get_clean() === '', 'Native buffer cleaning must discard output without capturing it.');
+
+    add_filter('wp_should_output_buffer_template_for_enhancement', '__return_false', PHP_INT_MAX);
+    try {
+        $level = ob_get_level();
+        $check(!wp_start_template_enhancement_output_buffer(), 'Respect the native streaming opt-out.');
+        $check(ob_get_level() === $level, 'Do not start another buffer when native capture is disabled.');
+    } finally {
+        remove_filter('wp_should_output_buffer_template_for_enhancement', '__return_false', PHP_INT_MAX);
+        remove_filter('wp_template_enhancement_output_buffer', [$preview, 'captureSource'], PHP_INT_MAX);
+    }
+
+    foreach ([false, true] as $requested) {
+        foreach ([false, true] as $target) {
+            PreviewSourceFixture::$target = $target;
+            $preview = $makePreview($requested);
             $level = ob_get_level();
-            $check(!wp_start_template_enhancement_output_buffer(), 'Respect the native streaming opt-out.');
-            $check(ob_get_level() === $level, 'Do not start another buffer when native capture is disabled.');
-        } finally {
-            remove_filter('wp_should_output_buffer_template_for_enhancement', '__return_false', PHP_INT_MAX);
-            remove_filter('wp_template_enhancement_output_buffer', [$preview, 'captureSource'], PHP_INT_MAX);
-        }
-    }
-
-    // A normal fallback buffer must transform one native render without including/replacing its template.
-    foreach ([$html, $largeHtml] as $response) {
-        ob_start();
-        $preview = $makePreview();
-        $check($preview->bufferSource('/native/template.php') === '/native/template.php', 'Keep the template path.');
-        echo $response; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Trusted test response.
-        ob_end_flush();
-        $check(is_string($readSource(ob_get_clean())), 'The older-core callback must capture the complete response.');
-    }
-
-    // Respect explicitly flushed or cleaned buffers; never treat a remaining fragment as a complete page.
-    foreach (['flush', 'clean'] as $operation) {
-        ob_start();
-        $preview = $makePreview();
-        $preview->bufferSource('/native/template.php');
-        echo 'earlier output';
-        if ($operation === 'flush') {
-            ob_flush();
-        } else {
-            ob_clean();
-        }
-        echo $html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Trusted test response.
-        ob_end_flush();
-        $check(
-            ob_get_clean() === ($operation === 'flush' ? 'earlier output' : '') . $html,
-            'Streaming/cleaning must disable capture without changing the output.'
-        );
-    }
-
-    foreach ([false, true] as $native) {
-        PreviewSourceFixture::$native = $native;
-        foreach ([false, true] as $requested) {
-            foreach ([false, true] as $target) {
-                PreviewSourceFixture::$target = $target;
-                $preview = $makePreview($requested);
-                $preview->checkPreviewTarget();
-                $expected = $requested && $target;
+            $preview->checkPreviewTarget();
+            $expected = $requested && $target;
+            $check(
+                (has_filter('wp_template_enhancement_output_buffer', [$preview, 'captureSource']) !== false)
+                    === $expected,
+                'Use native buffering only for opted-in target previews.'
+            );
+            $check(ob_get_level() === $level, 'Register the core filter without starting a custom buffer.');
+            foreach (['template_include', 'shutdown'] as $hook) {
                 $check(
-                    (has_filter('wp_template_enhancement_output_buffer', [$preview, 'captureSource']) !== false)
-                        === ($expected && $native),
-                    'Use native buffering only for opted-in target previews on supporting core.'
+                    ($GLOBALS['wp_filter'][$hook] ?? null) == $originalHooks[$hook],
+                    'Leave template loading and shutdown hooks unchanged.'
                 );
-                $check(
-                    (has_filter('template_include', [$preview, 'bufferSource']) !== false) === ($expected && !$native),
-                    'Use the fallback only when the native API is unavailable.'
-                );
-                if ($expected && $native) {
-                    $check(
-                        is_string($readSource(apply_filters('wp_template_enhancement_output_buffer', $html, $html))),
-                        'The native filter must accept its real one-argument callback registration.'
-                    );
-                }
-                remove_filter('wp_template_enhancement_output_buffer', [$preview, 'captureSource'], PHP_INT_MAX);
-                remove_filter('template_include', [$preview, 'bufferSource'], PHP_INT_MAX);
             }
+            if ($expected) {
+                $check(
+                    is_string($readSource(apply_filters('wp_template_enhancement_output_buffer', $html, $html))),
+                    'The native filter must accept its real one-argument callback registration.'
+                );
+            }
+            remove_filter('wp_template_enhancement_output_buffer', [$preview, 'captureSource'], PHP_INT_MAX);
         }
     }
 } finally {
@@ -268,4 +236,4 @@ try {
         }
     }
 }
-WP_CLI::success('Preview source capture preserves native rendering, inert data, identities and streaming fallbacks.');
+WP_CLI::success('Preview source capture preserves native rendering, inert data, identities and streaming opt-outs.');

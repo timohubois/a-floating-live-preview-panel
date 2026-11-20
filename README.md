@@ -4,7 +4,7 @@ Meet the Frontend – Live Preview Panel adds a movable, resizable frontend prev
 
 ## Requirements
 
-- WordPress 6.7 or later.
+- WordPress 6.9 or later.
 - PHP 8.3 or later.
 - A saved post in a frontend-viewable post type, permission to edit it and enabled revisions for live editing.
 - An admin and frontend on the same origin, and a browser with ES modules. Live editing also requires authenticated WordPress REST requests and Web Locks in a secure context.

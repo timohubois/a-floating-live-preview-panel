@@ -43,7 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        wordpress: ['6.7', 'latest']
+        wordpress: ['6.9', 'latest']
         timber: ['none', '^2.0']
     env:
       WORDPRESS_VERSION: ${{ matrix.wordpress }}

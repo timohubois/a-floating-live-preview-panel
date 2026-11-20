@@ -13,7 +13,6 @@ final class FrontendPreview
     private bool $isolated = false;
     private bool $saved = false;
     private bool $sourceRequested = false;
-    private bool $sourceStreamed = false;
 
     public function __construct(
         private readonly string $file,
@@ -212,11 +211,7 @@ final class FrontendPreview
         remove_action('template_redirect', 'redirect_canonical');
         // Capture only opted-in iframe requests, never ordinary frontend or new-tab previews.
         if ($this->sourceRequested) {
-            if (function_exists('wp_start_template_enhancement_output_buffer')) {
-                add_filter('wp_template_enhancement_output_buffer', [$this, 'captureSource'], PHP_INT_MAX);
-            } else {
-                add_filter('template_include', [$this, 'bufferSource'], PHP_INT_MAX);
-            }
+            add_filter('wp_template_enhancement_output_buffer', [$this, 'captureSource'], PHP_INT_MAX);
         }
         // Enhance only the original authorized singular HTML; never require it as the routing result.
         add_filter('show_admin_bar', '__return_false', PHP_INT_MAX);
@@ -235,25 +230,12 @@ final class FrontendPreview
         });
     }
 
-    /** Older core has no native template buffer. Do not replace/include the template ourselves. */
-    public function bufferSource($template)
-    {
-        if ($this->sourceRequested && $this->source && is_string($template) && $template !== '') {
-            ob_start([$this, 'captureSource']);
-        }
-        return $template;
-    }
-
     /** Carry pre-JavaScript HTML in the existing marker, with no second render or executable injection. */
-    public function captureSource(string $output, int $phase = PHP_OUTPUT_HANDLER_FINAL): string
+    public function captureSource(string $output): string
     {
-        if (($phase & PHP_OUTPUT_HANDLER_FINAL) === 0 || ($phase & PHP_OUTPUT_HANDLER_CLEAN) !== 0) {
-            $this->sourceStreamed = true;
-            return $output;
-        }
         $status = http_response_code();
         if (
-            !$this->sourceRequested || !$this->source || $this->sourceStreamed
+            !$this->sourceRequested || !$this->source
             || ($status && ($status < 200 || $status >= 300))
             || preg_match('//u', $output) !== 1
         ) {
@@ -281,7 +263,7 @@ final class FrontendPreview
             while ($processor->next_tag()) {
                 $tag = $processor->get_tag();
                 if (
-                    $tag === 'META' && $processor->get_attribute('name') === 'meet-the-frontend-live-preview-panel'
+                    $tag === 'META' && $processor->get_attribute('name') === 'a-floating-live-preview-panel'
                     && $processor->get_attribute('content') === $this->previewToken
                 ) {
                     if ($found || $processor->get_attribute('data-aflpp-source') !== null) {

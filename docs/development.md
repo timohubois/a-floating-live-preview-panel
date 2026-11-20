@@ -1,5 +1,9 @@
 # Development
 
+The supported baseline is WordPress 6.9. Historical verification notes below include
+older core versions; they are not a statement of current support. Source capture
+uses only core's native template-enhancement buffer.
+
 Use PHP 8.3+ and Composer for the development checks:
 
 ```sh
@@ -76,8 +80,10 @@ meta-box acknowledgement and failure handling, including malformed fingerprints 
 read-only errors in strict mode. The HTTP-free preview-isolation fixture checks that
 existing site policies are preserved with both core APIs and the older-core fallback.
 The HTTP-free preview-source fixture checks the HTML API wire format, Unicode/entity
-escaping, element identities, native buffering/opt-out on supporting core, older-core
-buffering, large responses and unchanged non-HTML, error and partial response fallbacks.
+escaping, element identities, native buffer capture, cleaning and streaming opt-out,
+large responses and unchanged non-HTML, error and partial response fallbacks. It also
+checks that the plugin leaves template-loading and shutdown hooks unchanged and does
+not start a custom output buffer.
 Frame/scroll tests cover isolation and capture opt-in, nested insertion/deletion,
 repeated content, ambiguity, initialization noise, source-to-live element mapping,
 generic visible-container fallbacks with directly visible changes taking precedence,
@@ -203,7 +209,7 @@ as the other plugins, with an explicit asset build before packaging:
 
 - **Commit Checks** runs on branch pushes and pull requests and is reused for release
   tags. PHP lint runs separately. The integration matrix uses PHP 8.3 and Node.js 24
-  on WordPress 6.7 and the latest stable WordPress, each without Timber and with an
+  on WordPress 6.9 and the latest stable WordPress, each without Timber and with an
   isolated Timber 2.x dependency. Every matrix job builds the assets, runs JavaScript
   tests using the runner's Chrome and that WordPress version's jQuery/Quicktags, and
   runs the PHP fixtures in a disposable single-site installation. Timber jobs verify

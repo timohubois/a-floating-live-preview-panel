@@ -16,6 +16,17 @@ function shape({ props }) {
     });
 }
 
+test('plugin metadata and CI agree on the WordPress 6.9 minimum', async () => {
+    const [entry, readme, standards, workflow] = await Promise.all([
+        'meet-the-frontend-live-preview-panel.php', 'readme.txt', 'phpcs.xml',
+        '.github/workflows/commit-checks.yml',
+    ].map((path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8')));
+    assert.equal(entry.match(/Requires at least:\s*(\S+)/)[1], '6.9');
+    assert.equal(readme.match(/Requires at least:\s*(\S+)/)[1], '6.9');
+    assert.match(standards, /name="minimum_supported_wp_version" value="6\.9"/);
+    assert.match(workflow, /wordpress: \['6\.9', 'latest'\]/);
+});
+
 test('asset entries use consistent feature names and only emit standard WordPress build files', async () => {
     const entries = [...adminEntries, 'preview-navigation'];
     const expected = entries.flatMap((entry) => [
