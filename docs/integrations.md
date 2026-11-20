@@ -268,6 +268,24 @@ A preview write dispatched during another preview write returns `aflpp_preview_b
 without starting preparation. The preview does not expose caller uploads to native
 save hooks. Native WordPress saving remains independent of this lifecycle.
 
+#### ACF field isolation
+
+ACF uses its native form and post-meta block save handlers on the owned preview
+revision. Bidirectional updates and attachment parenting are suppressed only for
+writes originating on that revision. Taxonomy fields with Save Terms retain their
+values without changing real term relationships. A preview dispatched from a native
+ACF save neither drains nor clears the caller's queued assignments, so explicit Save
+still applies them. Native ACF's callback order at each priority is preserved.
+Where ACF lacks an origin-aware bidirectional veto, the adapter guards its native
+field handlers. Custom field handlers must provide their own revision-write guards.
+The adapter restores only callback slots that still contain its wrapper.
+
+For live ACF reads, Load Terms uses the preview's Save Terms selections (combined
+per taxonomy within a native ACF save). If none were submitted for that taxonomy,
+it uses the core preview term selection or the saved assignments. The overlay applies
+only to ACF post reads for the bound post and source; user and term reads with matching
+numeric IDs still follow ACF's normal behavior. The core term display overlay is separate.
+
 ### Selecting a source for frontend rendering
 
 Both actions run only after core authorizes and selects the source and installs its
@@ -294,9 +312,9 @@ Hook lifetime is part of each compatibility owner's contract:
 - Lifecycle subscriptions (`aflpp_live_preview_*` and `aflpp_frontend_*_preview_source_selected`)
   remain registered for the PHP request so the owner can handle later operations.
   Registering these does not call optional APIs.
-- ACF's `acf/save_post` monitor exists only for a prepared write. The coordinator's
-  `finally` block triggers cleanup after success, rejection or exceptions, including
-  exceptions during payload preparation.
+- ACF's save monitor and side-effect guards exist only for an initialized owned
+  write. Cleanup runs after success, rejection or exceptions, including exceptions in
+  payload preparation or verification.
 - Frontend read overlays remain active through rendering, not just while the source
   action is dispatched. Each adapter removes its own filters in `unbindPreview()`,
   before rebinding and at late request shutdown. Cleanup is idempotent; ACF also clears
@@ -314,7 +332,12 @@ it also checks `Timber::get_post()` against the selected historical source. The
 compatibility fixture checks core-only writes, lifecycle/error propagation, exception
 cleanup and read-filter rebinding/release without requiring ACF or Timber. The
 dependency fixture simulates unavailable ACF/Timber and partial ACF APIs without
-changing site configuration.
+changing site configuration. Run `wp eval-file tests/acf.php` on a disposable site
+with ACF Pro active to exercise the actual ACF handlers. The fixture covers fresh
+and reused sources, unchanged parent and recovery data, nested preview dispatch,
+explicit Save with a pending term queue, hook order, colliding ACF IDs, warmed field
+caches, guard cleanup, repeater merging, post-meta blocks, and signed field lists on
+ACF versions that use them.
 
 Verify both screen-to-preview workflows on a disposable WordPress site with the
 theme and optional integrations you intend to use.
