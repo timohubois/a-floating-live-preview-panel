@@ -19,7 +19,8 @@ $originalUser = get_current_user_id();
 $originalHooks = [];
 $hooks = [
     'aflpp_live_preview_form_values', 'aflpp_live_preview_custom_fields_initialized',
-    'aflpp_live_preview_preparation_error', 'aflpp_frontend_live_preview_source_selected',
+    'aflpp_live_preview_preparation_error', 'aflpp_live_preview_preparation_finished',
+    'aflpp_frontend_live_preview_source_selected',
     'aflpp_frontend_saved_preview_source_selected',
 ];
 foreach ($hooks as $hook) {
@@ -29,6 +30,13 @@ foreach ($hooks as $hook) {
 $user = 0;
 $postId = 0;
 $live = new LivePreview();
+// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Snapshot request globals in the CLI fixture.
+[$originalPost, $originalFiles] = [$_POST, $_FILES];
+$fixturePost = ['aflpp_compatibility_fixture' => 'Existing form state'];
+$fixtureFiles = ['file' => [
+    'name' => 'fixture.txt', 'type' => 'text/plain', 'tmp_name' => '/tmp/fixture', 'error' => UPLOAD_ERR_OK,
+    'size' => 1,
+]];
 try {
     $check(!defined('DOING_AUTOSAVE'), 'Run this fixture before any native autosave.');
     $user = wp_insert_user([
@@ -45,10 +53,12 @@ try {
     update_post_meta($postId, 'aflpp_compatibility_seed', 'Saved metadata');
     $base = $live->fingerprint($postId);
     $input = ['base' => $base, 'post_title' => "Editor's draft", 'content' => '<p>Unsaved content</p>'];
-    $send = static function (array $data, ?string $nonce = null) use ($postId): WP_REST_Response {
-        $request = new WP_REST_Request('POST', '/a-floating-live-preview-panel/v1/posts/' . $postId . '/preview');
+    $route = '/a-floating-live-preview-panel/v1/posts/' . $postId . '/preview';
+    $send = static function (array $data, ?string $nonce = null, array $files = []) use ($route): WP_REST_Response {
+        $request = new WP_REST_Request('POST', $route);
         $request->set_header('X-WP-Nonce', $nonce ?? wp_create_nonce('wp_rest'));
         $request->set_body_params($data);
+        $request->set_file_params($files);
         return rest_do_request($request);
     };
     $revisionId = static function (WP_REST_Response $response): int {
@@ -56,16 +66,124 @@ try {
         return (int) $query['aflpp_revision'];
     };
 
+    // Serve the HTTP request through core so method overrides and file params follow its real boundary.
+    $serve = static function (
+        string $method,
+        array $query = [],
+        array $form = [],
+        array $headers = [],
+        array $files = [],
+        string $body = '',
+        ?string $path = null
+    ) use ($route): WP_REST_Response {
+        // phpcs:ignore WordPress.Security.NonceVerification -- Snapshot request globals in the CLI fixture.
+        $previous = [$_SERVER, $_GET, $_POST, $_FILES];
+        $previousBody = $GLOBALS['HTTP_RAW_POST_DATA'] ?? null;
+        $response = null;
+        $capture = static function ($served, WP_REST_Response $result) use (&$response): bool {
+            $response = $result;
+            return true;
+        };
+        add_filter('rest_pre_serve_request', $capture, 20, 2);
+        try {
+            $_SERVER = ['REQUEST_METHOD' => $method, 'HTTP_X_WP_NONCE' => wp_create_nonce('wp_rest')] + $headers;
+            $_GET = wp_slash($query);
+            $_POST = wp_slash($form);
+            $_FILES = $files;
+            $GLOBALS['HTTP_RAW_POST_DATA'] = $body;
+            rest_get_server()->serve_request($path ?? $route);
+            return $response;
+        } finally {
+            remove_filter('rest_pre_serve_request', $capture, 20);
+            [$_SERVER, $_GET, $_POST, $_FILES] = $previous;
+            $GLOBALS['HTTP_RAW_POST_DATA'] = $previousBody;
+        }
+    };
     $history = wp_get_post_revisions($postId);
+    $revisionSaves = did_action('save_post_revision');
+    foreach (['GET', 'HEAD'] as $method) {
+        $check($serve($method, query: $input)->get_status() === 404, "$method must not match the preview write route.");
+        $overridden = [
+            $serve($method, query: $input + ['_method' => 'POST']),
+            $serve($method, query: $input, headers: ['HTTP_X_HTTP_METHOD_OVERRIDE' => 'POST']),
+        ];
+        foreach ($overridden as $response) {
+            $check(
+                $response->get_status() === 405 && $response->get_data()['code'] === 'aflpp_post_required',
+                "$method must not become a preview write through a core REST method override."
+            );
+        }
+    }
+    $multipartHeaders = ['CONTENT_TYPE' => 'multipart/form-data; boundary=fixture'];
+    $uploadResponses = [
+        $serve('POST', form: $input, headers: $multipartHeaders, files: $fixtureFiles),
+        $send($input, files: $fixtureFiles),
+    ];
+    foreach ($uploadResponses as $response) {
+        $check(
+            $response->get_status() === 400 && $response->get_data()['code'] === 'aflpp_upload_not_supported',
+            'HTTP and internal preview requests must both reject file params.'
+        );
+    }
+    $check(
+        did_action('save_post_revision') === $revisionSaves && $live->fingerprint($postId) === $base,
+        'Rejected HTTP methods and uploads must not reach revision writes or change the parent.'
+    );
+
+    $_POST = $fixturePost;
+    $_FILES = $fixtureFiles;
     // No compatibility subscribers: the preview engine must work on its own.
     $response = $send($input);
     $check($response->get_status() === 200, 'Core-only previews must not require a compatibility adapter.');
-    $id = $revisionId($response);
+    $coreId = $revisionId($response);
     $check(
-        get_post($id)->post_title === $input['post_title'] && get_post($id)->post_content === $input['content'],
+        get_post($coreId)->post_title === $input['post_title']
+        && get_post($coreId)->post_content === $input['content'],
         'Core-only writes must retain native title/content handling.'
     );
+    $response = $serve('POST', form: $input, headers: $multipartHeaders);
+    $check($response->get_status() === 200, 'HTTP POST with string form values must still work.');
+    $response = $serve('POST', headers: ['CONTENT_TYPE' => 'application/json'], body: wp_json_encode($input));
+    $check($response->get_status() === 200, 'HTTP POST with JSON must still work.');
+    $internalPath = '/aflpp-fixture/v1/internal';
+    $dispatchInternal = static function (
+        $result,
+        WP_REST_Server $server,
+        WP_REST_Request $request
+    ) use (
+        $internalPath,
+        $send,
+        $input,
+        $check,
+        $fixtureFiles
+    ) {
+        if ($request->get_route() !== $internalPath) {
+            return $result;
+        }
+        $response = $send($input);
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Assert restored CLI globals.
+        $check($_FILES === $fixtureFiles, 'An internal preview must leave its caller’s files untouched.');
+        return $response;
+    };
+    $nativeFileChecks = 0;
+    $checkNativeFiles = static function () use ($check, &$nativeFileChecks): void {
+        ++$nativeFileChecks;
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Assert scoped CLI globals.
+        $check($_FILES === [], 'Native revision saves must not see the outer request’s files.');
+    };
+    add_filter('rest_pre_dispatch', $dispatchInternal, 10, 3);
+    add_action('save_post_revision', $checkNativeFiles);
+    try {
+        $check(
+            $serve('GET', files: $fixtureFiles, path: $internalPath)->get_status() === 200 && $nativeFileChecks === 1,
+            'An intentional internal REST dispatch must not inherit the outer HTTP method or file params.'
+        );
+    } finally {
+        remove_filter('rest_pre_dispatch', $dispatchInternal, 10);
+        remove_action('save_post_revision', $checkNativeFiles);
+    }
 
+    $revisionSaveCallbacks = $GLOBALS['wp_filter']['save_post_revision']->callbacks ?? [];
     $events = [];
     $saveError = null;
     $lastSave = null;
@@ -101,6 +219,12 @@ try {
     ): void {
         $events[] = 'seeded';
         $check(!defined('DOING_AUTOSAVE'), 'Native preview writes must not set the autosave flag.');
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Compare the unmodified fixture values.
+        $form = $_POST;
+        $check(
+            ($form['post_ID'] ?? null) === $postId && ($form['post_title'] ?? null) === wp_slash("Editor's draft"),
+            'Native save hooks must see the scoped, slashed preview form values.'
+        );
         $id = $context['source']['id'];
         $revision = get_post($id);
         $check(
@@ -116,24 +240,46 @@ try {
         array $context
     ) use (
         $check,
+        $fixturePost,
+        $revisionSaveCallbacks,
         &$events,
         &$lastSave,
         &$saveError
     ) {
         $check(!defined('DOING_AUTOSAVE'), 'Preview cleanup must leave the autosave flag undefined.');
+        $check(
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Assert restored CLI globals.
+            $_POST === $fixturePost && ($GLOBALS['wp_filter']['save_post_revision']->callbacks ?? [])
+            === $revisionSaveCallbacks,
+            'Preview cleanup must restore form globals and native revision save callbacks before verification.'
+        );
         $check(array_keys($context) === ['post', 'source'], 'Verification must not retain submitted input.');
-        $events[] = 'finished';
+        $events[] = 'verified';
         $lastSave = [$error, $context];
         return $error ?? $saveError;
     }, 20, 2);
+    $finishedContexts = [];
+    add_action('aflpp_live_preview_preparation_finished', static function (array ...$args) use (
+        $check,
+        &$events,
+        &$finishedContexts
+    ): void {
+        $check(count($args) === 1, 'Preparation cleanup must receive only its context.');
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Assert scoped CLI globals.
+        $check($_FILES === [], 'Preparation cleanup must remain isolated from the caller’s files.');
+        $events[] = 'finished';
+        $finishedContexts[] = $args[0];
+    }, 10, 2);
     $response = $send($input);
     $check($response->get_status() === 200, 'A compatible payload extension must succeed.');
     $id = $revisionId($response);
     $check(
-        $events === ['payload', 'seeded', 'finished']
+        $id === $coreId && $events === ['payload', 'seeded', 'verified', 'finished']
         && $lastSave === [null, ['post' => ['id' => $postId], 'source' => ['id' => $id]]]
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Assert restored CLI globals.
+        && $finishedContexts === [$lastSave[1]] && $_FILES === $fixtureFiles
         && get_post($id)->post_content === '<p>Adapted editor content</p>',
-        'Preview lifecycle hooks must run in order around the isolated write.'
+        'Preview lifecycle hooks must run in order when updating the existing isolated source.'
     );
 
     $before = $events;
@@ -147,17 +293,109 @@ try {
     wp_set_current_user($user);
     $check($events === $before, 'Rejected permissions, nonces and conflicts must not run compatibility hooks.');
 
+    // Try both an otherwise successful and an otherwise rejected reentrant preparation during the native write.
+    $rejected = new WP_Error('aflpp_test_payload', 'Fixture payload rejection.', ['status' => 400]);
+    $rejectNested = static fn ($payload, array $context) => isset($context['input']['fixture_reject'])
+        ? $rejected : $payload;
+    $attempted = false;
+    $dispatchNested = static function () use ($send, $input, $check, &$attempted): void {
+        if ($attempted) {
+            return;
+        }
+        $attempted = true;
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Snapshot the active preview's form values.
+        $activeForm = $_POST;
+        $nested = $input + ['excerpt' => 'Nested preview must not overwrite the outer source.'];
+        foreach ([$nested, $nested + ['fixture_reject' => true]] as $data) {
+            $response = $send($data);
+            $check(
+                $response->get_status() === 409 && $response->get_data()['code'] === 'aflpp_preview_busy',
+                'Reentrant writes must be rejected before payload filters or cleanup callbacks run.'
+            );
+        }
+        $check(
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Assert the outer preview's form state.
+            $_POST === $activeForm && $_FILES === [],
+            'Rejected nested writes must leave outer preview globals in place.'
+        );
+    };
+    add_filter('aflpp_live_preview_form_values', $rejectNested, 5, 2);
+    add_action('aflpp_live_preview_custom_fields_initialized', $dispatchNested, 20);
+    $events = [];
+    try {
+        $response = $send($input);
+        $check(
+            $attempted && $response->get_status() === 200 && $revisionId($response) === $id
+            && get_post($id)->post_excerpt === get_post($postId)->post_excerpt
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Assert restored CLI globals.
+            && $events === ['payload', 'seeded', 'verified', 'finished'] && $_FILES === $fixtureFiles,
+            'Rejected nested writes must leave the outer preview write and cleanup intact.'
+        );
+    } finally {
+        remove_filter('aflpp_live_preview_form_values', $rejectNested, 5);
+        remove_action('aflpp_live_preview_custom_fields_initialized', $dispatchNested, 20);
+    }
+
+    // Model an integration that must remove its temporary hook even if a public verifier never reaches it.
+    $temporaryHook = static fn () => null;
+    $install = static fn () => add_action('save_post', $temporaryHook);
+    $cleanup = static fn () => remove_action('save_post', $temporaryHook);
+    add_action('aflpp_live_preview_custom_fields_initialized', $install);
+    add_action('aflpp_live_preview_preparation_finished', $cleanup, PHP_INT_MIN, 0);
+    try {
+        $throwingHooks = ['aflpp_live_preview_preparation_error' => 5, 'aflpp_live_preview_preparation_finished' => 20];
+        foreach ($throwingHooks as $hook => $priority) {
+            $expected = new RuntimeException('Fixture exception in ' . $hook);
+            $fail = static function () use ($expected, $check, $priority, $temporaryHook): void {
+                $check(
+                    has_action('save_post', $temporaryHook) === ($priority === 5 ? 10 : false),
+                    'Integration state must exist during verification and be gone before normal cleanup subscribers.'
+                );
+                throw $expected;
+            };
+            $events = [];
+            $finishedContexts = [];
+            add_filter($hook, $fail, $priority);
+            try {
+                $send($input);
+                throw new RuntimeException('The lifecycle exception was swallowed.');
+            } catch (RuntimeException $error) {
+                $check($error === $expected, 'Verifier and cleanup exceptions must propagate.');
+                $check(
+                    // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Assert restored CLI globals.
+                    $_POST === $fixturePost && $_FILES === $fixtureFiles && !has_action('save_post', $temporaryHook)
+                    && ($GLOBALS['wp_filter']['save_post_revision']->callbacks ?? []) === $revisionSaveCallbacks,
+                    'Lifecycle exceptions must restore caller globals and leave no temporary save hooks.'
+                );
+                $check(
+                    $finishedContexts === [['post' => ['id' => $postId], 'source' => ['id' => $id]]]
+                    && in_array('verified', $events, true) === ($priority !== 5),
+                    'The finished action must receive the established source even when early verification throws.'
+                );
+            } finally {
+                remove_filter($hook, $fail, $priority);
+            }
+            $check($send($input)->get_status() === 200, 'Sequential previews must work after lifecycle exceptions.');
+        }
+    } finally {
+        remove_action('aflpp_live_preview_custom_fields_initialized', $install);
+        remove_action('aflpp_live_preview_preparation_finished', $cleanup, PHP_INT_MIN);
+        $cleanup();
+    }
+
     // ACF's adapter is present even when ACF itself is not installed: it must preserve prior errors.
     $acf = new Acf();
-    $rejected = new WP_Error('aflpp_test_payload', 'Fixture payload rejection.', ['status' => 400]);
     $reject = static fn () => $rejected;
     add_filter('aflpp_live_preview_form_values', $reject, 5);
     $events = [];
+    $finishedContexts = [];
     $response = $send($input);
     $check(
         $response->get_status() === 400 && $response->get_data()['code'] === $rejected->get_error_code()
-        && $events === ['payload', 'finished']
-        && $lastSave === [$rejected, ['post' => ['id' => $postId], 'source' => null]],
+        && $events === ['payload', 'verified', 'finished']
+        && $lastSave === [$rejected, ['post' => ['id' => $postId], 'source' => null]]
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Assert restored CLI globals.
+        && $finishedContexts === [$lastSave[1]] && $_FILES === $fixtureFiles,
         'Payload errors must survive later adapters and finish preparation without seeding or writing.'
     );
     remove_filter('aflpp_live_preview_form_values', $reject, 5);
@@ -174,12 +412,11 @@ try {
         remove_filter('aflpp_live_preview_form_values', $reject, 20);
     }
 
-    // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Snapshot request globals in the CLI fixture.
-    $originalPost = $_POST;
     $throw = static function (): void {
         throw new RuntimeException('Fixture preparation exception.');
     };
     add_filter('aflpp_live_preview_form_values', $throw, 20);
+    $finishedContexts = [];
     try {
         $data = function_exists('acf_save_post') ? ['acf' => [], '_acf_nonce' => wp_create_nonce('post')] : [];
         $send($input + $data);
@@ -188,11 +425,12 @@ try {
         $check($error->getMessage() === 'Fixture preparation exception.', 'Preparation exceptions must propagate.');
         $check(
             // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Assert restored CLI globals, not editor input.
-            $_POST === $originalPost && !has_action('acf/save_post', [$acf, 'recordSave']),
+            $_POST === $fixturePost && $_FILES === $fixtureFiles && !has_action('acf/save_post', [$acf, 'recordSave']),
             'Preparation exceptions must restore form globals and remove temporary ACF save monitors.'
         );
         $check(
-            $lastSave[1] === ['post' => ['id' => $postId], 'source' => null],
+            $lastSave[1] === ['post' => ['id' => $postId], 'source' => null]
+            && $finishedContexts === [$lastSave[1]],
             'Exceptions before source initialization must keep a null cleanup source.'
         );
     } finally {
@@ -204,6 +442,7 @@ try {
     foreach ([false, true] as $reuse) {
         $initializedSource = null;
         $lastSave = null;
+        $finishedContexts = [];
         $throwInitialized = static function (array $context) use (&$initializedSource): void {
             $initializedSource = $context['source'];
             $context['source']['id'] = 999;
@@ -220,7 +459,8 @@ try {
             );
             $check(
                 $initializedSource !== null && get_post($initializedSource['id']) !== null
-                && $lastSave[1] === ['post' => ['id' => $postId], 'source' => $initializedSource],
+                && $lastSave[1] === ['post' => ['id' => $postId], 'source' => $initializedSource]
+                && $finishedContexts === [$lastSave[1]],
                 'Cleanup must retain the established source after initialization throws, ignoring context mutations.'
             );
             $check(
@@ -229,7 +469,8 @@ try {
             );
             $check(
                 // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Check restored CLI globals, not request input.
-                $_POST === $originalPost && !has_action('acf/save_post', [$acf, 'recordSave']),
+                $_POST === $fixturePost && $_FILES === $fixtureFiles
+                && !has_action('acf/save_post', [$acf, 'recordSave']),
                 'Initialized-source exceptions must restore form globals and remove temporary ACF save monitors.'
             );
             $check(
@@ -248,10 +489,13 @@ try {
     $check(!has_action('acf/save_post', [$acf, 'recordSave']), 'Successful writes must remove the save monitor.');
 
     $saveError = new WP_Error('aflpp_test_save', 'Fixture save verification failure.', ['status' => 409]);
+    $finishedContexts = [];
     add_filter('aflpp_live_preview_preparation_error', static fn () => $saveError, 5);
     $response = $send($input);
     $check(
-        $response->get_status() === 409 && $response->get_data()['code'] === $saveError->get_error_code(),
+        $response->get_status() === 409 && $response->get_data()['code'] === $saveError->get_error_code()
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Assert restored CLI globals.
+        && $finishedContexts === [$lastSave[1]] && $_FILES === $fixtureFiles,
         'Failed integration save verification must not return a successful preview URL.'
     );
     $check($live->fingerprint($postId) === $base, 'Compatibility hooks must leave the saved parent unchanged.');
@@ -311,6 +555,8 @@ try {
     );
     WP_CLI::success('Core-only previews, compatibility lifecycle, scoped hooks, errors and later saves passed.');
 } finally {
+    $_POST = $originalPost;
+    $_FILES = $originalFiles;
     if (isset($acf)) {
         $acf->unbindPreview();
     }

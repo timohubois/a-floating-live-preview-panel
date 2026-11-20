@@ -246,7 +246,8 @@ enters this workflow.
 | --- | --- |
 | `aflpp_live_preview_form_values` (filter) | `array\|WP_Error $formValues, array $context`. Context contains `post`, null `source` and `input` (the original unslashed editor request). Extend unslashed native form values before slashing/writing, or reject with `WP_Error`; preserve an earlier error. Validate your own input. This is form-save data, not a universal metadata map. |
 | `aflpp_live_preview_custom_fields_initialized` (action) | `array $context`, containing `post` and initialized `source` identities. Saved custom-field values are available as the preview's starting point. Invalidate integration caches or apply previously validated values. Submitted changes and native save hooks still follow; this does not mean the preview is ready. |
-| `aflpp_live_preview_preparation_error` (filter) | `?WP_Error $error, array $context`, containing `post` and the established `source` identity, or null if no source identity was established. Verify contributions and release preparation state, preserving earlier errors. Runs in `finally` after success, rejection or exceptions. Rejected form values pass their `WP_Error`; a thrown exception propagates after cleanup. An established source remains available to cleanup if a later callback throws. Core write errors still take precedence. |
+| `aflpp_live_preview_preparation_error` (filter) | `?WP_Error $error, array $context`, containing `post` and the established `source` identity, or null if no source identity was established. Verify contributions and preserve earlier errors. Runs after success, rejection or exceptions. Rejected form values pass their `WP_Error`. Core write errors still take precedence. |
+| `aflpp_live_preview_preparation_finished` (action) | `array $context`, with the same identities as the verification filter. Release temporary state here, even if verification threw and later verifiers did not run. Cleanup should be idempotent and must not throw. |
 
 For example, preparation context is:
 
@@ -263,7 +264,9 @@ For example, preparation context is:
 ```
 
 Core chooses the write target independently of context or the form's `post_ID`.
-Native WordPress saving remains independent of this preparation/error lifecycle.
+A preview write dispatched during another preview write returns `aflpp_preview_busy`
+without starting preparation. The preview does not expose caller uploads to native
+save hooks. Native WordPress saving remains independent of this lifecycle.
 
 ### Selecting a source for frontend rendering
 

@@ -18,12 +18,20 @@ final class LivePreview
 
     private int $autosavePostId = 0;
 
+    /** Native form globals and save hooks are shared across all instances. */
+    private static bool $preparingPreview = false;
+
+    /** @var \WeakMap<WP_REST_Request, bool> Whether an HTTP REST request arrived over POST. */
+    private \WeakMap $httpPostRequests;
+
     /** @var \WeakMap<WP_REST_Request, array> */
     private \WeakMap $restSaves;
 
     public function __construct()
     {
+        $this->httpPostRequests = new \WeakMap();
         $this->restSaves = new \WeakMap();
+        add_filter('rest_allowed_cors_headers', [$this, 'rememberHttpMethod'], 10, 2);
         add_filter('rest_request_before_callbacks', [$this, 'trackRestSave'], 10, 3);
         add_filter('rest_post_dispatch', [$this, 'rebaseRestSave'], PHP_INT_MAX, 3);
         add_action('rest_api_init', [$this, 'registerRoutes']);
@@ -66,6 +74,15 @@ final class LivePreview
                 'featured_media' => ['type' => 'integer', 'minimum' => 0],
             ],
         ]);
+    }
+
+    /** Record the request from serve_request(), not deliberate internal or nested REST dispatches. */
+    public function rememberHttpMethod(array $headers, WP_REST_Request $request): array
+    {
+        // Core has already applied method overrides to $request at this point.
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Compare the transport method exactly.
+        $this->httpPostRequests[$request] = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
+        return $headers;
     }
 
     public function canPreparePreview(WP_REST_Request $request): bool|WP_Error
@@ -359,7 +376,44 @@ final class LivePreview
                 ['status' => 403]
             );
         }
+        $httpPost = $this->httpPostRequests[$request] ?? null;
+        if ($httpPost === false) {
+            return new WP_Error(
+                'aflpp_post_required',
+                __('Preview writes require an HTTP POST request.', 'meet-the-frontend-live-preview-panel'),
+                ['status' => 405]
+            );
+        }
+        if ($request->get_file_params()) {
+            return new WP_Error(
+                'aflpp_upload_not_supported',
+                __('File uploads aren’t supported in live previews.', 'meet-the-frontend-live-preview-panel'),
+                ['status' => 400]
+            );
+        }
+        if (self::$preparingPreview) {
+            return new WP_Error(
+                'aflpp_preview_busy',
+                __('A live preview is already being prepared.', 'meet-the-frontend-live-preview-panel'),
+                ['status' => 409]
+            );
+        }
 
+        // An internal dispatch can have no file params while its caller still has uploaded files.
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Snapshot caller state, not preview input.
+        $originalFiles = $_FILES;
+        self::$preparingPreview = true;
+        $_FILES = [];
+        try {
+            return $this->preparePreviewWrite($request);
+        } finally {
+            $_FILES = $originalFiles;
+            self::$preparingPreview = false;
+        }
+    }
+
+    private function preparePreviewWrite(WP_REST_Request $request): WP_REST_Response|WP_Error
+    {
         $postId = (int) $request['id'];
         $post = get_post($postId);
         $input = $request->get_params();
@@ -565,17 +619,27 @@ final class LivePreview
                 remove_action('save_post_revision', $seed, 0);
             }
             $_POST = $originalPost;
-            /**
-             * Release save state and report integration failures; preserve any earlier error.
-             * Also runs after rejection or exceptions; a null source means none was established.
-             *
-             * @param WP_Error|null $error   A prior integration error, or null.
-             * @param array         $context Post identity and established source, or null when none was established.
-             */
             if (!is_wp_error($revisionId) && $revisionId) {
                 $context['source'] = ['id' => (int) $revisionId];
             }
-            $saveError = apply_filters('aflpp_live_preview_preparation_error', $preparationError, $context);
+            try {
+                /**
+                 * Verify integration saves; preserve any earlier error. Also runs after rejection or exceptions.
+                 * Use the preparation_finished action to release state even if a verifier throws.
+                 *
+                 * @param WP_Error|null $error   A prior integration error, or null.
+                 * @param array         $context Post and source identities, with a null source if none was established.
+                 */
+                $saveError = apply_filters('aflpp_live_preview_preparation_error', $preparationError, $context);
+            } finally {
+                /**
+                 * Release integration state after verification, including when a verifier throws.
+                 * Form values and native revision hooks are restored; files remain hidden and nested writes blocked.
+                 *
+                 * @param array $context Post and source identities, with a null source if none was established.
+                 */
+                do_action('aflpp_live_preview_preparation_finished', $context);
+            }
         }
         if (is_wp_error($revisionId)) {
             return new WP_Error('aflpp_preview_failed', $revisionId->get_error_message(), ['status' => 400]);
