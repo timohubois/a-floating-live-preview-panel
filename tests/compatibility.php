@@ -30,6 +30,7 @@ $user = 0;
 $postId = 0;
 $live = new LivePreview();
 try {
+    $check(!defined('DOING_AUTOSAVE'), 'Run this fixture before any native autosave.');
     $user = wp_insert_user([
         'user_login' => 'aflpp_compatibility_' . wp_generate_password(12, false, false),
         'user_pass' => wp_generate_password(32), 'role' => 'administrator',
@@ -55,6 +56,7 @@ try {
         return (int) $query['aflpp_revision'];
     };
 
+    $history = wp_get_post_revisions($postId);
     // No compatibility subscribers: the preview engine must work on its own.
     $response = $send($input);
     $check($response->get_status() === 200, 'Core-only previews must not require a compatibility adapter.');
@@ -98,6 +100,7 @@ try {
         &$events
     ): void {
         $events[] = 'seeded';
+        $check(!defined('DOING_AUTOSAVE'), 'Native preview writes must not set the autosave flag.');
         $id = $context['source']['id'];
         $revision = get_post($id);
         $check(
@@ -117,6 +120,7 @@ try {
         &$lastSave,
         &$saveError
     ) {
+        $check(!defined('DOING_AUTOSAVE'), 'Preview cleanup must leave the autosave flag undefined.');
         $check(array_keys($context) === ['post', 'source'], 'Verification must not retain submitted input.');
         $events[] = 'finished';
         $lastSave = [$error, $context];
@@ -252,6 +256,10 @@ try {
     );
     $check($live->fingerprint($postId) === $base, 'Compatibility hooks must leave the saved parent unchanged.');
     $check(!wp_get_post_autosave($postId, $user), 'Compatibility hooks must not create recovery autosaves.');
+    $check(
+        array_keys(wp_get_post_revisions($postId)) === array_keys($history),
+        'Preview writes must not add or remove normal history revisions.'
+    );
 
     if ($acf->isAvailable()) {
         $acf->bindPreview($postId, $id, true);
@@ -291,7 +299,17 @@ try {
         && $timber->readPost(['post_title' => 'Unchanged'], get_post($postId)) === ['post_title' => 'Unchanged'],
         'Timber cleanup must remove its own read hooks and discard the previous source.'
     );
-    WP_CLI::success('Core-only previews, compatibility lifecycle, scoped hooks and errors passed.');
+    // Save the parent in this same process, before any native autosave can set the flag.
+    $savedContent = 'Content saved after preview';
+    $updated = wp_update_post(['ID' => $postId, 'post_content' => $savedContent], true);
+    $check($updated === $postId, 'Could not save the fixture after preparing the preview.');
+    $newHistory = array_diff_key(wp_get_post_revisions($postId), $history);
+    $revision = reset($newHistory);
+    $check(
+        count($newHistory) === 1 && $revision->post_content === $savedContent && !wp_is_post_autosave($revision),
+        'An ordinary save after preview must create a normal history revision in the same process.'
+    );
+    WP_CLI::success('Core-only previews, compatibility lifecycle, scoped hooks, errors and later saves passed.');
 } finally {
     if (isset($acf)) {
         $acf->unbindPreview();

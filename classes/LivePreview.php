@@ -558,10 +558,6 @@ final class LivePreview
                 $this->writePreviewFields($revisionId, $fields);
             };
             add_action('save_post_revision', $seed, 0);
-            if (!defined('DOING_AUTOSAVE')) {
-                // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- Core save flag.
-                define('DOING_AUTOSAVE', true);
-            }
             $_POST = $payload;
             $revisionId = $this->writeRevision($postId, $payload);
         } finally {
