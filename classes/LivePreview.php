@@ -105,8 +105,14 @@ final class LivePreview
     public function fingerprint(int $postId): string
     {
         $meta = get_post_meta($postId);
-        // Core cron removes these queue flags independently after published-post saves.
-        unset($meta['_edit_lock'], $meta['_edit_last'], $meta['_encloseme'], $meta['_pingme']);
+        // Editor preferences and core queue flags can change independently of saved content.
+        unset(
+            $meta['_edit_lock'],
+            $meta['_edit_last'],
+            $meta['_encloseme'],
+            $meta['_pingme'],
+            $meta['classic-editor-remember']
+        );
         ksort($meta);
 
         $taxonomies = get_object_taxonomies(get_post_type($postId));

@@ -276,6 +276,21 @@ try {
         $check($live->fingerprint($published) === $base, 'Core queue flags must not invalidate saved-state receipts.');
         delete_post_meta($published, $key);
     }
+    foreach (['block-editor', 'classic-editor'] as $editor) {
+        update_post_meta($published, 'classic-editor-remember', $editor);
+        $response = $send('/a-floating-live-preview-panel/v1/posts/' . $published . '/preview', [
+            'base' => $base, 'post_title' => 'Preview after editor preference update',
+        ], null);
+        $check(
+            $response->get_status() === 200 && $live->fingerprint($published) === $base,
+            'Remembering or switching editors after enqueue must not invalidate the preview baseline.'
+        );
+        $check(
+            get_post_meta($published, 'classic-editor-remember', true) === $editor,
+            'Preview preparation must preserve the saved editor preference.'
+        );
+    }
+    delete_post_meta($published, 'classic-editor-remember');
     update_post_meta($published, 'enclosure', 'https://example.invalid/test.mp3');
     $check($live->fingerprint($published) !== $base, 'Actual enclosure metadata must still invalidate the preview.');
     delete_post_meta($published, 'enclosure');
